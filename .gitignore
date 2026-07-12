@@ -1,0 +1,65 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+perturbation_informed_causal_protein_program_graphs_report.md
+# --- Environments ---
+.venv/
+venv/
+env/
+.env
+.env.*
+.python-version
+
+# --- Tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+.coverage
+htmlcov/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# --- Data & derived artifacts (large; reproducible, not versioned) ---
+# Keep raw downloads and derived marts out of git; see README "Repository / data-mart layout".
+# Ignore data/ CONTENTS (not the dir itself) so specific subdirs can be re-included below.
+data/*
+# ...but do track small, reproducibility-critical manifests and frozen splits.
+!data/manifests/
+!data/splits/
+
+# Heavy artifact formats, wherever they land
+*.h5ad
+*.h5mu
+*.h5
+*.hdf5
+*.npz
+*.npy
+*.zarr/
+
+# --- Models, experiment tracking, logs ---
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+wandb/
+mlruns/
+lightning_logs/
+outputs/
+logs/
+*.log
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,36 @@
+# Python 3.12 — see README for the uv setup.
+# Grouped by role. The core stack (Tier 0: data audit + linear baselines) runs CPU-only;
+# torch / torch-geometric are needed for the Tier 1 graph model (EG-CProG).
+
+# --- Single-cell data I/O ---
+scanpy
+anndata
+mudata
+h5py            # backed / lazy HDF5 reads of the large .h5ad / .h5mu artifacts
+
+# --- Scientific & tabular stack ---
+numpy
+scipy
+pandas
+polars          # fast columnar ops on the derived mart
+pyarrow         # Parquet shards (perturbation_condition, program_response, protein_edges, ...)
+scikit-learn    # linear baselines + program bases (PCA / NMF / ICA, ridge, elastic-net, GBM)
+
+# --- Graphs & modeling (Tier 1: EG-CProG) ---
+torch
+torch-geometric # or DGL; compiled extras (torch-scatter/-sparse) via PyG's wheel index if needed
+networkx        # network-propagation baselines and graph diagnostics
+
+# --- Visualization ---
+matplotlib
+seaborn
+
+# --- Notebooks ---
+jupyter
+ipykernel
+
+# --- Optional / later phases (uncomment as needed) ---
+# transformers  # protein language-model (PLM) embeddings for target/context features
+# gseapy        # pathway / program enrichment recovery (mechanism metrics)
+# mapie         # conformal prediction / calibrated intervals
+# wandb         # experiment tracking
