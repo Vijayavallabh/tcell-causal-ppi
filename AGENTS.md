@@ -24,9 +24,11 @@ for predicting T cell perturbation responses. See `README.md` for the full descr
 Key facts:
 - Python 3.12 with [uv](https://docs.astral.sh/uv/) for environment management
 - Data lives under `data/raw/` (gitignored, ~100 GB) — see README for download instructions
-- Derived artifacts go under `data/intermediate/`, `data/graphs/`, `data/splits/`, `data/results/`
+- Derived artifacts go under `data/intermediate/`, `data/graphs/`, `data/splits/`, `data/results/`, `data/checkpoints/`
 - Only `data/manifests/` and `data/splits/` are tracked in git
 - The model name is **EG-IPG**, not EG-CProG (legacy name in some older comments)
+- Feature availability is split into `q_pre` (prediction-time, eligible) and `q_post` (response-derived, prohibited as H1 input) — see README
+- All response-derived transformations (program bases, scaling, feature selection) must be fit inside training folds only
 
 ## Working Rules
 

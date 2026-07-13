@@ -292,6 +292,12 @@ node skills/harness-creator/scripts/create-harness.mjs --target .
 node skills/harness-creator/scripts/validate-harness.mjs --target .
 ```
 
+**After each commit**, use the `harness-creator` skill to update `progress.md`, `session-handoff.md`, and `feature_list.json` so the next session can pick up cleanly. Validate the harness to confirm all five subsystems still pass:
+
+```bash
+node skills/harness-creator/scripts/validate-harness.mjs --target .
+```
+
 Install uv if needed:
 
 ```bash

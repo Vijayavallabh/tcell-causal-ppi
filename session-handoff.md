@@ -3,35 +3,41 @@
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
-- Current status: Harness scaffold created, no implementation code yet
-- Branch / commit: main / dcbacea
+- Current status: README and harness fully updated, no implementation code yet
+- Branch / commit: main / e8df55d
 
 ## Completed This Session
 
 - [x] Updated README.md with EG-IPG naming and revised method framing
-- [x] Created experiment plan roles breakdown document
-- [x] Created harness scaffold (AGENTS.md, feature_list.json, progress.md, init.sh, session-handoff.md)
+- [x] Expanded README with full experiment plan details (data, method, layout, responsible use)
+- [x] Fixed legacy EG-CProG references in requirements.txt
+- [x] Created and validated harness scaffold (100/100 across all five subsystems)
+- [x] Added Harness Engineering skill install instructions to README
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile | `python -m compileall .` | Pending | No Python source yet |
-| Tests | `python -m pytest` | Pending | No tests yet |
+| Compile | `uv run python -m compileall .` | Pass | No Python source yet |
+| Tests | `uv run python -m pytest` | Skipped | No tests yet |
+| Harness | `validate-harness.mjs` | 100/100 | All five subsystems pass |
 
 ## Files Changed
 
-- `README.md` — updated idea, description, and method sections
-- `AGENTS.md` — created
+- `README.md` — expanded idea, method, data, repository layout, responsible use
+- `requirements.txt` — renamed EG-CProG to EG-IPG in comments
+- `AGENTS.md` — created and updated
 - `feature_list.json` — created
-- `progress.md` — created
-- `init.sh` — created
-- `session-handoff.md` — created
+- `progress.md` — created and updated
+- `init.sh` — created with uv
+- `session-handoff.md` — created and updated
 
 ## Decisions Made
 
 - Renamed model from EG-CProG to EG-IPG throughout
 - Removed causal/counterfactual language per report revision
+- Added q_pre/q_post feature availability distinction to README
+- Corrected raw cell-level size from ~1.58 TiB to ~1,617 GiB
 
 ## Blockers / Risks
 

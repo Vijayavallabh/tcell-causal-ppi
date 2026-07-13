@@ -10,8 +10,10 @@
 ### What's Done
 
 - [x] README.md updated with EG-IPG naming and revised framing
-- [x] Experiment plan roles and expertise document created
-- [x] Harness scaffold created (AGENTS.md, feature_list.json, progress.md, init.sh, session-handoff.md)
+- [x] README.md expanded with full experiment plan details: target representations, graph schema, loss function, training splits, baselines, evaluation metrics, DE stats field listings, q_pre/q_post distinction, pseudobulk/guide/donor MuData details, storage budget, derived tables, loading rules, PPI source table, sanity checks, responsible use
+- [x] requirements.txt: renamed EG-CProG to EG-IPG in comments
+- [x] Harness scaffold created and validated (100/100 on all five subsystems)
+- [x] Harness Engineering skill install instructions added to README
 
 ### What's In Progress
 
@@ -34,15 +36,18 @@
 
 - **Model name**: Renamed from EG-CProG to EG-IPG across README and requirements
 - **Causal language**: Removed "causal" and "counterfactual" framing per report revision
+- **Feature availability**: Added q_pre/q_post distinction to README for leakage prevention
+- **Raw cell-level size**: Corrected from ~1.58 TiB to ~1,617 GiB per report figures
 
 ## Files Modified This Session
 
-- `README.md` — updated idea, description, and method sections
-- `AGENTS.md` — created project harness instructions
+- `README.md` — updated idea, method, data, repository layout, and responsible use sections
+- `requirements.txt` — renamed EG-CProG to EG-IPG in comments
+- `AGENTS.md` — created and updated project harness instructions
 - `feature_list.json` — created 13 features from experiment plan phases
-- `progress.md` — created session log
-- `init.sh` — created verification script
-- `session-handoff.md` — created handoff template
+- `progress.md` — created and updated session log
+- `init.sh` — created verification script with uv
+- `session-handoff.md` — created and updated handoff template
 
 ## Notes for Next Session
 
