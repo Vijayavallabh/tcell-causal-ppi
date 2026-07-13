@@ -4,7 +4,7 @@
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: README and harness fully updated, no implementation code yet
-- Branch / commit: main / 9943f71
+- Branch / commit: main / 088535f
 
 ## Completed This Session
 
