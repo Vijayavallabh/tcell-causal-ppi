@@ -4,15 +4,13 @@
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: README and harness fully updated, no implementation code yet
-- Branch / commit: main / e8df55d
+- Branch / commit: main / 9943f71
 
 ## Completed This Session
 
-- [x] Updated README.md with EG-IPG naming and revised method framing
-- [x] Expanded README with full experiment plan details (data, method, layout, responsible use)
-- [x] Fixed legacy EG-CProG references in requirements.txt
-- [x] Created and validated harness scaffold (100/100 across all five subsystems)
-- [x] Added Harness Engineering skill install instructions to README
+- [x] Updated .gitignore to exclude .claude-private and claude-me
+- [x] Re-validated harness (100/100 across all five subsystems)
+- [x] Confirmed init.sh passes cleanly (Python 3.12.13, compileall pass, no tests yet)
 
 ## Verification Evidence
 
@@ -24,20 +22,13 @@
 
 ## Files Changed
 
-- `README.md` — expanded idea, method, data, repository layout, responsible use
-- `requirements.txt` — renamed EG-CProG to EG-IPG in comments
-- `AGENTS.md` — created and updated
-- `feature_list.json` — created
-- `progress.md` — created and updated
-- `init.sh` — created with uv
-- `session-handoff.md` — created and updated
+- `.gitignore` — added .claude-private and claude-me exclusions
+- `progress.md` — updated session log
+- `session-handoff.md` — updated handoff
 
 ## Decisions Made
 
-- Renamed model from EG-CProG to EG-IPG throughout
-- Removed causal/counterfactual language per report revision
-- Added q_pre/q_post feature availability distinction to README
-- Corrected raw cell-level size from ~1.58 TiB to ~1,617 GiB
+- (No new decisions this session)
 
 ## Blockers / Risks
 

@@ -14,6 +14,8 @@
 - [x] requirements.txt: renamed EG-CProG to EG-IPG in comments
 - [x] Harness scaffold created and validated (100/100 on all five subsystems)
 - [x] Harness Engineering skill install instructions added to README
+- [x] .gitignore updated to exclude .claude-private and claude-me
+- [x] Harness re-validated (100/100) and init.sh passes
 
 ### What's In Progress
 
@@ -41,16 +43,11 @@
 
 ## Files Modified This Session
 
-- `README.md` — updated idea, method, data, repository layout, and responsible use sections
-- `requirements.txt` — renamed EG-CProG to EG-IPG in comments
-- `AGENTS.md` — created and updated project harness instructions
-- `feature_list.json` — created 13 features from experiment plan phases
-- `progress.md` — created and updated session log
-- `init.sh` — created verification script with uv
-- `session-handoff.md` — created and updated handoff template
+- `.gitignore` — added .claude-private and claude-me to exclusions
+- `progress.md` — updated session log
+- `session-handoff.md` — updated handoff with current commit
 
 ## Notes for Next Session
 
 - Read the experiment plan report for detailed specs on any feature
-- The `experiment_plan_roles_and_expertise.md` file defines who should work on what
 - Start with feat-001 (environment check) before any modeling work
