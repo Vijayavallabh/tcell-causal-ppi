@@ -1,0 +1,108 @@
+{
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "Environment & Data Download",
+      "description": "Verify uv environment installs, data download script works, and basic AnnData reads succeed on the DE stats file",
+      "dependencies": [],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-002",
+      "name": "Data Inspection & ID Mapping",
+      "description": "Load DE stats and pseudobulk AnnData/MuData objects, extract obs/var tables, build Ensembl-HGNC-UniProt-Entrez identifier mapping with ambiguity reporting",
+      "dependencies": ["feat-001"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-003",
+      "name": "Leakage-Safe Train/Val/Test Splits",
+      "description": "Construct splits that block gene families, protein complexes, and close graph neighborhoods from leaking between train and test; hash and freeze split files",
+      "dependencies": ["feat-002"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-004",
+      "name": "PPI Graph Construction",
+      "description": "Download and harmonize typed protein interaction edges from BioPlex, HuRI, BioGRID, STRING, and CORUM with full provenance; build merged heterogeneous graph table",
+      "dependencies": ["feat-002"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-005",
+      "name": "Latent Program Extraction",
+      "description": "Fit fold-local program bases (sparse PCA, NMF, ICA, shallow VAE) at 64/128/256/512 dims on training data only; compare on reconstruction, sparsity, and stability",
+      "dependencies": ["feat-003"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-006",
+      "name": "Simple Baselines",
+      "description": "Implement no-effect, condition-mean, ridge, elastic-net, nearest-neighbor, low-rank, and CatBoost baselines with common output schema",
+      "dependencies": ["feat-003"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-007",
+      "name": "Graph Baselines",
+      "description": "Implement network propagation, untyped GNN, and typed static graph baselines using the PPI graph from feat-004",
+      "dependencies": ["feat-004", "feat-006"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-008",
+      "name": "EG-IPG Model Implementation",
+      "description": "Implement the full EG-IPG architecture: perturbation encoder, typed condition-gated graph encoder, program decoder with residual pathway, and sparse predictive-rationale head",
+      "dependencies": ["feat-005", "feat-007"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-009",
+      "name": "Evaluation Metrics",
+      "description": "Implement MAE, RMSE, Pearson/Spearman correlation, Systema perturbation-specific metrics, centroid accuracy, top-k recall, and signed-DE F1 with two independent implementations that agree on a fixture",
+      "dependencies": ["feat-006"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-010",
+      "name": "External Comparators",
+      "description": "Adapt Stable-Shift and TxPert-public to the same data format, splits, and output schema; document compatibility and license status",
+      "dependencies": ["feat-006", "feat-004"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-011",
+      "name": "Model Screening & Ablations",
+      "description": "Run registered screening across the nested family: expression-only, typed static graph, condition-gated typed graph, and full EG-IPG; compare on development metrics",
+      "dependencies": ["feat-008", "feat-009"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-012",
+      "name": "Predictive-Rationale Audit",
+      "description": "Test necessity, sufficiency, minimality, and stability of returned subgraphs against matched random controls; run structural-OOD diagnostics",
+      "dependencies": ["feat-011"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-013",
+      "name": "Reproducibility Verification",
+      "description": "Clean-checkout reproduction of preprocessing hashes, final model, and strongest baselines; report REPRODUCIBLE / PARTIALLY / NOT REPRODUCIBLE verdict",
+      "dependencies": ["feat-011"],
+      "status": "not-started",
+      "evidence": ""
+    }
+  ]
+}

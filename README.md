@@ -1,26 +1,21 @@
 # tcell-causal-ppi
 
-**Perturbation-Informed Causal Protein–Program Graphs for T Cell Interventions** — AAAI submission (AI track).
+**Perturbation-Informed Protein–Program Graphs for T Cell Interventions** — AAAI submission (AI track).
 
-> We introduce a causal heterogeneous graph learner for interventional prediction in biological
-> systems. Given a perturbation target, cell context, and typed protein-network neighborhood, it
-> predicts counterfactual transcriptional programs, estimates calibrated uncertainty, and returns a
-> minimal causal subgraph whose removal measurably degrades the prediction.
+> We introduce an intervention-informed heterogeneous graph predictor for biological systems. Given a
+> perturbation target, cell context, and typed protein-network neighborhood, it predicts transcriptional
+> response programs, estimates calibrated uncertainty, and returns a minimal predictive subgraph whose
+> removal measurably degrades the prediction.
 
 
-## Status
-
-Planning + reproducibility scaffold. At this stage the repo contains the environment definition and a
-staged data download; model code is not committed yet. See the [Roadmap](#roadmap) for what lands next.
 
 ## Idea
 
-Learn a **context-conditioned causal graph over proteins and transcriptional programs**, where:
+Learn a **context-conditioned, intervention-informed graph over proteins and transcriptional programs**, where:
 
 - genetic perturbations provide **interventional supervision**,
-- physical protein networks provide a **mechanistic prior**, and
-- the model returns **calibrated counterfactual predictions** plus a **faithful protein/program
-  subgraph explanation**.
+- physical protein networks provide **uncertain structured priors**, and
+- the model returns **calibrated predictions** plus a **faithful protein/program predictive rationale**.
 
 The method sits between two literatures it does not duplicate: perturbation-response models predict
 expression but rarely return a faithful typed mechanism, and protein-interaction models predict edges
@@ -33,32 +28,32 @@ calibration, and explanation faithfulness than expression-only and static-networ
 **not** claim to have discovered the T cell regulatory network, that a learned edge is a true direct
 biochemical interaction, or that deep learning beats all baselines.
 
-## Method — EG-CProG (Evidence-Gated Causal Protein–Program Network)
+## Method — EG-IPG (Evidence-Gated Intervention-Informed Protein–Program Graph)
 
 Formal task, per perturbation example:
 
 ```
-f_theta( do(g), c, d, q, N_k(g), x0 ) -> ( Y_hat, U_hat, S_hat )
+f_theta( do(g), c, d, q_pre, N_k(g), x0 ) -> ( Y_hat, U_hat, S_hat )
 ```
 
 | Symbol | Meaning |
 |---|---|
-| `do(g)` | intervention on target gene/protein `g`, modeled as an intervention token (not just a gene label) |
+| `do(g)` | experimentally assigned perturbation on target gene/protein `g` (denotes the intervention, not do-calculus identification of internal edges) |
 | `c`     | culture condition ∈ {Rest, Stim8hr, Stim48hr} |
 | `d`     | donor / donor-pair context |
-| `q`     | perturbation-quality covariates (on-target strength, off-target flags, guide/donor reproducibility, …) |
+| `q_pre` | prediction-time covariates known before observing the response (guide sequence, design features, control-derived baseline expression) |
 | `N_k(g)`| typed protein-network neighborhood of `g` |
 | `x0`    | optional baseline expression / pseudobulk context |
-| `Y_hat` | predicted counterfactual response (program-level and/or gene-level DE) |
+| `Y_hat` | predicted response (program-level and/or gene-level DE) |
 | `U_hat` | calibrated uncertainty |
-| `S_hat` | sparse explanatory subgraph linking target protein to affected programs |
+| `S_hat` | sparse predictive-rationale subgraph linking target protein to affected programs |
 
 Four modules:
 
-1. **Perturbation & context encoder** — target embedding + condition + donor + quality → intervention vector.
+1. **Perturbation & context encoder** — target embedding + condition + donor + prediction-time quality → intervention vector.
 2. **Typed graph encoder** — relational GNN / graph transformer with per-relation, condition-gated edges over sampled local neighborhoods.
 3. **Program decoder** — predicts program deltas (+ optional gene-level deltas) with an expression-only residual pathway and a learned mixture gate.
-4. **Sparse explanation head** — returns a subgraph trained for sufficiency/necessity, not post-hoc attention.
+4. **Sparse predictive-rationale head** — returns a subgraph trained for sufficiency/necessity, not post-hoc attention.
 
 ## Data
 
@@ -105,6 +100,19 @@ IDs harmonized across Ensembl ↔ HGNC ↔ UniProt ↔ Entrez, with per-edge pro
 - [uv](https://docs.astral.sh/uv/)
 
 ## Setup
+
+Install the [Harness Engineering skill](https://walkinglabs.github.io/learn-harness-engineering/en/skills/) — it provides the `harness-creator` skill used to generate this repo's agent scaffolding (AGENTS.md, feature_list.json, progress.md, init.sh, session-handoff.md):
+
+```bash
+npx skills add walkinglabs/learn-harness-engineering --skill harness-creator
+```
+
+The skill ships templates and Node.js scripts for creating, auditing, and benchmarking agent harnesses. After installing, you can regenerate or validate the harness with:
+
+```bash
+node skills/harness-creator/scripts/create-harness.mjs --target .
+node skills/harness-creator/scripts/validate-harness.mjs --target .
+```
 
 Install uv if needed:
 
@@ -196,25 +204,6 @@ logs/             # download / training logs
 
 Loading rules: use backed/lazy AnnData reads; never densify full DE layers outside a gene/program
 subset; treat `adj_p_value`, `lfcSE`, and guide/donor reproducibility as first-class modeling columns.
-
-## Roadmap
-
-Staged to de-risk compute and prove the graph method before any raw-cell work (full detail in the
-[report](perturbation_informed_causal_protein_program_graphs_report.md)):
-
-- **Tier 0 — Data audit & linear baselines** (CPU): manifest, ID map, split suite, program basis,
-  no-effect / condition-mean / ridge / elastic-net / nearest-neighbor / network-propagation baselines.
-- **Tier 1 — Program-level graph model** (1 GPU, 24–48 GB): train EG-CProG on latent programs; ablate
-  no-graph / untyped / static-edge / condition-gated variants on held-out gene & condition splits.
-- **Tier 2 — Gene-level decoder & optional distributional add-on** (multi-GPU): decode programs to the
-  10,282 measured genes; optional cell-level HVG demo.
-- **Tier 3 — Full raw-cell model** — explicitly **not** a first-paper dependency; use scLDM.CD4 as the
-  cell-level generative baseline.
-
-Evaluation is split-family–driven (held-out genes, held-out complexes/pathways, condition transfer,
-donor transfer, low-network-degree, off-target/low-quality stress) and scored on prediction,
-calibration, mechanism recovery, and explanation faithfulness — with simple linear baselines in every
-headline table.
 
 ## Responsible use
 
