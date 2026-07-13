@@ -14,7 +14,7 @@
 - [x] requirements.txt: renamed EG-CProG to EG-IPG in comments
 - [x] Harness scaffold created and validated (100/100 on all five subsystems)
 - [x] Harness Engineering skill install instructions added to README
-- [x] .gitignore updated to exclude .claude-private and claude-me
+- [x] .gitignore updated to exclude .claude-private, .claude, .agents, skills-lock.json, and claude-me
 - [x] Harness re-validated (100/100) and init.sh passes
 
 ### What's In Progress
@@ -43,7 +43,7 @@
 
 ## Files Modified This Session
 
-- `.gitignore` — added .claude-private and claude-me to exclusions
+- `.gitignore` — added .claude, .agents, skills-lock.json to exclusions
 - `progress.md` — updated session log
 - `session-handoff.md` — updated handoff with current commit
 

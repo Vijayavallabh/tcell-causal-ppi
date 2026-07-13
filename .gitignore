@@ -8,6 +8,9 @@ build/
 dist/
 *.so
 .claude-private
+.claude
+.agents
+skills-lock.json
 claude-me
 perturbation_informed_causal_protein_program_graphs_report.md
 # --- Environments ---

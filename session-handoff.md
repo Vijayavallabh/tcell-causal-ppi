@@ -8,7 +8,7 @@
 
 ## Completed This Session
 
-- [x] Updated .gitignore to exclude .claude-private and claude-me
+- [x] Updated .gitignore to exclude .claude-private, .claude, .agents, skills-lock.json, and claude-me
 - [x] Re-validated harness (100/100 across all five subsystems)
 - [x] Confirmed init.sh passes cleanly (Python 3.12.13, compileall pass, no tests yet)
 
@@ -22,7 +22,7 @@
 
 ## Files Changed
 
-- `.gitignore` — added .claude-private and claude-me exclusions
+- `.gitignore` — added .claude, .agents, skills-lock.json exclusions
 - `progress.md` — updated session log
 - `session-handoff.md` — updated handoff
 
