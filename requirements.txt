@@ -1,6 +1,6 @@
 # Python 3.12 — see README for the uv setup.
 # Grouped by role. The core stack (Tier 0: data audit + linear baselines) runs CPU-only;
-# torch / torch-geometric are needed for the Tier 1 graph model (EG-CProG).
+# torch / torch-geometric are needed for the Tier 1 graph model (EG-IPG).
 
 # --- Single-cell data I/O ---
 scanpy
@@ -16,7 +16,7 @@ polars          # fast columnar ops on the derived mart
 pyarrow         # Parquet shards (perturbation_condition, program_response, protein_edges, ...)
 scikit-learn    # linear baselines + program bases (PCA / NMF / ICA, ridge, elastic-net, GBM)
 
-# --- Graphs & modeling (Tier 1: EG-CProG) ---
+# --- Graphs & modeling (Tier 1: EG-IPG) ---
 torch
 torch-geometric # or DGL; compiled extras (torch-scatter/-sparse) via PyG's wheel index if needed
 networkx        # network-propagation baselines and graph diagnostics
