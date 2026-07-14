@@ -13,8 +13,8 @@
       "name": "Data Inspection & ID Mapping",
       "description": "Load DE stats and pseudobulk AnnData/MuData objects, extract obs/var tables, build Ensembl-HGNC-UniProt-Entrez identifier mapping with ambiguity reporting",
       "dependencies": ["feat-001"],
-      "status": "in-progress",
-      "evidence": "Inspection DONE: examples/ has one self-checking inspector per artifact (DE, pseudobulk, guide/donor MuData, core + derived suppl tables, jsonld) plus dataset_overview.py. Verified facts: DE .X empty, 6 dense float64 layers (33983x10282); pseudobulk CSR 278684x18129 is the only NTC-control source (DE has none); donor key = physical CE codes (D#<->CE consistent); 4.9% guide designed!=validated target; q_post leakage fields identified. STILL TODO: Ensembl-HGNC-UniProt-Entrez mapping table with one-to-many/unmapped/deprecated ambiguity report."
+      "status": "done",
+      "evidence": "Inspection DONE (examples/ inspectors). ID mapping DONE: src/tcell_pipeline/id_mapping.py extracts unique Ensembl from backed DE .obs[target_contrast] + .var[gene_ids] (never loads layers), maps Ensembl->HGNC offline via obs/var crossref and Ensembl->UniProt/Entrez via mygene.info when online. Ran on real DE file: 12311 unique Ensembl (11526 targets, 10282 measured, 9497 both), all HGNC resolved offline, UniProt/Entrez tagged requires_online_lookup pending an online pass; wrote data/intermediate/id_mapping.parquet + ambiguity_report.txt. Delivered as part of the Module 0 pipeline (src/tcell_pipeline/, run_module0.py orchestrator). init.sh green (compileall + 12 pytest)."
     },
     {
       "id": "feat-003",
@@ -29,8 +29,8 @@
       "name": "PPI Graph Construction",
       "description": "Download and harmonize typed protein interaction edges from BioPlex, HuRI, BioGRID, STRING, and CORUM with full provenance; build merged heterogeneous graph table",
       "dependencies": ["feat-002"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "in-progress",
+      "evidence": "src/tcell_pipeline/ppi_graph.py implements the typed-edge harmonizer (undirected canonicalization, uppercase, per-(pair,source) dedup, n_supporting_sources, is_physical/is_functional/is_complex/is_direct_binary flags, score clipped to [0,1]) + best-effort downloaders for all 5 sources (log-and-continue on failure, cache in data/raw/ppi/<source>/). complex_membership.py parses CORUM into bipartite membership. Harmonizer unit-tested on synthetic 2-source fixtures (test_ppi_graph.py). REMAINING: fetch real source files and run against them (network + large downloads)."
     },
     {
       "id": "feat-005",

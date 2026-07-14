@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-14 (report literature-freshness revision)
-**Active Feature:** feat-002 - Data Inspection & ID Mapping (inspection done; ID mapping remaining)
+**Last Updated:** 2026-07-14 (Module 0 data-pipeline implemented)
+**Active Feature:** feat-004 - PPI Graph Construction (harmonizer + downloaders built, real fetch remaining)
 
 ## Status
 
@@ -28,17 +28,23 @@
   two-sided deep-vs-simple debate; +10 references, 3 new limitations, 2 new §F consequences.
   (Report is gitignored/on-disk; this doc sync committed as 67124cd.)
 
+- [x] **Module 0 data pipeline** implemented under `src/tcell_pipeline/` (9 modules, each with `run()`,
+  orchestrated by `run_module0.py`): config, id_mapping, de_extraction, perturbation_table, ppi_graph,
+  complex_membership, control_profiles, feature_availability. 12 pytest tests in `src/tests/` (synthetic
+  fixtures on the pure builders); `init.sh` green (compileall + pytest). `id_mapping.run()` verified on the
+  real DE file (12311 unique Ensembl); `control_profiles` demo self-check passes.
+
 ### What's In Progress
 
-- [ ] feat-002: Data Inspection & ID Mapping
-  - Inspection portion: DONE (see `examples/`)
-  - Remaining: build Ensembl-HGNC-UniProt-Entrez identifier mapping with ambiguity report
-    (one-to-many, unmapped, deprecated IDs)
+- [ ] feat-004: PPI Graph Construction — harmonizer + typed-edge schema + 5-source downloaders + CORUM
+  complex membership implemented and unit-tested; real source downloads not yet fetched (network + large files)
 
 ### What's Next
 
-1. Build the ID-mapping table for perturbed targets (feat-002 remainder)
-2. Then feat-003 (leakage-safe splits) and feat-004 (PPI graph construction)
+1. Run the heavy Module 0 steps on real data: `de_extraction` (16 GB DE -> layer NPZ/NPY + de_obs/de_var),
+   then `perturbation_table`, `ppi_graph` (fetch the 5 sources), `control_profiles` (44 GB pseudobulk), `feature_availability`
+2. An online mygene.info pass to fill UniProt/Entrez in `id_mapping.parquet` (currently requires_online_lookup)
+3. Then feat-003 (leakage-safe splits)
 
 ## Blockers / Risks
 
@@ -57,11 +63,17 @@
 
 ## Files Modified This Session
 
-- `perturbation_informed_causal_protein_program_graphs_report.md` — 2026-07-14 deep-research literature-freshness revision (inline edits throughout)
-- `README.md` — near-null-signal feasibility note + Stable-Shift/TxPert comparator-availability caveat in Baselines
-- `progress.md`, `session-handoff.md` — state sync for the report revision
+- `src/tcell_pipeline/` — NEW Module 0 data pipeline (config, id_mapping, de_extraction, perturbation_table,
+  ppi_graph, complex_membership, control_profiles, feature_availability, run_module0)
+- `src/tests/` — NEW 5 test files (12 tests, synthetic fixtures)
+- `conftest.py` — NEW (puts `src/` on sys.path for pytest)
+- `requirements.txt` — added `pytest` (init.sh runs it)
+- `feature_list.json` — feat-002 -> done (ID mapping), feat-004 -> in-progress (PPI harmonizer built)
+- `progress.md`, `session-handoff.md` — state sync
 
-(The prior session's data-inspection changes — `examples/` and the README data section — are already committed in 49663b1 / f2794dd. `feature_list.json` unchanged: the report revision alters no feature's status.)
+Derived artifacts written to `data/intermediate/` (gitignored) by the id_mapping smoke run: `id_mapping.parquet`,
+`ambiguity_report.txt`. The heavy pipeline outputs (DE layers, perturbation_condition, PPI edges, control profiles)
+are not yet generated.
 
 ## Notes for Next Session
 

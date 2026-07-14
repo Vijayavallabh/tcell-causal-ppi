@@ -29,6 +29,9 @@ seaborn
 jupyter
 ipykernel
 
+# --- Tests (init.sh runs pytest) ---
+pytest
+
 # --- Optional / later phases (uncomment as needed) ---
 # transformers  # protein language-model (PLM) embeddings for target/context features
 # gseapy        # pathway / program enrichment recovery (mechanism metrics)
