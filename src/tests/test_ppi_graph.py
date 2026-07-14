@@ -25,6 +25,13 @@ def test_score_range_and_binary_flags():
         assert edges[f].isin([0, 1]).all()
 
 
+def test_missing_score_floors_to_zero_not_max():
+    scored = _frame([("AAA", "BBB")], "string", is_functional=1, score=float("nan"))
+    edges = ppi_graph.harmonize_edges([scored, BIOPLEX])
+    pair = edges[(edges["source_gene"] == "AAA") & (edges["source"] == "string")]
+    assert (pair["score"] == 0.0).all()  # unknown confidence must not become 1.0
+
+
 def test_at_least_two_sources_and_dedup():
     edges = ppi_graph.harmonize_edges([STRING, BIOPLEX])
     assert edges["source"].nunique() >= 2

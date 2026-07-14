@@ -23,9 +23,9 @@ from tcell_pipeline import (  # noqa: E402
 STEPS = [
     ("id_mapping", id_mapping.run),
     ("de_extraction", de_extraction.run),
-    ("perturbation_table", perturbation_table.run),
-    ("ppi_graph", ppi_graph.run),
+    ("ppi_graph", ppi_graph.run),  # before perturbation_table so ppi_degree_* can be populated
     ("complex_membership", complex_membership.run),
+    ("perturbation_table", perturbation_table.run),
     ("control_profiles", control_profiles.run),
     ("feature_availability", feature_availability.run),
 ]

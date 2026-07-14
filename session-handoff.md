@@ -15,7 +15,11 @@
   id-map columns/ambiguity, DE clip+sparse/dense round-trip, contiguous row_index + unmapped-kept,
   PPI score∈[0,1]/binary flags/≥2 sources/dedup, q_pre⊥q_post disjointness.
 - [x] `conftest.py` puts `src/` on the path; added `pytest` to `requirements.txt`.
-- [x] Verified: `./init.sh` green (compileall + 12 pytest); `id_mapping.run()` on the real 16.8 GB DE file
+- [x] Applied all 15 xhigh code-review findings (correctness + cleanup): NaN-safe NTC masking, donor-PCA
+  full-rank single-pass fix, `-log10(p)` storage, BioGRID ZIP + HuRI coverage, PPI score floor, real
+  `ppi_degree_*` from the graph (reordered ppi_graph before perturbation_table), DE schema asserts,
+  NaN-safe id_mapping guard, metadata/donor guards. Added `test_control_profiles.py`.
+- [x] Verified: `./init.sh` green (compileall + 18 pytest); `id_mapping.run()` on the real 16.8 GB DE file
   produced a 12311-row mapping + ambiguity report; `control_profiles` demo self-check passes.
 
 Prior sessions (49663b1 / f2794dd / 67124cd): ~100 GB aggregate download, `examples/` inspectors,
@@ -30,7 +34,7 @@ README download steps, and the 2026-07-14 report literature-freshness revision (
 | Env imports | anndata/mudata/h5py | Pass | 0.13.1 / 0.3.10 / 3.16.0 |
 | Inspectors | `python examples/inspect_*.py` | Pass | self-checks (asserts) green on real data |
 | Inventory | `python examples/dataset_overview.py` | Pass | aggregate complete; 2 suppl tables unpublished |
-| Module 0 tests | `./init.sh` (compileall + pytest) | Pass | 12 passed; compileall clean |
+| Module 0 tests | `./init.sh` (compileall + pytest) | Pass | 18 passed; compileall clean (post code-review fixes) |
 | id_mapping real run | `python -m tcell_pipeline.id_mapping` | Pass | 12311 Ensembl (11526 targets / 10282 measured / 9497 both); all HGNC offline-resolved |
 | control_profiles demo | `python -m tcell_pipeline.control_profiles` | Pass | NTC \bNTC\b spares KNTC1; PCA embed shape (3, 32) |
 

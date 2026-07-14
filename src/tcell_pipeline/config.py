@@ -43,8 +43,12 @@ DE_N_VARS: int = 10282
 DE_LAYERS: tuple[str, ...] = ("log_fc", "zscore", "p_value", "adj_p_value", "baseMean", "lfcSE")
 # zscore / log_fc are clipped to this range then stored sparse; the rest stay dense.
 CLIPPED_SPARSE_LAYERS: tuple[str, ...] = ("zscore", "log_fc")
-DENSE_LAYERS: tuple[str, ...] = ("p_value", "adj_p_value", "baseMean", "lfcSE")
+# p-values are stored as -log10(p) in float32: raw float32 underflows to 0.0 below ~1e-45,
+# zeroing exactly the strongest hits. baseMean/lfcSE keep their raw float32 values.
+NEGLOG10_LAYERS: tuple[str, ...] = ("p_value", "adj_p_value")
+RAW_DENSE_LAYERS: tuple[str, ...] = ("baseMean", "lfcSE")
 CLIP_LIMIT: float = 10.0
+P_VALUE_FLOOR: float = 1e-300
 DE_CHUNK_ROWS: int = 1000
 
 # Pseudobulk geometry (examples/inspect_pseudobulk.py) — CSR, the only NTC-control source.

@@ -30,9 +30,16 @@
 
 - [x] **Module 0 data pipeline** implemented under `src/tcell_pipeline/` (9 modules, each with `run()`,
   orchestrated by `run_module0.py`): config, id_mapping, de_extraction, perturbation_table, ppi_graph,
-  complex_membership, control_profiles, feature_availability. 12 pytest tests in `src/tests/` (synthetic
+  complex_membership, control_profiles, feature_availability. 18 pytest tests in `src/tests/` (synthetic
   fixtures on the pure builders); `init.sh` green (compileall + pytest). `id_mapping.run()` verified on the
   real DE file (12311 unique Ensembl); `control_profiles` demo self-check passes.
+- [x] **Applied xhigh code-review fixes** (15 findings): pandas-3 NaN crash in NTC masking; donor-PCA
+  zero-padding (rank capped by group count → fixed to gene count, single streaming pass, vectorized means);
+  p-value float32 underflow → stored as `-log10(p)`; BioGRID multi-member-ZIP handling; HuRI genome-wide
+  coverage (mygene extension + drop logging); missing PPI score → floor not max; **real `ppi_degree_*` now
+  computed from the graph** (ppi_graph reordered before perturbation_table); DE geometry/q_post schema
+  asserts; NaN-safe id_mapping symbol guard; metadata-bucket visibility warning; donor-key CE-code guard;
+  reused `save_npy_atomic`. Added `test_control_profiles.py` + PPI-degree / neglog10 / NaN-score tests.
 
 ### What's In Progress
 
@@ -65,7 +72,7 @@
 
 - `src/tcell_pipeline/` — NEW Module 0 data pipeline (config, id_mapping, de_extraction, perturbation_table,
   ppi_graph, complex_membership, control_profiles, feature_availability, run_module0)
-- `src/tests/` — NEW 5 test files (12 tests, synthetic fixtures)
+- `src/tests/` — 6 test files (18 tests, synthetic fixtures; added `test_control_profiles.py`)
 - `conftest.py` — NEW (puts `src/` on sys.path for pytest)
 - `requirements.txt` — added `pytest` (init.sh runs it)
 - `feature_list.json` — feat-002 -> done (ID mapping), feat-004 -> in-progress (PPI harmonizer built)

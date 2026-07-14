@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 
 from tcell_pipeline import perturbation_table as pt
@@ -35,5 +34,22 @@ def test_unmapped_rows_kept_and_defaults():
     assert len(t) == len(DE_OBS)  # nothing dropped
     unmapped = t[t["ensembl_id"] == "ENSG3"]
     assert len(unmapped) == 1 and unmapped["uniprot_id"].isna().all()
-    assert (t[pt.PPI_DEGREE_COLS] == 0).all().all()
+    assert (t[pt.PPI_DEGREE_COLS] == 0).all().all()  # no edges -> degrees 0
     assert t["control_baseline_expr"].isna().all()
+
+
+EDGES = pd.DataFrame({
+    "source_gene": ["A1BG", "A1BG", "MYC"],
+    "target_gene": ["MYC", "TP53", "TP53"],
+    "is_physical": [1, 1, 0],
+    "is_functional": [0, 1, 1],
+    "is_complex": [0, 0, 0],
+})
+
+
+def test_ppi_degrees_computed_from_edges():
+    t = pt.build_perturbation_table(DE_OBS, ID_MAP, EDGES)
+    phys = dict(zip(t["target_contrast_gene_name"], t["ppi_degree_physical"]))
+    assert phys["A1BG"] == 2 and phys["MYC"] == 1 and phys["TP53"] == 1  # physical: A1BG-MYC, A1BG-TP53
+    func = dict(zip(t["target_contrast_gene_name"], t["ppi_degree_functional"]))
+    assert func["A1BG"] == 1 and func["MYC"] == 1 and func["TP53"] == 2  # functional: A1BG-TP53, MYC-TP53

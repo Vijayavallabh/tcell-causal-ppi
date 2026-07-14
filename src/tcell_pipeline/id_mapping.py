@@ -17,6 +17,11 @@ from tcell_pipeline import config
 LookupFn = Callable[[list[str]], dict[str, dict[str, object]]]
 
 
+def _missing(value: object) -> bool:
+    """True for None / NaN / empty-ish symbols. astype(str) leaves NaN as float on pandas 3."""
+    return pd.isna(value) or str(value) in ("", "nan", "None", "<NA>")
+
+
 def read_ensembl_symbol_crossref() -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (targets, measured) frames of [ensembl_id, hgnc_symbol] from backed DE reads."""
     a = ad.read_h5ad(config.DE_STATS_PATH, backed="r")
@@ -97,12 +102,12 @@ def build_id_mapping(
             one_to_many.append((eid, uniprots))
         else:
             status = "mapped"
-        if hgnc in (None, "", "nan"):
+        if _missing(hgnc):
             unmapped_symbol.append(eid)
 
         rows.append({
             "ensembl_id": eid,
-            "hgnc_symbol": None if hgnc in (None, "", "nan") else hgnc,
+            "hgnc_symbol": None if _missing(hgnc) else hgnc,
             "uniprot_id": uniprot,
             "entrez_id": entrez,
             "is_target": eid in target_ids,

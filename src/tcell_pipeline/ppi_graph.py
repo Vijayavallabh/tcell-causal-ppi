@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from tcell_pipeline import config
@@ -52,7 +51,9 @@ def harmonize_edges(frames: list[pd.DataFrame]) -> pd.DataFrame:
     hi = df["target_gene"].where(~swap, df["source_gene"])
     df["source_gene"], df["target_gene"] = lo, hi
 
-    df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(1.0).clip(0.0, 1.0)
+    # Missing/unparseable confidence -> 0.0 (min), never 1.0: binary sources already set 1.0
+    # in their parser, so only genuinely-unknown scored values land at the floor.
+    df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
     for c in BIN_FLAGS:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int).clip(0, 1)
 
@@ -108,8 +109,27 @@ def _load_bioplex() -> pd.DataFrame | None:
         return None
     df = pd.read_csv(p, sep="\t")
     out = df[["SymbolA", "SymbolB"]].copy()
-    out["score"] = pd.to_numeric(df.get("pInt"), errors="coerce")
+    out["score"] = pd.to_numeric(df.get("pInt"), errors="coerce").fillna(0.0)
     return _edges(out, "bioplex", "AP-MS", phys=1)
+
+
+def _extend_ens2sym_online(ensembl_ids: list[str], ens2sym: dict[str, str]) -> dict[str, str]:
+    """Best-effort: fill Ensembl IDs missing from the DE-subset map via mygene (no-op offline)."""
+    missing = [e for e in ensembl_ids if e not in ens2sym]
+    if not missing:
+        return ens2sym
+    try:
+        import mygene
+
+        hits = mygene.MyGeneInfo().querymany(missing, scopes="ensembl.gene", fields="symbol", species="human")
+        merged = dict(ens2sym)
+        for h in hits:
+            if not h.get("notfound") and h.get("symbol"):
+                merged[h["query"]] = h["symbol"]
+        return merged
+    except Exception as exc:
+        print(f"[ppi_graph]   huri: mygene extension unavailable ({exc}); mapping DE-subset only")
+        return ens2sym
 
 
 def _load_huri(ens2sym: dict[str, str] | None) -> pd.DataFrame | None:
@@ -120,17 +140,31 @@ def _load_huri(ens2sym: dict[str, str] | None) -> pd.DataFrame | None:
         return None
     df = pd.read_csv(p, sep="\t", header=None).iloc[:, :2]
     df.columns = ["a", "b"]
+    ensembl_ids = pd.unique(pd.concat([df["a"], df["b"]]).astype(str)).tolist()
+    ens2sym = _extend_ens2sym_online(ensembl_ids, ens2sym)
     df["a"] = df["a"].map(ens2sym)
     df["b"] = df["b"].map(ens2sym)
-    df = df.dropna()
-    return _edges(df, "huri", "Y2H", phys=1, direct=1)
+    kept = df.dropna()
+    dropped = len(df) - len(kept)
+    if dropped:
+        print(f"[ppi_graph]   huri: dropped {dropped}/{len(df)} edges with an unmapped Ensembl endpoint")
+    return _edges(kept, "huri", "Y2H", phys=1, direct=1)
 
 
 def _load_biogrid() -> pd.DataFrame | None:
+    import zipfile
+
     p = _cache("biogrid", SOURCE_URLS["biogrid"])
     if p is None:
         return None
-    df = pd.read_csv(p, sep="\t", compression="infer", low_memory=False)
+    if zipfile.is_zipfile(p):
+        with zipfile.ZipFile(p) as z:
+            members = z.namelist()
+            member = next((m for m in members if "homo_sapiens" in m.lower()), members[0])
+            with z.open(member) as fh:
+                df = pd.read_csv(fh, sep="\t", low_memory=False)
+    else:
+        df = pd.read_csv(p, sep="\t", compression="infer", low_memory=False)
     phys = df[df["Experimental System Type"].str.lower() == "physical"]
     out = phys[["Official Symbol Interactor A", "Official Symbol Interactor B"]].copy()
     is_binary = (phys["Experimental System"].str.contains("hybrid", case=False, na=False)).astype(int)
