@@ -13,6 +13,7 @@ dist/
 skills-lock.json
 claude-me
 perturbation_informed_causal_protein_program_graphs_report.md
+EG_IPG_architecture_walkthrough.md
 # --- Environments ---
 .venv/
 venv/
