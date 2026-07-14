@@ -25,7 +25,8 @@
   4-graph Exphormer architecture, +8-25% self-reported), added concrete Stable-Shift numbers +
   gene-space collapse + code caveat, added PerturbGraph, the PertAdapt "effectively-linear" finding,
   the CD4 near-null-signal regime, the Wasserstein/Energy-distance unreliability caveat, and the
-  two-sided deep-vs-simple debate; +10 references, 3 new limitations, 2 new §F consequences. Not committed.
+  two-sided deep-vs-simple debate; +10 references, 3 new limitations, 2 new §F consequences.
+  (Report is gitignored/on-disk; this doc sync committed as 67124cd.)
 
 ### What's In Progress
 

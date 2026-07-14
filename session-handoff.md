@@ -4,7 +4,7 @@
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: Data downloaded + inspected; feat-001 done, feat-002 inspection done (ID mapping remaining). Planning report refreshed via a 2026-07-14 deep-research literature-freshness pass (uncommitted).
-- Branch / commit: main / f2794dd (+ uncommitted report literature-freshness revision and doc sync)
+- Branch / commit: main / 67124cd (doc sync committed; the report revision lives on-disk and is gitignored)
 
 ## Completed This Session
 
@@ -15,7 +15,7 @@
   near-null-signal regime, Wasserstein/Energy-distance unreliability, and the two-sided deep-vs-simple
   debate; +10 references, 3 new limitations, 2 new §F consequences
 - [x] Synced `README.md` (near-null-signal note + comparator-availability caveat), `progress.md`, and this handoff
-- [ ] Not yet committed
+- [x] Committed the doc sync as 67124cd (the report itself is gitignored and stays on-disk)
 
 Prior session (committed as 49663b1 / f2794dd): downloaded the ~100 GB aggregate layer, added the `examples/`
 inspectors, extended README download steps, and marked feat-001 done / feat-002 in-progress.
