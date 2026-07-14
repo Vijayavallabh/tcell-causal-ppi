@@ -242,6 +242,24 @@ Key `.obs`: `donor_id`, `culture_condition`, `guide_id`, `perturbed_gene_name`, 
 - `GWCD4i.DE_stats.by_donors.h5mu` — donor-transfer robustness, evaluate graceful degradation when
   guide or donor evidence is weak.
 
+### Supplementary analysis tables
+
+`data/raw/suppl_tables/` holds 15 tables — 3 describe the screen (S3), 12 are derived analysis
+outputs from the GitHub repo. The derived tables are ready-made biological supervision:
+
+| Table(s) | Role in EG-IPG |
+|---|---|
+| `CD4T_aging_signature`, `Th2_Th1_polarization_signature`, `IL10IL21bulkRNAseq` | **Program anchors** (aging, Th1/Th2, cytokine) for program-level targets |
+| `*_regulator_coefficients`, `clustering_downstream_genes` (1.18M rows) | **Regulator→program** edge supervision; downstream genes carry sign coherence |
+| `clustering_results_and_annotations` (112 clusters ↔ CORUM/STRING/KEGG/Reactome), `cluster_autoimmune_enrichment` | **Complex/cluster priors** + biological-alignment / autoimmune-trait metrics |
+| `guide_kd_efficiency` | Per-guide KD vs NTC — a **`q_post`** control-weighting/QC source, never an H1 input |
+| `K562_comparison` | **Cross-cell-type** generalization reference (CD4 vs K562) |
+
+`QC_summaries_per_sample_lane.csv` and `Th1Th2_validation_summary.suppl_table.csv` are named in the
+data README but are not published on S3 or GitHub. Inspect what's present with
+`examples/inspect_suppl_tables.py` (core 3) and `examples/inspect_analysis_tables.py` (derived);
+`examples/dataset_overview.py` prints the full local-vs-expected inventory.
+
 ### Protein-network priors
 
 Built as **typed, confidence-aware** sources, not one undifferentiated edge list:
@@ -317,8 +335,9 @@ uv tool install awscli
 
 ### Download data (staged)
 
-**Processed layer (~100 GiB — recommended first).** Pulls DE, pseudobulk, guide/donor MuData,
-supplementary tables, and metadata, while excluding only the ~1,617 GiB raw cell-level files:
+**Processed layer (~100 GiB — recommended first).** Pulls the four aggregate HDF5 artifacts (DE,
+pseudobulk, guide/donor MuData), excluding only the ~1,617 GiB raw cell-level files. Supplementary
+tables and metadata are fetched in the next two steps.
 
 ```bash
 mkdir -p data/raw logs
@@ -360,6 +379,43 @@ done
 echo "[$(date -Is)] All downloads completed."
 ' > logs/marson_large_files.log 2>&1 < /dev/null &
 ```
+
+**Supplementary tables + metadata.** The S3 `suppl_tables/` prefix hosts only 3 of the tables described
+in the data README (`DE_stats`, `sample_metadata`, `sgrna_library_metadata`) plus the 12 Croissant
+`metadata/*.jsonld`. Sync those:
+
+```bash
+aws s3 sync s3://genome-scale-tcell-perturb-seq/marson2025_data/suppl_tables/ data/raw/suppl_tables/ --no-sign-request
+aws s3 sync s3://genome-scale-tcell-perturb-seq/marson2025_data/metadata/      data/raw/metadata/      --no-sign-request
+aws s3 cp   s3://genome-scale-tcell-perturb-seq/marson2025_data/data_sharing_readme.md data/raw/ --no-sign-request
+```
+
+The remaining supplementary tables (guide-KD efficiency, the aging / Th1-Th2 signatures, autoimmune
+enrichment, regulator coefficients, downstream-gene clustering, K562 comparison) are **not on S3** —
+they live in the GitHub analysis repo. This step downloads every table in `metadata/suppl_tables/` not
+already present locally:
+
+```bash
+mkdir -p data/raw/suppl_tables
+
+curl -s "https://api.github.com/repos/emdann/GWT_perturbseq_analysis_2025/contents/metadata/suppl_tables" \
+| python3 -c "import sys, json; [print(x['download_url']) for x in json.load(sys.stdin)]" \
+| while read -r url; do
+    name=$(basename "$url")
+    dest="data/raw/suppl_tables/$name"
+    if [ -f "$dest" ]; then
+      echo "[skip present] $name"
+    else
+      echo "[download] $name"
+      curl -sL --retry 5 --fail "$url" -o "$dest" || { echo "FAILED: $name"; rm -f "$dest"; }
+    fi
+  done
+```
+
+> Two tables named in the data README — `QC_summaries_per_sample_lane.csv` and
+> `Th1Th2_validation_summary.suppl_table.csv` — are not published on S3 or in the GitHub repo, so they
+> cannot be fetched automatically. Run `python examples/dataset_overview.py` to see the current
+> local-vs-expected inventory.
 
 **Raw cell-level files (~1,617 GiB — Phase 2, optional).** Fetch a single donor×condition object on
 demand, e.g.:
