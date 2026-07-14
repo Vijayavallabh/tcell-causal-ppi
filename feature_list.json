@@ -5,16 +5,16 @@
       "name": "Environment & Data Download",
       "description": "Verify uv environment installs, data download script works, and basic AnnData reads succeed on the DE stats file",
       "dependencies": [],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "Env imports OK (anndata 0.13.1, mudata 0.3.10, h5py 3.16.0). Aggregate layer downloaded and verified: data/raw ~101 GB — 4 HDF5 (DE 16.8 / pseudobulk 44.6 / by_guide 29.4 / by_donors 16.9 GB), 15 suppl tables, 12 Croissant jsonld. README download steps extended: S3 sync for on-S3 suppl+metadata, GitHub fetch for the 12 analysis tables not on S3. init.sh passes (compileall clean). Backed AnnData reads confirmed via examples/inspect_de_stats.py. Cell-level files intentionally excluded (storage-blocked)."
     },
     {
       "id": "feat-002",
       "name": "Data Inspection & ID Mapping",
       "description": "Load DE stats and pseudobulk AnnData/MuData objects, extract obs/var tables, build Ensembl-HGNC-UniProt-Entrez identifier mapping with ambiguity reporting",
       "dependencies": ["feat-001"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "in-progress",
+      "evidence": "Inspection DONE: examples/ has one self-checking inspector per artifact (DE, pseudobulk, guide/donor MuData, core + derived suppl tables, jsonld) plus dataset_overview.py. Verified facts: DE .X empty, 6 dense float64 layers (33983x10282); pseudobulk CSR 278684x18129 is the only NTC-control source (DE has none); donor key = physical CE codes (D#<->CE consistent); 4.9% guide designed!=validated target; q_post leakage fields identified. STILL TODO: Ensembl-HGNC-UniProt-Entrez mapping table with one-to-many/unmapped/deprecated ambiguity report."
     },
     {
       "id": "feat-003",
