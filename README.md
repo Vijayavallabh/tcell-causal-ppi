@@ -28,6 +28,13 @@ calibration, and explanation faithfulness than expression-only and static-networ
 **not** claim to have discovered the T cell regulatory network, that a learned edge is a true direct
 biochemical interaction, or that deep learning beats all baselines.
 
+> **Open feasibility risk (2026-07-14 literature refresh).** A July 2026 tabular benchmark that
+> includes this exact CD4+ screen reports it as a **near-null-signal regime** — models barely separate
+> from the mean baseline. Before H1 is frozen, the plan must confirm on development data that a
+> target-specific signal is detectable above the perturbed mean; if it is not, a rigorous **negative
+> benchmark** is an accepted outcome, not a delayed superiority claim. See the report's Risk Register
+> and Limitations for the full evidence.
+
 ## Method — EG-IPG (Evidence-Gated Intervention-Informed Protein–Program Graph)
 
 Formal task, per perturbation example:
@@ -126,6 +133,12 @@ TabPFN/TabICL (exact-CD4 pipeline), gene-wise majority, gene-embedding kNN, PPI 
 **Core confirmatory comparator set** (frozen at G2): Systema perturbed mean, ridge/low-rank (whichever
 wins development), strongest eligible exact-CD4 tabular model, expression-only MLP, typed static graph,
 Stable-Shift, TxPert-public (if compatibility gate passes).
+
+> **Comparator availability (2026-07-14 refresh).** Stable-Shift's first-party code was not confirmed
+> available — the `Sajib-006/PerturbGraph` repo hosts the related **PerturbGraph** method, not
+> Stable-Shift — so a row-compatible reimplementation may be required. TxPert-public reproduces only its
+> STRING/GO public subset, not the proprietary-graph paper-best configuration. Both must be named
+> exactly in any comparison (see feat-010).
 
 **Conditional field baselines** (included only if adapter/license/exposure validated before G2): GEARS,
 CPA, scGPT, scLDM.CD4, CRADLE-VAE, Departures, D-SPIN/RegFormer/GRNFormer.
