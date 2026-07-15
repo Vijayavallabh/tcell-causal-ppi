@@ -53,10 +53,10 @@ def test_reviewed_lookup_resolves_multi():
 
 def test_choose_uniprot_prefers_score_then_lexical():
     assert id_mapping.choose_uniprot([]) == (None, [], False)
-    # score wins over lexical order
+    # score-decisive: winner strictly higher -> confidently resolved, NOT ambiguous
     chosen, alts, amb = id_mapping.choose_uniprot(["Q9", "P1"], {"Q9": 5.0, "P1": 2.0})
-    assert chosen == "Q9" and alts == ["P1"] and amb is True
-    # tied score -> lexical; genuinely ambiguous (GNAS/CDKN2A shape)
+    assert chosen == "Q9" and alts == ["P1"] and amb is False
+    # tied score -> lexical pick; genuinely ambiguous (GNAS/CDKN2A shape)
     chosen, _, amb = id_mapping.choose_uniprot(["P63092", "O95467"], {"P63092": 5.0, "O95467": 5.0})
     assert chosen == "O95467" and amb is True
     # only one accession is the reviewed canonical -> not ambiguous (paralog-family shape)

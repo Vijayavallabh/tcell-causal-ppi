@@ -32,16 +32,20 @@ def choose_uniprot(
     reviewed human canonical of this gene's HGNC symbol (empty when offline/unresolved).
     Preference: reviewed-canonical > higher UniProt annotation score > lexical accession
     (reproducible tie-break). Returns (chosen, alternatives, ambiguous). ``ambiguous`` is
-    True only when >1 reviewed canonical genuinely survives (e.g. CDKN2A p16/p14ARF, GNAS),
-    so paralog families that collapse to one accession are NOT flagged.
+    True ONLY when the top candidate is not strictly better-scored than the runner-up —
+    i.e. equal-evidence reviewed entries, the genuine multi-product loci (CDKN2A p16/p14ARF,
+    GNAS). Paralog families (one reviewed canonical) and score-decisive picks (a fragment or
+    secondary entry loses on annotation score) are confidently resolved and NOT flagged.
     """
     if not uniprots:
         return None, [], False
     scores = reviewed_scores or {}
     pool = [u for u in uniprots if u in scores] or list(uniprots)
-    chosen = sorted(pool, key=lambda a: (-scores.get(a, 0.0), a))[0]
+    ordered = sorted(pool, key=lambda a: (-scores.get(a, 0.0), a))
+    chosen = ordered[0]
     alternatives = [u for u in uniprots if u != chosen]
-    return chosen, alternatives, len(pool) > 1
+    ambiguous = len(ordered) > 1 and scores.get(ordered[0], 0.0) == scores.get(ordered[1], 0.0)
+    return chosen, alternatives, ambiguous
 
 
 def _uniprot_reviewed(symbols: list[str]) -> dict[str, dict[str, float]]:
@@ -187,7 +191,7 @@ def build_id_mapping(
         f"  target & measured      : {len(target_ids & measured_ids)}",
         f"unmapped hgnc symbol     : {len(unmapped_symbol)}",
         f"multi-accession genes    : {len(one_to_many) + resolved_multi}",
-        f"  resolved (1 reviewed)  : {resolved_multi}",
+        f"  resolved (canonical)   : {resolved_multi}",
         f"  remain ambiguous       : {len(one_to_many)}",
         f"requires_online_lookup   : {len(needs_online)}",
         "",
