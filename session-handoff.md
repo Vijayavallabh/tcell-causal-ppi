@@ -6,11 +6,12 @@
 - Current status: **Module 0 done + Module 1 encoder (feat-014) done + real PLM/PINNACLE embeddings
   ingested on GPU (feat-015).** feat-001, feat-002, feat-004, feat-014, feat-015 done.
   Next: feat-003 (leakage-safe splits).
-- Branch / commit: main — this session's work sits on top of the prior session (ended at 31c507a):
-  feat-015 feature commit (a5bcf1d) + doc follow-ups (requirements/README, embedding_store docstring);
-  a docs-sync commit closes the session on top. Latest is always `git log -1` on main.
+- Branch / commit: main — on top of the prior session (ended at 31c507a), this session landed feat-015
+  (real ESM-2 + PINNACLE embeddings, feature commit a5bcf1d) plus a device-aware GPU-native encoder and
+  the `run_module1_smoke.py` full-mart real-data check, across follow-up commits (docs, encoder-GPU,
+  smoke). Latest is always `git log -1` on main.
 
-## Completed This Session (feat-015 — real PLM + PINNACLE embeddings, on GPU)
+## Completed This Session (feat-015 embeddings + GPU-native Module 1 encoder + real-data smoke)
 
 The feat-014 encoder left both target-embedding stores at zero-fallback (no parquet on disk). This
 session generated the real embeddings so the PerturbationEncoder runs on real target vectors:
@@ -33,6 +34,13 @@ session generated the real embeddings so the PerturbationEncoder runs on real ta
   swapped to `torch==2.13.0+cu126` (minor-version compat). requirements.txt documents the cu126 install.
 - [x] Embedding artifacts are gitignored under `data/intermediate/`; regenerate via
   `python -m tcell_pipeline.embeddings_{plm,pinnacle}`.
+- [x] **Module 1 encoder made device-aware (GPU-native)**: `ContextEncoder`/`PerturbationEncoder` forward
+  move constructed tensors to the module's device, so `PerturbationEncoder().to('cuda')` runs the whole
+  forward on GPU (TargetEncoder/QualityEncoder build CPU tensors that forward relocates). Tests default to
+  CPU (portable); `test_encoder_runs_on_gpu_when_available` runs only when CUDA is present. Suite now **38**.
+- [x] **`run_module1_smoke.py`** (NEW): full-mart real-data verification — drives all 33,983 rows through
+  the encoder on GPU (~2s), asserts every h_do finite, checks the leakage fence rejects the mart's real
+  q_post columns. Exits non-zero on any NaN/fence breach. The Module 1 analogue of `run_module0.py`.
 
 Prior session (feat-014): `src/tcell_pipeline/encoders/` package — five nn.Modules fused into `h_do` R^256,
 q_pre inputs only, no trainable gene-ID embedding, no free donor-ID embedding, leakage fence at the boundary,
