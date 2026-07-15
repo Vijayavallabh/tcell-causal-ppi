@@ -69,6 +69,10 @@ Before ending a session:
 
 Cross-check: whenever `feature_list.json` status changes, `progress.md` and `session-handoff.md`
 must change in the same commit. Structural validators pass on stale docs — content drift is on you.
+- In the handoff's commit pointer, name the work-commit **range or state**, not a single HEAD hash —
+  the docs-sync commit invalidates any exact hash you write (don't create a "fix commit hash" churn commit).
+- Per-feature `evidence` in `feature_list.json` is a point-in-time completion snapshot; do not retro-edit
+  its test counts when later, unrelated work changes the live total.
 
 ## Verification Commands
 

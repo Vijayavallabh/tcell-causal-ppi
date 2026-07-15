@@ -5,7 +5,8 @@
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: **Module 0 pipeline done + Module 1 Perturbation & Context Encoder done (feat-014).**
   feat-001, feat-002, feat-004, feat-014 done. Next: feat-003 (leakage-safe splits).
-- Branch / commit: main @ HEAD (this session's Module 1 commit)
+- Branch / commit: main — Module 1 (feat-014) + post-review leakage-fence hardening landed
+  (work commits 8030dc7..e2bdff3; the docs-sync commit sits on top)
 
 ## Completed This Session (Module 1 — Perturbation & Context Encoder, feat-014)
 
