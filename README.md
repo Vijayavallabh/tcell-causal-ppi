@@ -510,7 +510,7 @@ that raises if any selected row's gene is not train-role), fits the basis, and w
 `data/intermediate/{gene_program_loadings,program_response}.parquet`:
 
 ```bash
-# paper default: sparse PCA at K=128 (MiniBatchSparsePCA, ~15 min on the full 21k-row train set)
+# paper default: sparse PCA at K=128 (MiniBatchSparsePCA, ~5 min measured on the full 21k-row train set)
 PYTHONPATH=src python -m tcell_pipeline.programs.run_program_basis
 
 # fast alternatives for iteration: --method {svd,nmf,fastica}, --K {64,128,256,512}
@@ -519,6 +519,13 @@ PYTHONPATH=src python -m tcell_pipeline.programs.run_program_basis --method svd
 
 Methods compared (§Target representations): sparse PCA (default), NMF, ICA, SVD. The gene axis of `B`
 is the full `de_var` order, so it drops straight into the decoder's frozen loading buffer.
+
+As-built: the production `sparse_pca` basis has been fitted on the real train fold (289 s, K=128) →
+`B` (10,282×128) / `A` (21,262×128), all finite, fold-locality exact (saved response rows == the 21,262
+train rows), ~23% exact-zero loadings with no dead programs; centered reconstruction MAE 0.687 vs a
+0.817 predict-zero baseline (sparse coding trades reconstruction for sparsity vs SVD's ~0.61). The
+`data/intermediate/*` parquets are gitignored — regenerate with the command above. The 4-method × 4-K
+comparison study and the shallow-VAE basis (feat-005 done-criterion) are still future work.
 
 ### Verify Module 3 (program decoder) end to end
 

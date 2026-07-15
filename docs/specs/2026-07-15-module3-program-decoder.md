@@ -110,6 +110,11 @@ selected row's gene is outside it (independent of `train_row_indices`' own logic
 - `./init.sh` green at 69 tests (57 prior + 12 new). Two of the Module-3 tests additionally lock the
   post-review invariants: `program_basis` is absent from `state_dict()` (non-persistent), and the
   expression-only `Δx == Δz @ Bᵀ` exactly (no residual intercept).
+- Production basis (`run_program_basis --method sparse_pca`): fit the real train fold in 289 s → `B`
+  (10,282×128) / `A` (21,262×128), all finite, saved response rows == the 21,262 train rows (fold-locality
+  exact), ~23% zero loadings; centered reconstruction MAE 0.687 vs 0.817 predict-zero baseline. These are
+  the frozen production loadings (`data/intermediate/{gene_program_loadings,program_response}.parquet`,
+  gitignored) the decoder loads via `EGIPGModel.from_saved_basis`.
 
 ## Post-review hardening (xhigh `/code-review`)
 
@@ -123,9 +128,13 @@ every mart they read. Cleanups: overridable decoder dims, the shared `build_enco
 
 ## Non-goals / ceiling markers
 
-- **`sparse_pca` cost:** `MiniBatchSparsePCA` ≈ 90 s per 2 k rows → ~15 min on the full 21 k train set.
-  The smoke and tests use `svd` (seconds) for speed; `run_program_basis` with no `--method` fits the
-  paper-default sparse basis for the frozen production loadings.
+- **`sparse_pca` cost:** `MiniBatchSparsePCA` fits the full 21,262-row train set in **~5 min** (measured
+  289 s at K=128, faster than the initial ~15 min estimate). The smoke and tests use `svd` (seconds) for
+  speed; `run_program_basis` with no `--method` fits the paper-default sparse basis for the frozen
+  production loadings. **As-built (2026-07-15):** the production `sparse_pca` basis has been fitted and
+  frozen (`B` 10,282×128 / `A` 21,262×128, all finite, fold-locality exact, ~23% zero loadings, no dead
+  programs; centered reconstruction MAE 0.687 vs 0.817 predict-zero baseline — sparse coding trades
+  reconstruction for sparsity vs SVD's ~0.61). Parquets gitignored; regenerate via `run_program_basis`.
 - **`nmf` sees the positive part only** (`np.maximum(Z,0)`): z-scores are signed, so down-regulation
   programs are dropped. Split into signed ± channels if down-regulation modules matter (marked
   `ponytail:` in `program_basis.py`).
