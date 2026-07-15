@@ -1,9 +1,10 @@
 """Frozen, pluggable embedding lookup (PLM / PINNACLE) keyed by UniProt accession.
 
 NOT an nn.Module: these are pretrained, frozen feature vectors loaded as data, never a
-trainable parameter. When the parquet is absent (embeddings not computed yet) every lookup
-returns a zero vector, so the rest of Module 1 trains and runs unchanged and the real
-embeddings plug in later by dropping the file in place — no code edits.
+trainable parameter. Populate the parquets with tcell_pipeline.embeddings_plm /
+embeddings_pinnacle. Any protein without a stored vector — a store whose parquet is absent,
+or an id outside a store's coverage (e.g. proteins outside PINNACLE's cell-type context) —
+falls back to a zero vector, so Module 1 trains and runs unchanged regardless of coverage.
 """
 from __future__ import annotations
 
