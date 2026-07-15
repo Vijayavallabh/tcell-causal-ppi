@@ -154,3 +154,13 @@ def test_qpost_cols_rejected():
     b["n_up_genes"] = torch.tensor([1, 2, 3, 4])  # a q_post (response-derived) column
     with pytest.raises(ValueError):
         enc(b)
+
+
+def test_encoder_runs_on_gpu_when_available():
+    # device-aware: moving the encoder to CUDA runs the whole forward on GPU (CPU-built
+    # embedding/scalar tensors are moved to the module's device inside forward).
+    if not torch.cuda.is_available():
+        pytest.skip("no CUDA device")
+    enc = PerturbationEncoder().to("cuda")
+    h = enc(real_batch(4))
+    assert h.is_cuda and h.shape == (4, config.H_DO_DIM) and torch.isfinite(h).all()

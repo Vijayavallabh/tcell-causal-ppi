@@ -71,8 +71,9 @@ def run(batch_size: int = 512) -> bool:
           f"{int(obs_all['n_guides'].isna().sum())}  (NaN guard must hold)")
     print("Condition counts:", pc_all["culture_condition"].value_counts().to_dict())
 
-    enc = PerturbationEncoder().eval()
-    print(f"\nEncoder: {sum(p.numel() for p in enc.parameters())} params, "
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    enc = PerturbationEncoder().eval().to(device)
+    print(f"\nEncoder: {sum(p.numel() for p in enc.parameters())} params on {device}, "
           f"out_dim={config.H_DO_DIM}, target.out_dim={enc.target.out_dim}")
 
     all_finite = True
@@ -84,7 +85,7 @@ def run(batch_size: int = 512) -> bool:
             h = enc(_build_batch(pc_all.iloc[i:i + batch_size].reset_index(drop=True),
                                  obs_all.iloc[i:i + batch_size]))
             all_finite &= bool(torch.isfinite(h).all())
-            hn = h.numpy()
+            hn = h.cpu().numpy()
             sums = hn.sum(0) if sums is None else sums + hn.sum(0)
             sq = (hn ** 2).sum(0) if sq is None else sq + (hn ** 2).sum(0)
             hmin, hmax = min(hmin, float(hn.min())), max(hmax, float(hn.max()))

@@ -43,6 +43,7 @@ class ContextEncoder(nn.Module):
         self.donor = nn.Linear(config.DONOR_PCA_DIMS, DONOR_PROJ_DIM)
 
     def forward(self, batch: dict) -> torch.Tensor:
-        cond = self.condition(_condition_indices(batch["culture_condition"]))
-        donor = self.donor(_donor_matrix(batch["donor_pc"]))
+        device = self.condition.weight.device  # follow the module's device (CPU or GPU)
+        cond = self.condition(_condition_indices(batch["culture_condition"]).to(device))
+        donor = self.donor(_donor_matrix(batch["donor_pc"]).to(device))
         return torch.cat([cond, donor], dim=1)

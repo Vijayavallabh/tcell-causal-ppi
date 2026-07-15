@@ -35,5 +35,11 @@ class PerturbationEncoder(nn.Module):
         forbidden = set(batch) & set(config.Q_POST_COLS)
         if forbidden:
             raise ValueError(f"q_post columns are prohibited as encoder input: {sorted(forbidden)}")
-        h = torch.cat([self.target(batch), self.context(batch), self.quality(batch)], dim=1)
+        # target/quality build CPU tensors (dict lookups, no params); move every sub-output to the
+        # fusion's device so the encoder runs wherever it was .to()'d — CPU or GPU.
+        device = self.fusion.weight.device
+        h = torch.cat(
+            [self.target(batch).to(device), self.context(batch).to(device), self.quality(batch).to(device)],
+            dim=1,
+        )
         return self.norm(self.fusion(h))
