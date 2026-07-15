@@ -3,63 +3,63 @@
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
-- Current status: Module 0 data pipeline implemented (`src/tcell_pipeline/`, 9 modules + orchestrator + 12 tests). feat-001 done, feat-002 done (ID mapping), feat-004 in-progress (PPI harmonizer built, real fetch pending).
-- Branch / commit: main (Module 0 implementation this session)
+- Current status: **Module 0 data pipeline complete and run end-to-end on real data.** feat-001,
+  feat-002, feat-004 done. Next: feat-003 (leakage-safe splits).
+- Branch / commit: main @ eab027e
 
-## Completed This Session
+## Completed This Session (commits e453964..eab027e)
 
-- [x] Implemented Module 0 data pipeline in `src/tcell_pipeline/`: config, id_mapping, de_extraction,
-  perturbation_table, ppi_graph, complex_membership, control_profiles, feature_availability, run_module0.
-  Each exposes `run()`; the orchestrator sequences them in dependency order.
-- [x] Wrote `src/tests/` (5 files, 12 tests) exercising the pure builders on synthetic fixtures:
-  id-map columns/ambiguity, DE clip+sparse/dense round-trip, contiguous row_index + unmapped-kept,
-  PPI score∈[0,1]/binary flags/≥2 sources/dedup, q_pre⊥q_post disjointness.
-- [x] `conftest.py` puts `src/` on the path; added `pytest` to `requirements.txt`.
-- [x] Applied all 15 xhigh code-review findings (correctness + cleanup): NaN-safe NTC masking, donor-PCA
-  full-rank single-pass fix, `-log10(p)` storage, BioGRID ZIP + HuRI coverage, PPI score floor, real
-  `ppi_degree_*` from the graph (reordered ppi_graph before perturbation_table), DE schema asserts,
-  NaN-safe id_mapping guard, metadata/donor guards. Added `test_control_profiles.py`.
-- [x] Verified: `./init.sh` green (compileall + 18 pytest); `id_mapping.run()` on the real 16.8 GB DE file
-  produced a 12311-row mapping + ambiguity report; `control_profiles` demo self-check passes.
+- [x] UniProt one-to-many disambiguation (`id_mapping.choose_uniprot`): reviewed human canonical via
+  UniProt REST (gene_exact + reviewed), pick by annotation-score then lexical. 33 multi-accession genes
+  -> 23 resolved, 10 genuine multi-product loci flagged `uniprot_ambiguous`; alternatives preserved in
+  `uniprot_alternatives`. Gene stays the perturbation unit. Added `uniprot_alternatives`/`uniprot_ambiguous`
+  columns. `mygene` declared in requirements.txt.
+- [x] HuRI download fixed: apex host `interactome-atlas.org` (TLS cert invalid for `www.` subdomain).
+- [x] CORUM download fixed: old `coreComplexes.txt.zip` path is gone (CORUM 5.x -> SPA + fastapi). Migrated
+  to `fastapi-corum/public/file/download_current_file?file_id=human&file_format=txt`; handle new
+  `subunits_gene_name` schema via shared `_corum_gene_col`; per-source TLS-verify skip (broken cert chain).
+- [x] feature_availability: `config.KNOWN_METADATA_COLS` allowlist so the leakage-fence REVIEW warning
+  fires only on genuinely-unexpected metadata.
+- [x] Ran full Module 0 (`run_module0.py`) on real data — all 7 steps green (see Evidence).
+- [x] 23 pytest tests (added test_complex_membership.py); `init.sh` green.
 
-Prior sessions (49663b1 / f2794dd / 67124cd): ~100 GB aggregate download, `examples/` inspectors,
-README download steps, and the 2026-07-14 report literature-freshness revision (report is gitignored).
+Prior sessions: ~100 GB aggregate download, `examples/` inspectors, README, Module 0 implementation +
+xhigh code-review fixes, 2026-07-14 report literature refresh.
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile | `./init.sh` (compileall) | Pass | includes examples/ scripts |
-| Tests | `pytest` | Skipped | no tests yet |
-| Env imports | anndata/mudata/h5py | Pass | 0.13.1 / 0.3.10 / 3.16.0 |
-| Inspectors | `python examples/inspect_*.py` | Pass | self-checks (asserts) green on real data |
-| Inventory | `python examples/dataset_overview.py` | Pass | aggregate complete; 2 suppl tables unpublished |
-| Module 0 tests | `./init.sh` (compileall + pytest) | Pass | 18 passed; compileall clean (post code-review fixes) |
-| id_mapping real run | `python -m tcell_pipeline.id_mapping` | Pass | 12311 Ensembl (11526 targets / 10282 measured / 9497 both); all HGNC offline-resolved |
-| control_profiles demo | `python -m tcell_pipeline.control_profiles` | Pass | NTC \bNTC\b spares KNTC1; PCA embed shape (3, 32) |
+| Compile + tests | `./init.sh` | Pass | 23 passed; compileall clean |
+| Module 0 full run | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps completed on real data |
+| id_mapping | step 1 | Pass | 12311 Ensembl; 23 UniProt resolved / 10 flagged; 6 no-hit (HGNC-resolved) |
+| de_extraction | step 2 | Pass | 6 layers (zscore/log_fc NPZ; neglog10_p/adj_p, baseMean, lfcSE NPY); de_obs 33983 / de_var 10282 |
+| ppi_graph | step 3 | Pass | 7,980,907 edges from 5 sources |
+| complex_membership | step 4 | Pass | 18,932 memberships / 5,628 complexes (CORUM 5.3) |
+| perturbation_table | step 5 | Pass | 33983 rows; 187 without UniProt |
+| control_profiles | step 6 | Pass | 11018 NTC rows; 32425/33983 rows have a target baseline |
+| feature_availability | step 7 | Pass | q_pre=43 / q_post=13 / metadata=2; leakage fence disjoint |
 
 ## Files Changed
 
-- `src/tcell_pipeline/` (NEW) — 9-module Module 0 data pipeline + `run_module0.py` orchestrator
-- `src/tests/` (NEW) — 5 test files (12 tests) on synthetic fixtures
-- `conftest.py` (NEW), `requirements.txt` — pytest wiring
-- `feature_list.json` — feat-002 done, feat-004 in-progress
-- `progress.md`, `session-handoff.md` — state sync
+- `src/tcell_pipeline/id_mapping.py`, `ppi_graph.py`, `complex_membership.py`, `feature_availability.py`,
+  `config.py` — see Completed This Session
+- `src/tests/test_complex_membership.py` (NEW); test_id_mapping / test_feature_availability cases
+- `requirements.txt` (`mygene`), `feature_list.json`, `progress.md`, `session-handoff.md`
 
 ## Decisions Made
 
-- Data scope: aggregate layer only for first paper; cell-level (~1.6 TiB) excluded (storage-blocked)
-- Suppl tables: 3 from S3, 12 from GitHub analysis repo; 2 named tables are unpublished/unobtainable
-- Donor key = physical CE codes; independent controls come from pseudobulk (DE has none)
-- Near-null-signal regime (2026-07-14): confirm a detectable above-mean signal before freezing H1; accept a negative benchmark as a valid outcome
-- Stable-Shift first-party code unconfirmed; `Sajib-006/PerturbGraph` hosts PerturbGraph, not Stable-Shift (affects feat-010)
+- UniProt: reviewed-canonical pick; flag only equal-evidence ties; gene is the perturbation unit
+- CORUM host has a broken TLS chain -> per-source verify skip for `corum` only
+- Data scope: aggregate layer only; donor key = physical CE codes; controls from pseudobulk
+- Near-null-signal regime (2026-07-14): confirm above-mean signal before freezing H1; negative result is valid
+- Stable-Shift (feat-010): first-party code unconfirmed; plan a row-compatible reimplementation
 
 ## Blockers / Risks
 
-- `data/raw` ~101 GB near the 105 GiB soft cap — watch before the heavy Module 0 marts land (DE layers ~a few GB, control profiles)
-- id_mapping UniProt/Entrez are `requires_online_lookup` — needs an online mygene.info pass to fill
-- PPI/CORUM source downloads not yet fetched (network + large files); harmonizer is unit-tested but unrun on real edges
-- Near-null-signal regime: models may not beat the mean on this CD4+ screen — demonstrable H1 superiority is not guaranteed (2026-07-14 finding)
+- `data/raw` ~101 GB near the 105 GiB soft cap; derived marts now also on disk — watch before feat-005
+- Near-null-signal regime: H1 superiority not guaranteed on this CD4+ screen
+- (Resolved this session: HuRI + CORUM downloads; id_mapping UniProt/Entrez online pass)
 
 ## Next Session Startup
 
@@ -70,7 +70,7 @@ README download steps, and the 2026-07-14 report literature-freshness revision (
 
 ## Recommended Next Step
 
-- Run the heavy Module 0 steps on real data via `python src/tcell_pipeline/run_module0.py` (or step-by-step
-  `python -m tcell_pipeline.<step>`): `de_extraction` -> `perturbation_table` -> `ppi_graph` (fetch sources)
-  -> `complex_membership` -> `control_profiles` -> `feature_availability`. Then do the online mygene.info
-  pass to fill UniProt/Entrez, and move to feat-003 (leakage-safe splits).
+- Start **feat-003 (leakage-safe train/val/test splits)**: block gene families, protein complexes, and
+  close graph neighborhoods from leaking train->test; hash + freeze split files. All inputs are present
+  (id_mapping, protein_edges, complex_membership, perturbation_condition). Before freezing H1, run the
+  near-null-signal check on development data.
