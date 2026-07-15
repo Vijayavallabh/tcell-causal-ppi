@@ -15,7 +15,7 @@ pandas
 polars          # fast columnar ops on the derived mart
 pyarrow         # Parquet shards (perturbation_condition, program_response, protein_edges, ...)
 scikit-learn    # linear baselines + program bases (PCA / NMF / ICA, ridge, elastic-net, GBM)
-
+mygene
 # --- Graphs & modeling (Tier 1: EG-IPG) ---
 torch
 torch-geometric # or DGL; compiled extras (torch-scatter/-sparse) via PyG's wheel index if needed
