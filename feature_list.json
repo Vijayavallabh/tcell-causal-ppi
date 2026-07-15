@@ -103,6 +103,14 @@
       "dependencies": ["feat-011"],
       "status": "not-started",
       "evidence": ""
+    },
+    {
+      "id": "feat-014",
+      "name": "Perturbation & Context Encoder (Module 1)",
+      "description": "Encode each (perturbation, context) into h_do in R^256 from q_pre features only: frozen PLM+PINNACLE target embeddings + PPI degree + control baseline, trainable culture-condition embedding, donor PCs via Linear (no free donor-ID embedding), guide-quality features; leakage fence rejects q_post at the module boundary. Component of feat-008, built ahead since it depends only on Module 0 outputs.",
+      "dependencies": ["feat-002", "feat-004"],
+      "status": "done",
+      "evidence": "src/tcell_pipeline/encoders/ package. PluggableEmbeddingStore: frozen PLM (1280) / PINNACLE (512) lookup by UniProt accession, in-memory cache, zero-vector fallback when the parquet is absent (embeddings not computed yet), validates embedding dim; NOT an nn.Module. TargetEncoder: NO trainable gene-ID embedding (H1 prohibited); h_target in R^1796 = PLM 1280 + PINNACLE 512 + ppi_degree_physical/functional/complex + control_baseline_expr. ContextEncoder: trainable nn.Embedding(3,64) for Rest/Stim8hr/Stim48hr + donor_pc_00..31 through Linear(32,32) (NO free donor-ID embedding, so leave-one-donor-out stays valid); h_context in R^96. QualityEncoder: n_guides + single_guide_estimate + zeros(64) guide-seq placeholder; h_quality in R^66. PerturbationEncoder: forward(batch_dict) -> (B,256); fusion Linear(1958->256) + LayerNorm; rejects any q_post column at the boundary (ValueError). CPU-only, batch-first, 503,264 trainable params. config: added PLM_EMBED_DIM/PINNACLE_EMBED_DIM/GUIDE_SEQ_EMBED_DIM/H_DO_DIM/CONDITIONS/PLM_EMBEDDINGS_PATH/PINNACLE_EMBEDDINGS_PATH. NaN guard: as_float_vector nan_to_num neutralises missing control_baseline_expr (1558/33983 rows) and n_guides so one NaN cannot poison the LayerNorm'd h_do (ponytail: upgrade to fold-fit imputation in the Module 3 loader). Verified: 10 tests in src/tests/test_encoders.py (zero-fallback, dims, distinct condition embeddings, no-NaN batch, only the 3-way condition Embedding exists, q_post rejected, missing-scalar guard) + real-data smoke feeding perturbation_condition/de_obs head through the encoder -> finite (4,256) with PLM/PINNACLE absent. init.sh green (compileall + 33 pytest)."
     }
   ]
 }

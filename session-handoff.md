@@ -3,52 +3,58 @@
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
-- Current status: **Module 0 data pipeline complete and run end-to-end on real data.** feat-001,
-  feat-002, feat-004 done. Next: feat-003 (leakage-safe splits).
-- Branch / commit: main @ eab027e
+- Current status: **Module 0 pipeline done + Module 1 Perturbation & Context Encoder done (feat-014).**
+  feat-001, feat-002, feat-004, feat-014 done. Next: feat-003 (leakage-safe splits).
+- Branch / commit: main @ HEAD (this session's Module 1 commit)
 
-## Completed This Session (commits e453964..eab027e)
+## Completed This Session (Module 1 — Perturbation & Context Encoder, feat-014)
 
-- [x] UniProt one-to-many disambiguation (`id_mapping.choose_uniprot`): reviewed human canonical via
-  UniProt REST (gene_exact + reviewed), pick by annotation-score then lexical. 33 multi-accession genes
-  -> 23 resolved, 10 genuine multi-product loci flagged `uniprot_ambiguous`; alternatives preserved in
-  `uniprot_alternatives`. Gene stays the perturbation unit. Added `uniprot_alternatives`/`uniprot_ambiguous`
-  columns. `mygene` declared in requirements.txt.
-- [x] HuRI download fixed: apex host `interactome-atlas.org` (TLS cert invalid for `www.` subdomain).
-- [x] CORUM download fixed: old `coreComplexes.txt.zip` path is gone (CORUM 5.x -> SPA + fastapi). Migrated
-  to `fastapi-corum/public/file/download_current_file?file_id=human&file_format=txt`; handle new
-  `subunits_gene_name` schema via shared `_corum_gene_col`; per-source TLS-verify skip (broken cert chain).
-- [x] feature_availability: `config.KNOWN_METADATA_COLS` allowlist so the leakage-fence REVIEW warning
-  fires only on genuinely-unexpected metadata.
-- [x] Ran full Module 0 (`run_module0.py`) on real data — all 7 steps green (see Evidence).
-- [x] 23 pytest tests (added test_complex_membership.py); `init.sh` green.
+New package `src/tcell_pipeline/encoders/` — five nn.Modules fused into `h_do` in R^256, q_pre inputs only:
+
+- [x] `PluggableEmbeddingStore` (`embedding_store.py`): frozen PLM (1280) / PINNACLE (512) lookup by
+  UniProt accession; loads parquet if present else returns zero vectors, in-memory cache, validates dim.
+  NOT an nn.Module (data loader, not a trainable parameter) — real embeddings plug in by dropping the
+  file at `data/intermediate/{plm,pinnacle}_embeddings.parquet`.
+- [x] `TargetEncoder`: NO trainable gene-ID embedding (H1 prohibited). h_target R^1796 = PLM 1280 +
+  PINNACLE 512 + ppi_degree_physical/functional/complex + control_baseline_expr.
+- [x] `ContextEncoder`: trainable `nn.Embedding(3,64)` for Rest/Stim8hr/Stim48hr + donor_pc_00..31 through
+  `Linear(32,32)` (NO free donor-ID embedding, so leave-one-donor-out stays valid). h_context R^96.
+- [x] `QualityEncoder`: n_guides + single_guide_estimate + zeros(64) guide-seq placeholder. h_quality R^66.
+- [x] `PerturbationEncoder`: `forward(batch_dict) -> (B,256)`; fusion `Linear(1958->256)` + LayerNorm;
+  rejects any q_post column at the module boundary (ValueError) — leakage fence. 503,264 trainable params.
+- [x] NaN guard (`_tensor.as_float_vector` nan_to_num): missing control_baseline_expr (1558/33983) and
+  n_guides can't poison the LayerNorm'd h_do. Ponytail: upgrade to fold-fit imputation in Module 3 loader.
+- [x] config: PLM_EMBED_DIM/PINNACLE_EMBED_DIM/GUIDE_SEQ_EMBED_DIM/H_DO_DIM/CONDITIONS + embedding paths.
+- [x] 10 tests (`test_encoders.py`) + real-data smoke feeding perturbation_condition/de_obs head -> finite.
 
 Prior sessions: ~100 GB aggregate download, `examples/` inspectors, README, Module 0 implementation +
-xhigh code-review fixes, 2026-07-14 report literature refresh.
+xhigh code-review fixes, UniProt disambiguation, HuRI/CORUM download fixes, 2026-07-14 report refresh.
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | 23 passed; compileall clean |
-| Module 0 full run | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps completed on real data |
-| id_mapping | step 1 | Pass | 12311 Ensembl; 23 UniProt resolved / 10 flagged; 6 no-hit (HGNC-resolved) |
-| de_extraction | step 2 | Pass | 6 layers (zscore/log_fc NPZ; neglog10_p/adj_p, baseMean, lfcSE NPY); de_obs 33983 / de_var 10282 |
-| ppi_graph | step 3 | Pass | 7,980,907 edges from 5 sources |
-| complex_membership | step 4 | Pass | 18,932 memberships / 5,628 complexes (CORUM 5.3) |
-| perturbation_table | step 5 | Pass | 33983 rows; 187 without UniProt |
-| control_profiles | step 6 | Pass | 11018 NTC rows; 32425/33983 rows have a target baseline |
-| feature_availability | step 7 | Pass | q_pre=43 / q_post=13 / metadata=2; leakage fence disjoint |
+| Compile + tests | `./init.sh` | Pass | 33 passed; compileall clean |
+| Encoder unit tests | `pytest src/tests/test_encoders.py` | Pass | 10 passed (dims, zero-fallback, q_post rejected, NaN guard) |
+| Encoder real-data smoke | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (4,256) finite with PLM/PINNACLE absent (zero-fallback), incl. NaN-baseline rows |
+| Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
 
 ## Files Changed
 
-- `src/tcell_pipeline/id_mapping.py`, `ppi_graph.py`, `complex_membership.py`, `feature_availability.py`,
-  `config.py` — see Completed This Session
-- `src/tests/test_complex_membership.py` (NEW); test_id_mapping / test_feature_availability cases
-- `requirements.txt` (`mygene`), `feature_list.json`, `progress.md`, `session-handoff.md`
+- `src/tcell_pipeline/encoders/` (NEW): `_tensor.py`, `embedding_store.py`, `target_encoder.py`,
+  `context_encoder.py`, `quality_encoder.py`, `perturbation_encoder.py`, `__init__.py`
+- `src/tcell_pipeline/config.py` — Module 1 constants
+- `src/tests/test_encoders.py` (NEW, 10 tests)
+- `feature_list.json` (feat-014 added, done), `progress.md`, `session-handoff.md`
 
 ## Decisions Made
 
+- Module 1 batch contract: `PerturbationEncoder.forward` takes a dict with keys `uniprot_id` (list),
+  `ppi_degree_physical/functional/complex`, `control_baseline_expr`, `culture_condition` (str names or
+  long indices), `donor_pc` (a single (B,32) tensor — loader stacks donor_pc_00..31), `n_guides`,
+  `single_guide_estimate`. Any q_post key raises. The Module 3 data loader builds this dict.
+- Module 1: embeddings are FROZEN and pluggable — no PLM/PINNACLE parquet on disk yet, so the encoder
+  runs on zero target-embeddings; drop the parquet at the config paths to activate, no code change.
 - UniProt: reviewed-canonical pick; flag only equal-evidence ties; gene is the perturbation unit
 - CORUM host has a broken TLS chain -> per-source verify skip for `corum` only
 - Data scope: aggregate layer only; donor key = physical CE codes; controls from pseudobulk

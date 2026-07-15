@@ -80,6 +80,15 @@ Q_PRE_COLS: list[str] = [
 # Anything landing in metadata that is NOT here gets a REVIEW warning (leakage-fence tripwire).
 KNOWN_METADATA_COLS: list[str] = ["row_index", "mapping_status"]
 
+# --- Module 1 (Perturbation & Context Encoder) ---
+PLM_EMBED_DIM: int = 1280        # protein language model (e.g. ESM-2 650M) per-protein vector
+PINNACLE_EMBED_DIM: int = 512    # PINNACLE cell-type-contextualised protein embedding
+GUIDE_SEQ_EMBED_DIM: int = 64    # placeholder guide-sequence embedding (zeros until available)
+H_DO_DIM: int = 256              # fused perturbation-condition embedding h_do
+CONDITIONS: list[str] = ["Rest", "Stim8hr", "Stim48hr"]
+PLM_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "plm_embeddings.parquet"
+PINNACLE_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "pinnacle_embeddings.parquet"
+
 
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)

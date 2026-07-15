@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (Module 0 run end-to-end on real data; feat-004 done)
+**Last Updated:** 2026-07-15 (Module 1 Perturbation & Context Encoder built; feat-014 done)
 **Active Feature:** feat-003 - Leakage-Safe Train/Val/Test Splits (not started; deps feat-002 satisfied)
 
 ## Status
@@ -45,9 +45,22 @@
 - [x] 23 pytest tests in `src/tests/` (synthetic fixtures; added test_control_profiles.py,
   test_complex_membership.py); `init.sh` green (compileall + pytest)
 
+- [x] **Module 1 Perturbation & Context Encoder** (feat-014, `src/tcell_pipeline/encoders/`) — **DONE**
+  - `PluggableEmbeddingStore` (frozen PLM 1280 / PINNACLE 512 by UniProt; zero-fallback when the
+    parquet is absent, in-memory cache, NOT an nn.Module), `TargetEncoder` (no trainable gene-ID
+    embedding; h_target R^1796), `ContextEncoder` (trainable condition Embedding(3,64) + donor PCs
+    through Linear(32,32), no free donor-ID embedding), `QualityEncoder` (n_guides +
+    single_guide_estimate + zeros(64) guide-seq placeholder; h_quality R^66), `PerturbationEncoder`
+    (fusion Linear(1958->256)+LayerNorm -> h_do R^256; rejects q_post cols at the boundary).
+  - 503,264 trainable params, CPU-only, batch-first. Config: PLM_EMBED_DIM/PINNACLE_EMBED_DIM/
+    GUIDE_SEQ_EMBED_DIM/H_DO_DIM/CONDITIONS/PLM_EMBEDDINGS_PATH/PINNACLE_EMBEDDINGS_PATH.
+  - NaN guard (`as_float_vector` nan_to_num): missing control_baseline_expr (1558/33983) and
+    n_guides can't poison the LayerNorm'd h_do. Upgrade path = fold-fit imputation in Module 3 loader.
+  - 10 tests (test_encoders.py) + real-data smoke on perturbation_condition/de_obs -> finite (4,256).
+
 ### What's In Progress
 
-- (none — feat-004 closed this session)
+- (none — feat-014 closed this session)
 
 ### What's Next
 
@@ -77,18 +90,19 @@
 - Distributional metrics: do not use Wasserstein/Energy distance as a sole headline metric
 - Stable-Shift (feat-010): first-party code unconfirmed; plan a row-compatible reimplementation
 
-## Files Modified This Session
+## Files Modified This Session (Module 1)
 
-- `src/tcell_pipeline/id_mapping.py` — reviewed-canonical UniProt disambiguation
-- `src/tcell_pipeline/ppi_graph.py` — HuRI apex URL, CORUM 5.3 fastapi URL + `_corum_gene_col` + TLS skip
-- `src/tcell_pipeline/complex_membership.py` — new CORUM schema via shared `_corum_gene_col`
-- `src/tcell_pipeline/feature_availability.py`, `config.py` — `KNOWN_METADATA_COLS` allowlist
-- `src/tests/` — test_complex_membership.py (NEW), test_id_mapping / test_feature_availability cases (23 total)
-- `requirements.txt` — `mygene`
-- `feature_list.json` — feat-004 -> done; feat-002 evidence updated
+- `src/tcell_pipeline/encoders/` (NEW package): `_tensor.py`, `embedding_store.py`, `target_encoder.py`,
+  `context_encoder.py`, `quality_encoder.py`, `perturbation_encoder.py`, `__init__.py`
+- `src/tcell_pipeline/config.py` — Module 1 constants (embed dims, H_DO_DIM, CONDITIONS, embedding paths)
+- `src/tests/test_encoders.py` (NEW, 10 tests) — pytest now 33 total
+- `feature_list.json` — feat-014 (Perturbation & Context Encoder) added, status done
 - `progress.md`, `session-handoff.md` — state sync
 
-Derived artifacts written to `data/intermediate/`, `data/graphs/`, `data/manifests/` (all gitignored).
+Prior session (Module 0 fixes, commits e453964..1732def): id_mapping.py reviewed-canonical UniProt
+disambiguation; ppi_graph.py HuRI apex URL + CORUM 5.3 fastapi + `_corum_gene_col` + TLS skip;
+complex_membership.py CORUM schema; feature_availability.py + config.py KNOWN_METADATA_COLS allowlist;
+requirements.txt `mygene`; AGENTS.md session-handoff.md first-class artifact.
 
 ## Notes for Next Session
 
