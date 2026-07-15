@@ -39,6 +39,25 @@ Scope was Module 3 only — Module 4, losses, and training loops deliberately ex
   + `load_zscore_rows`; hoisted decoder `joint`; removed the dead `GENE_LEVEL_DIM` alias. `./init.sh`
   69 green; M1/M2/M3 smokes + orchestrator all re-run clean.
 
+## Full real-data run — all modules/features (2026-07-15)
+
+Ran every non-destructive real-data entrypoint end-to-end (M0 excluded — it re-downloads multi-GB PPI
+DBs and overwrites the frozen marts). All green:
+- `./init.sh` — **69 passed** (compileall clean); `splits.py` (feat-003) — **byte-identical** to the
+  frozen freeze (all 4 sha256 match), effectiveness 26.4% vs 53.8% random (0.51 cut).
+- Module 1 smoke (feat-014/015): all **33,983** rows finite @24.7k/s; real PLM 33,796 / PINNACLE 3,135
+  coverage; NaN guard held; q_post leakage fence rejected the injected column.
+- Module 2 smoke (feat-016 + feat-004 graph): 25,440-node graph / ~8M typed edges; CD3E nbhd @cap 512;
+  per-condition gates differ; readout attention sums to 1.
+- Module 3 smoke (feat-008 + feat-005 slice): fold-local basis on 21,262 train rows; M1→M2→M3 finite;
+  λ∈[0.38,0.62]; σ>0; expr-only variant λ=0.
+- **feat-005 production basis:** `run_program_basis --method sparse_pca` fit the real train fold in
+  **289s** → froze `gene_program_loadings.parquet` (B 10282×128) + `program_response.parquet`
+  (A 21262×128), replacing the earlier svd smoke output. Validated: all finite; fold-locality exact
+  (saved rows == 21,262 train); **22.7% zero loadings**, no dead programs; centered recon MAE **0.687**
+  vs 0.817 zero-baseline (sparse_pca trades reconstruction for sparsity vs svd ~0.61). feat-005 stays
+  in-progress — method×K comparison + shallow VAE remain. Parquets gitignored (regenerable).
+
 ## Status
 
 ### What's Done

@@ -34,6 +34,9 @@ syncs in one commit; `git log -1` for the hash).
   `save_program_response` (atomic parquet). `programs/run_program_basis.py` orchestrator (`--method/--K`,
   challenge-overlap assert). Ran `--method svd` on **21,262 real train rows × 10,282 genes** in 6.2 s →
   `gene_program_loadings.parquet` (B 10282×128) + `program_response.parquet` (A 21262×128), gitignored.
+  **Production `sparse_pca` basis since fit** on the real train fold (`--method sparse_pca`, **289 s**) →
+  re-froze B 10282×128 / A 21262×128 over the svd smoke output; all finite, fold-locality exact
+  (saved rows == 21,262 train), 22.7% zero loadings, recon MAE 0.687 vs 0.817 zero-baseline.
   **Remaining:** 4-method × 4-K comparison (reconstruction / sparsity / stability) + shallow VAE.
 - **feat-008 (EG-IPG Model) — in-progress (Module-3 slice).** `programs/program_decoder.py`
   `ProgramDecoder`: graph path `Linear(512,K)` + expr-only `Linear(256,K)`, sigmoid mixture gate
@@ -174,6 +177,8 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
 | Module 3 real-data smoke | `python src/tcell_pipeline/run_module3_smoke.py` | Pass | fold-local SVD basis on 21,262 real train rows (18s) → B(10282,128); M1→M2→M3 on 4 real perturbations finite, λ∈[0.46,0.55], σ>0; expr-only λ==0 |
 | Module 3 basis orchestrator | `python -m tcell_pipeline.programs.run_program_basis --method svd` | Pass | 6.2s → gene_program_loadings.parquet (B 10282×128) + program_response.parquet (A 21262×128), gitignored; challenge-overlap assert held |
+| feat-005 production basis (sparse_pca) | `run_program_basis --method sparse_pca` | Pass | 289s on the real train fold → re-froze B(10282,128)/A(21262,128); all finite, fold-locality exact (saved rows==21,262 train), 22.7% zero loadings, recon MAE 0.687 vs 0.817 zero-baseline |
+| Full real-data run (all built features) | init.sh + splits + M1/M2/M3 smokes + sparse_pca | Pass | 69 tests; splits byte-identical; M1 33,983 rows finite; M2 25,440-node graph gates differ; M3 M1→M2→M3 finite λ∈[0.38,0.62] σ>0; sparse_pca basis frozen |
 | feat-003 split tests | `pytest src/tests/test_splits.py` | Pass | 8 passed; grouping/cap/no-split/determinism/audit-fail-closed/fractions |
 | feat-003 real split | `python -m tcell_pipeline.splits` | Pass | 11525 genes → 5141 family groups (largest 5%); wrote data/splits/*; sequence leakage **26.4% (blocked) vs 53.8% (random) = 51% cut** (corrected global-frame residual); split CSVs byte-identical to the 35e3999 freeze |
 | Module 2 graph tests | `pytest src/tests/test_graph.py` | Pass | 8 passed; synthetic graph (structure, 2-hop cap, condition gate differs, signed msg, forward finite, edge_gates, zero/absent target, attn sums to 1) |
@@ -196,7 +201,7 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 - `src/tcell_pipeline/config.py` — Module 3 constants (PROGRAM_DIM, PROGRAM_METHOD,
   PROGRAM_LOADINGS_PATH, PROGRAM_RESPONSE_PATH, PROGRAM_COL_PREFIX)
 - `feature_list.json` (feat-005 + feat-008 → in-progress), `progress.md`, `session-handoff.md`
-- `data/intermediate/{gene_program_loadings,program_response}.parquet` (gitignored artifacts from the smoke run)
+- `data/intermediate/{gene_program_loadings,program_response}.parquet` (gitignored; now the sparse_pca production fit)
 
 ## Post-review fixes (Module 3 — xhigh `/code-review`, all 13 findings resolved)
 
@@ -281,9 +286,10 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
 - **Module 3 (Program Decoder) is committed on main** (`git log -1`); working tree clean, `./init.sh`
   green (69 tests). The `programs/` package, `model.py`, smoke, tests, docs, and state-file syncs all
   landed in one commit.
-- To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction /
-  sparsity / stability + a shallow-VAE basis; run the paper-default `sparse_pca` fit via
-  `run_program_basis` (~15 min) to freeze the production loadings. To **advance feat-008**: build
+- The paper-default `sparse_pca` production loadings are **now frozen** (289s real-fold fit,
+  gene_program_loadings/program_response.parquet, gitignored). To **finish feat-005**: add the
+  4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity / stability + a shallow-VAE
+  basis (the extraction machinery is done; only the study remains). To **advance feat-008**: build
   Module 4 (sparse predictive-rationale head), losses, and the train/calibration loops on top of
   `EGIPGModel`. Fold-local fits use the **train** role only (`train_row_indices` gate). Before freezing
   H1, run the near-null-signal check on development data.
