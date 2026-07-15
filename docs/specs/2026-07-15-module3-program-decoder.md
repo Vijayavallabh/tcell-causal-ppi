@@ -32,13 +32,19 @@ response-derived leaks across the split (README §Training splits, §q_pre vs q_
 `fit_program_basis(Z_train, method, K) -> (B (G,K), A (N,K))` factorises the training-fold z-score
 matrix `Z_train ≈ A·Bᵀ` (§6.1). `B` are gene→program loadings, `A` the per-perturbation program scores.
 Method dispatch (§6.5): `sparse_pca` (default — `MiniBatchSparsePCA`, the scalable sparse variant),
-`nmf`, `fastica` (ICA), `svd`. The gene axis of `B` is the **full** `de_var` order (10,282 genes); only
-*rows* are subset for fold-locality, so `B` drops straight into the decoder buffer without realignment.
+`nmf`, `fastica` (ICA), `svd`. For every method `B` is the *loading* matrix satisfying `Z ≈ A·Bᵀ` — for
+`fastica` that is `mixing_` (G,K), **not** `components_` (the unmixing filters), so ICA's `B` is
+consistent with the decoder's `Δx = Δz @ Bᵀ` contract. The gene axis of `B` is the **full** `de_var`
+order (10,282 genes); only *rows* are subset for fold-locality, so `B` drops straight into the decoder
+buffer without realignment.
 
 - `train_row_indices(split, pc, role="train")` — the fold-locality gate: train-role genes → DE row
-  indices. The orchestrator asserts zero overlap with the `challenge` rows before fitting.
+  indices. `run_program_basis` then makes an **independent** `raise`-based check (survives `python -O`)
+  that no selected row belongs to a non-train-role gene.
+- `load_zscore_rows(rows)` / `zscore_path()` — one shared slice-and-densify loader for both entrypoints.
 - `save_program_basis` / `save_program_response` — atomic Parquet writers (`gene_program_loadings`,
-  `program_response`); `load_program_basis(gene_order=…)` reindexes `B` to a fixed gene axis (0-fill).
+  `program_response`); `load_program_basis(gene_order=…)` reindexes `B` to a fixed gene axis (0-fill),
+  and raises a clear error if the loadings carry a duplicate gene symbol (ambiguous alignment).
 
 ### ProgramDecoder — `programs/program_decoder.py` (`nn.Module`)
 
@@ -47,27 +53,34 @@ Inputs `h_graph (B,256)`, `h_do (B,256)`:
 1. graph path `Δz_graph = Linear(512,K)([h_graph‖h_do])` (§6.1)
 2. expression-only path `Δz_expr = Linear(256,K)(h_do)` (§6.3)
 3. mixture `λ = σ(Linear(512,1)([h_graph‖h_do])) ∈ [0,1]`; `Δz = λ·Δz_graph + (1−λ)·Δz_expr` (§6.3)
-4. gene decode `Δx = B·Δzᵀ + r`, `r = Linear(256,G)(h_graph)`; **B is a frozen `register_buffer`,
-   not a `Parameter`** (§6.2)
-5. uncertainty `σ = sqrt(softplus(Linear(512,K)([h_graph‖h_do])))` (§6.4)
+4. gene decode `Δx = B·Δzᵀ + r`, `r = Linear(256,G)(h_graph)`; **B is a frozen, non-persistent
+   `register_buffer`** (not a `Parameter`, and not serialized into checkpoints — it is reloaded from the
+   loadings Parquet, so a stale checkpoint can't clobber the gene-aligned basis) (§6.2)
+5. uncertainty `σ = sqrt(softplus(Linear(512,K)([h_graph‖h_do])) + 1e-12)` — the `1e-12` floor keeps
+   `σ > 0` even when softplus underflows to 0 in float32 (§6.4)
 
 Output dict `{delta_z (B,K), delta_x (B,G), sigma (B,K), lambda (B,1)}`. Passing `h_graph=None` runs
-the expression-only nested variant: `λ` is pinned to 0, `Δz = Δz_expr`, and `r` collapses to its bias.
+the expression-only nested variant: `λ` is pinned to 0, `Δz = Δz_expr`, and the graph residual `r` is
+**dropped entirely** (not `residual.bias`) so the §10.6 nested comparison carries no graph-head intercept.
 
 ### EGIPGModel — `model.py` (`nn.Module`)
 
 Wraps `PerturbationEncoder` + `TypedGraphEncoder` + `ProgramDecoder`. `forward(batch, target_genes,
 conditions)` returns the decoder dict plus `h_do`, `h_graph`, `edge_gates`. `graph_encoder=None` selects
 the expression-only nested member (§10.6): no graph pass, `h_graph`/`edge_gates` are `None`, `λ=0`.
-`EGIPGModel.from_saved_basis(gene_order, path)` loads `B` from the loadings Parquet aligned to a fixed
-gene axis. B stays frozen (buffer) so the whole model is one `.to(device)` from CPU or CUDA.
+Constructor takes overridable `h_graph_dim` / `h_do_dim` (default the config widths) forwarded to the
+decoder, so a reduced-width encoder ablation sizes the decoder to its wrapped encoders, not a hardcoded
+constant. `EGIPGModel.from_saved_basis(gene_order, path)` loads `B` from the loadings Parquet aligned to
+a fixed gene axis. B stays frozen (buffer) so the whole model is one `.to(device)` from CPU or CUDA.
 
 ## Fold-locality (leakage fence)
 
 The program basis is a response-derived transform, so it may see **train rows only** (README §q_pre vs
 q_post: "all response-derived transformations … fit inside training folds only"). `train_row_indices`
-derives the eligible rows from `blocked_target_ood.csv`; `run_program_basis` asserts no `challenge`
-overlap before fitting. Val/calibration/challenge responses never enter the fit.
+derives the eligible rows from `blocked_target_ood.csv`; `run_program_basis` then verifies fold-locality
+with an **independent** check — recomputing the train-role gene set directly and `raise`-ing if any
+selected row's gene is outside it (independent of `train_row_indices`' own logic, and not stripped by
+`python -O`). Val/calibration/challenge responses never enter the fit.
 
 ## Config additions (`config.py`)
 
@@ -78,9 +91,11 @@ overlap before fitting. Val/calibration/challenge responses never enter the fit.
 
 ## Public interface
 
-- `from tcell_pipeline.programs import fit_program_basis, train_row_indices, save_program_basis,
-  save_program_response, load_program_basis, ProgramDecoder`
+- `from tcell_pipeline.programs import fit_program_basis, train_row_indices, load_zscore_rows,
+  save_program_basis, save_program_response, load_program_basis, ProgramDecoder`
 - `from tcell_pipeline.model import EGIPGModel`
+- `from tcell_pipeline.encoders import build_encoder_batch` — shared mart→encoder batch builder used by
+  the Module 1/2/3 real-data smokes (single source of truth for the loader contract).
 - Orchestrator: `PYTHONPATH=src python -m tcell_pipeline.programs.run_program_basis [--method M] [--K K]`
 - Real-data smoke: `python src/tcell_pipeline/run_module3_smoke.py`
 
@@ -92,7 +107,19 @@ overlap before fitting. Val/calibration/challenge responses never enter the fit.
 - Real-data smoke `run_module3_smoke.py`: fits a fast fold-local **SVD** basis on 21,262 real train
   rows (the `sparse_pca` default is a deliberate ~15-min run via `run_program_basis`), then forwards
   M1→M2→M3 on 4 real perturbations — all outputs finite, `λ∈[0.46,0.55]`, `σ>0`; expr-only `λ==0`.
-- `./init.sh` green at 69 tests (57 prior + 12 new).
+- `./init.sh` green at 69 tests (57 prior + 12 new). Two of the Module-3 tests additionally lock the
+  post-review invariants: `program_basis` is absent from `state_dict()` (non-persistent), and the
+  expression-only `Δx == Δz @ Bᵀ` exactly (no residual intercept).
+
+## Post-review hardening (xhigh `/code-review`)
+
+An xhigh workflow review of this diff found 13 verified defects; all were resolved (see
+`session-handoff.md` → *Post-review fixes*). The behaviour-affecting ones, folded into the description
+above: FastICA loadings use `mixing_`; the `B` buffer is non-persistent; the fold-leak guard is an
+independent `raise`; `σ` has a `1e-12` floor; the expression-only variant drops the graph residual;
+`load_program_basis` errors on duplicate gene symbols; the smoke/orchestrator precondition guards cover
+every mart they read. Cleanups: overridable decoder dims, the shared `build_encoder_batch` and
+`load_zscore_rows` helpers, a single hoisted `joint` concat, and removal of the dead `GENE_LEVEL_DIM`.
 
 ## Non-goals / ceiling markers
 

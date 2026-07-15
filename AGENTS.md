@@ -88,7 +88,9 @@ Required checks:
 ## Command Safety
 
 - **Safe to re-run anytime** (idempotent / deterministic): `./init.sh`, `pytest`, `compileall`,
-  `run_module1_smoke.py`, `run_module2_smoke.py`, `python -m tcell_pipeline.splits`.
+  `run_module1_smoke.py`, `run_module2_smoke.py`, `run_module3_smoke.py`, `python -m tcell_pipeline.splits`,
+  `python -m tcell_pipeline.programs.run_program_basis` (fixed seed; writes only the gitignored
+  `data/intermediate/{gene_program_loadings,program_response}.parquet`).
 - **DESTRUCTIVE — do NOT run to "test":** `run_module0.py` (and its steps) re-download multi-GB
   PPI DBs and **overwrite the frozen marts in `data/`** that all downstream work depends on. Run
   only when deliberately regenerating source data.

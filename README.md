@@ -505,8 +505,9 @@ python src/tcell_pipeline/graph/run_module2_smoke.py
 
 The program decoder predicts deltas in a latent-program space defined by a basis learned from the
 **training-fold DE matrix only** (`Z_train ≈ A·Bᵀ`; README §Target representations, §Training splits).
-`run_program_basis` loads the blocked split, keeps train-role rows (asserting no `challenge` overlap),
-fits the basis, and writes `data/intermediate/{gene_program_loadings,program_response}.parquet`:
+`run_program_basis` loads the blocked split, keeps train-role rows (with an independent fold-leak check
+that raises if any selected row's gene is not train-role), fits the basis, and writes
+`data/intermediate/{gene_program_loadings,program_response}.parquet`:
 
 ```bash
 # paper default: sparse PCA at K=128 (MiniBatchSparsePCA, ~15 min on the full 21k-row train set)
