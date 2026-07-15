@@ -111,6 +111,7 @@
 - `src/tcell_pipeline/embeddings_plm.py` (NEW): ESM-2 650M generator (resumable, GPU-aware)
 - `src/tcell_pipeline/embeddings_pinnacle.py` (NEW): PINNACLE CD4-context -> UniProt mapper (Figshare download)
 - `src/tcell_pipeline/config.py` — PINNACLE_EMBED_DIM 512->128; +PINNACLE_RAW_DIR/FIGSHARE_URL/CONTEXT
+- `src/tcell_pipeline/run_module1_smoke.py` (NEW): full-mart real-data smoke (33,983 rows, Module 1 analogue of run_module0.py)
 - `src/tests/test_encoders.py` — rewritten to real PLM+PINNACLE data (no synthetic parquets); dim literals 1796->1412
 - `requirements.txt` — +fair-esm, +cu126 torch install note
 - `feature_list.json` — feat-015 added, status done

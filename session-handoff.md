@@ -47,6 +47,7 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | PLM generation (GPU) | `python -m tcell_pipeline.embeddings_plm` | Pass | 11419/11419 proteins, 1280-d, finite; A100, 100% util |
 | PINNACLE ingestion | `python -m tcell_pipeline.embeddings_pinnacle` | Pass | 1119 embeddings (128-d), 1070/11419 mart coverage (CD4 helper context) |
 | Encoder real-data e2e | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (8,256) finite; real PLM+PINNACLE vectors flow through |
+| Module 1 full-mart smoke | `python src/tcell_pipeline/run_module1_smoke.py` | Pass | all 33,983 real rows finite; PLM 33796, PINNACLE 3135 coverage; q_post rejected |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
 
 ## Files Changed (this session, feat-015)
@@ -58,6 +59,7 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 - `requirements.txt` — +fair-esm, +pyyaml (was undeclared), +cu126 torch install note
 - `README.md` — GPU/cu126 setup note + "Precompute target embeddings" step; PINNACLE 128-d detail
 - `src/tcell_pipeline/encoders/embedding_store.py` — docstring refresh (embeddings now generated)
+- `src/tcell_pipeline/run_module1_smoke.py` (NEW): full-mart real-data smoke (Module 1 analogue of run_module0.py)
 - `feature_list.json` (feat-015 added, done), `progress.md`, `session-handoff.md`
 - Prior session (feat-014): `src/tcell_pipeline/encoders/` package + config Module 1 constants + test_encoders.py
 
