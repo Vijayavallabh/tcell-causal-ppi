@@ -32,7 +32,10 @@ Key facts:
 
 ## Working Rules
 
-- **One feature at a time**: Pick exactly one unfinished feature from `feature_list.json`
+- **One work-unit at a time**: Pick exactly one unfinished feature from `feature_list.json`. A single
+  architecture module may legitimately span more than one feature entry (e.g. Module 3 = feat-005
+  program extraction + feat-008 decoder scaffold) — keep them to one session/commit and mark each
+  `in-progress` until its own done-criteria are met. Don't open a second, unrelated module in parallel.
 - **Verification required**: Don't claim done without running `./init.sh`
 - **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
   `session-handoff.md` — all three must match committed reality (a structurally valid but stale
