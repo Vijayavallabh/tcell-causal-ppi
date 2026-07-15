@@ -14,6 +14,7 @@ scipy
 pandas
 polars          # fast columnar ops on the derived mart
 pyarrow         # Parquet shards (perturbation_condition, program_response, protein_edges, ...)
+pyyaml          # feature_availability.yaml leakage-fence manifest (feature_availability.py)
 scikit-learn    # linear baselines + program bases (PCA / NMF / ICA, ridge, elastic-net, GBM)
 mygene
 # --- Graphs & modeling (Tier 1: EG-IPG) ---
