@@ -36,10 +36,13 @@ _RELATION_FLAG = {
 
 def _edge_features(sub: pd.DataFrame) -> torch.Tensor:
     """(E, 8) = source one-hot(5) | score | is_direct_binary | n_supporting_sources."""
+    idx = sub["source"].map(_SOURCE_INDEX)
+    if idx.isna().any():  # fail fast (clear message) instead of an IndexError in the one-hot assign
+        raise ValueError(f"unknown PPI source(s) not in config.PPI_SOURCES: {sorted(set(sub.loc[idx.isna(), 'source']))}")
     onehot = np.zeros((len(sub), len(config.PPI_SOURCES)), dtype=np.float32)
-    onehot[np.arange(len(sub)), sub["source"].map(_SOURCE_INDEX).to_numpy()] = 1.0
+    onehot[np.arange(len(sub)), idx.to_numpy(dtype=int)] = 1.0
     extra = sub[["score", "is_direct_binary", "n_supporting_sources"]].to_numpy(dtype=np.float32)
-    return torch.from_numpy(np.concatenate([onehot, extra], axis=1))
+    return torch.from_numpy(np.nan_to_num(np.concatenate([onehot, extra], axis=1)))
 
 
 def _protein_features(
@@ -58,7 +61,8 @@ def _protein_features(
     pinnacle = pinnacle_store.lookup(uniprot_ids)
 
     degrees = torch.zeros((n_protein, 3), dtype=torch.float32)
-    for col, rel in enumerate(("physical_ppi", "co_complex", "functional_assoc")):
+    # order MUST match Module 1's TargetEncoder.TARGET_SCALAR_KEYS = [physical, functional, complex]
+    for col, rel in enumerate(("physical_ppi", "functional_assoc", "co_complex")):
         ei = edge_index[rel]
         if ei.numel():
             inc = torch.cat([ei[0], ei[1]])  # undirected: both endpoints count
@@ -100,7 +104,7 @@ def build_hetero_graph(
     if pinnacle_store is None:
         pinnacle_store = PluggableEmbeddingStore(config.PINNACLE_EMBEDDINGS_PATH, config.PINNACLE_EMBED_DIM)
 
-    genes = sorted(set(edges["source_gene"]) | set(edges["target_gene"]))
+    genes = sorted(set(edges["source_gene"].dropna()) | set(edges["target_gene"].dropna()))
     gene_to_idx = {g: i for i, g in enumerate(genes)}
     n_protein = len(genes)
     src_idx = edges["source_gene"].map(gene_to_idx).to_numpy()
@@ -126,7 +130,7 @@ def build_hetero_graph(
     m_extra = memb[["confidence", "is_curated"]].to_numpy(dtype=np.float32)
     m_onehot = np.tile(_CORUM_ONEHOT, (len(memb), 1))
     data[PROTEIN, "complex_membership", COMPLEX].edge_attr = torch.from_numpy(
-        np.concatenate([m_onehot, m_extra, np.ones((len(memb), 1), dtype=np.float32)], axis=1)
+        np.nan_to_num(np.concatenate([m_onehot, m_extra, np.ones((len(memb), 1), dtype=np.float32)], axis=1))
     )
 
     data[PROTEIN].x = _protein_features(

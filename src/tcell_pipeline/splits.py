@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 
 import numpy as np
 import pandas as pd
@@ -142,30 +143,58 @@ def assign_random(items: list, seed: int = config.SPLIT_SEED,
                   fractions: dict[str, float] = config.SPLIT_FRACTIONS,
                   roles: tuple[str, ...] = config.SPLIT_ROLES) -> dict:
     """Row-level diagnostic split (sanity baseline; not a headline)."""
-    perm = np.random.default_rng(seed).permutation(len(items))
-    role_of, i = {}, 0
+    n = len(items)
+    perm = np.random.default_rng(seed).permutation(n)
+    # cumulative-fraction boundaries: the last boundary is exactly n, so every item is placed once and
+    # no role's slice is truncated (independent per-role round() can over-allocate and drop the tail).
+    role_of, prev, cum = {}, 0, 0.0
     for r in roles:
-        k = round(fractions[r] * len(items))
-        for idx in perm[i:i + k]:
+        cum += fractions[r]
+        j = n if r == roles[-1] else round(cum * n)
+        for idx in perm[prev:j]:
             role_of[items[int(idx)]] = r
-        i += k
-    for idx in perm[i:]:  # rounding leftovers -> last role
-        role_of[items[int(idx)]] = roles[-1]
+        prev = j
     return role_of
 
 
 # --- leakage audit ---------------------------------------------------------
 
+def _precap_labels(genes: list[str], gene_vec: dict[str, np.ndarray], complex_df: pd.DataFrame,
+                   seq_threshold: float) -> dict[str, int]:
+    """Uncapped connected components over the SAME sequence + complex must-links — the true
+    biological families the size cap may have split across roles. Audited (not blocked): a family
+    larger than the cap is deliberately splittable, so this reports the residual it leaves."""
+    parent = {g: g for g in genes}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for edges in (_representative_edges(genes, gene_vec, seq_threshold), _complex_edges(genes, complex_df)):
+        for a, b in edges:
+            parent[find(a)] = find(b)
+    roots = {g: find(g) for g in genes}
+    relabel = {r: i for i, r in enumerate(sorted(set(roots.values())))}
+    return {g: relabel[roots[g]] for g in genes}
+
+
+
 def _sequence_residual(role_of: dict[str, str], genes: list[str], gene_vec: dict[str, np.ndarray],
                        seq_threshold: float) -> dict | None:
-    """Distribution of each challenge gene's nearest centered-cosine to any train gene (report §6)."""
-    chal = [g for g in genes if role_of[g] == "challenge"]
-    train = [g for g in genes if role_of[g] == "train"]
-    ce, cV = _centered(chal, gene_vec)
-    te, tV = _centered(train, gene_vec)
-    if not (ce and te):
+    """Distribution of each challenge gene's nearest centered-cosine to any train gene (report §6).
+
+    Centers ALL genes by one shared mean (the same global frame ``_representative_edges`` groups in),
+    then indexes the challenge/train rows — centering each subset by its own mean puts the two sides
+    in mismatched frames and understates similarity (identical paralogs read ~0.94 instead of 1.0)."""
+    embg, V = _centered(genes, gene_vec)
+    row = {g: i for i, g in enumerate(embg)}
+    ci = [row[g] for g in genes if role_of[g] == "challenge" and g in row]
+    ti = [row[g] for g in genes if role_of[g] == "train" and g in row]
+    if not (ci and ti):
         return None
-    nearest = (cV @ tV.T).max(1)
+    nearest = (V[ci] @ V[ti].T).max(1)
     return {
         "max": float(nearest.max()), "p99": float(np.percentile(nearest, 99)),
         "p90": float(np.percentile(nearest, 90)), "median": float(np.median(nearest)),
@@ -176,8 +205,10 @@ def _sequence_residual(role_of: dict[str, str], genes: list[str], gene_vec: dict
 def audit_leakage(role_of: dict[str, str], labels: dict[str, int], genes: list[str],
                   gene_vec: dict[str, np.ndarray], complex_df: pd.DataFrame, edges_df: pd.DataFrame,
                   seq_threshold: float = config.SEQ_SIM_COSINE_THRESHOLD) -> dict:
-    """Hard-assert no family group is split across roles; publish train↔challenge residual similarity
-    for each axis (sequence / complex / physical neighbourhood). Fails closed on a split group."""
+    """Hard-assert no (post-cap) family group is split across roles — that would be an assignment
+    bug, since whole groups are placed atomically. Then publish train↔challenge residual similarity
+    for each axis (sequence / complex / physical neighbourhood) AND the cap-induced family splits the
+    post-cap check cannot see. Fails closed only on a genuine assignment bug."""
     grp_roles: dict[int, set] = {}
     for g in genes:
         grp_roles.setdefault(labels[g], set()).add(role_of[g])
@@ -191,8 +222,22 @@ def audit_leakage(role_of: dict[str, str], labels: dict[str, int], genes: list[s
         "role_counts": {r: sum(role_of[g] == r for g in genes) for r in config.SPLIT_ROLES},
         "n_family_groups": len(set(labels.values())),
     }
+
+    # cap-induced leakage: families the cap refused to keep whole and that landed in >1 role. This is
+    # the leakage the post-cap assertion above is blind to (grp_roles keys on the post-cap label).
+    precap = _precap_labels(genes, gene_vec, complex_df, seq_threshold)
+    fam_members: dict[int, list[str]] = {}
+    for g in genes:
+        fam_members.setdefault(precap[g], []).append(g)
+    split_fams = [m for m in fam_members.values() if len({role_of[g] for g in m}) > 1]
+    report["n_precap_families"] = len(fam_members)
+    report["cap_induced_family_splits"] = len(split_fams)
     if not chal:
         return report
+
+    leaky_fam_chal = {g for m in split_fams for g in m
+                      if role_of[g] == "challenge" and any(role_of[t] == "train" for t in m)}
+    report["family_challenge_sharing_train_frac"] = len(leaky_fam_chal) / len(chal)
 
     seq = _sequence_residual(role_of, genes, gene_vec, seq_threshold)
     if seq:
@@ -242,6 +287,14 @@ def run() -> bool:
         emb = pd.read_parquet(config.PLM_EMBEDDINGS_PATH)
         u2v = {str(u): np.asarray(v, dtype=np.float32) for u, v in zip(emb["uniprot_id"], emb["embedding"])}
         gene_vec = {g: u2v[gene_uni[g]] for g in genes if isinstance(gene_uni.get(g), str) and gene_uni[g] in u2v}
+    if not gene_vec:
+        # The sequence/paralog family axis is THE hard block. With no embeddings it silently vanishes
+        # and only complex must-links group genes — a sequence-leaky split we'd stamp "leakage-safe".
+        print("[splits] ABORT: no PLM embeddings (PLM_EMBEDDINGS_PATH missing or no gene mapped). The "
+              "sequence hard-block would be disabled. Run the PLM embedding step first, or set "
+              "SPLITS_ALLOW_NO_SEQUENCE=1 to override (the resulting split is NOT leakage-safe).")
+        if not os.environ.get("SPLITS_ALLOW_NO_SEQUENCE"):
+            return False
     complex_df = pd.read_parquet(config.COMPLEX_MEMBERSHIP_PATH, columns=["protein_gene", "complex_id"])
     edges_df = pd.read_parquet(config.PROTEIN_EDGES_PATH, columns=["source_gene", "target_gene", "is_physical"])
 
@@ -275,6 +328,7 @@ def run() -> bool:
         "seed": config.SPLIT_SEED, "fractions_target": config.SPLIT_FRACTIONS,
         "fractions_realized_blocked": realized, "seq_cosine_threshold": config.SEQ_SIM_COSINE_THRESHOLD,
         "group_size_cap_frac": config.GROUP_SIZE_CAP, "n_genes": len(genes),
+        "sequence_block_active": bool(gene_vec), "n_genes_with_embedding": len(gene_vec),
         "n_family_groups": len(set(labels.values())), "refused_merges": refused,
         "sha256": {"blocked_target_ood.csv": h_blocked, "random.csv": h_random},
     }

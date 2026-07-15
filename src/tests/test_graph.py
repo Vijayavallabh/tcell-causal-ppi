@@ -7,6 +7,7 @@ suite runs on a dataless checkout.
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 import torch
 from torch import nn
 
@@ -93,15 +94,16 @@ def test_condition_gate_differs():
 
 
 def test_signed_message_has_tanh_and_relu():
+    torch.manual_seed(0)
     w_sign, w_mag = nn.Linear(4, 4, bias=False), nn.Linear(4, 4, bias=False)
     assert torch.allclose(signed_message(torch.zeros(2, 4), w_sign, w_mag), torch.zeros(2, 4))
     h = torch.randn(5, 4)
     out = signed_message(h, w_sign, w_mag)
     expected = torch.tanh(w_sign(h)) * torch.relu(w_mag(h))
-    assert torch.allclose(out, expected)
-    # magnitude factor is relu -> non-negative, so |out| <= |tanh factor| < 1
+    assert torch.allclose(out, expected)  # exact composition is the real invariant
+    # sign in [-1, 1] (tanh) times a non-negative magnitude (relu); magnitude is unbounded, so |out|
+    # is NOT bounded by 1 — assert only the relu non-negativity, not a false < 1 bound.
     assert (torch.relu(w_mag(h)) >= 0).all()
-    assert out.abs().max() < 1.0
 
 
 def test_forward_shape_no_nan():
@@ -140,3 +142,20 @@ def test_readout_attention_sums_to_one():
     enc = TypedGraphEncoder(graph, gene_to_idx).eval()
     _, _, attn = enc.encode_one("A", "Rest", torch.randn(config.GRAPH_HIDDEN_DIM))
     assert torch.allclose(attn.sum(), torch.tensor(1.0), atol=1e-5)
+
+
+def test_oov_condition_raises():
+    graph, gene_to_idx = _graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    with pytest.raises(ValueError):
+        enc.encode_one("A", "NotACondition", torch.randn(config.GRAPH_HIDDEN_DIM))
+
+
+def test_edge_gates_one_per_original_edge():
+    # regression: PP gates are length E (one per original edge), not the 2E symmetrised MP count
+    graph, gene_to_idx = _graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    sub = sample_subgraph(graph, "A", gene_to_idx=gene_to_idx)  # sampler is deterministic
+    _, gates, _ = enc.encode_one("A", "Rest", torch.randn(config.GRAPH_HIDDEN_DIM))
+    for rel in ("physical_ppi", "co_complex", "functional_assoc"):
+        assert gates[rel].numel() == sub[PROTEIN, rel, PROTEIN].edge_index.shape[1]

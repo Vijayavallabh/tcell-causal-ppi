@@ -115,16 +115,23 @@ class TypedGraphEncoder(nn.Module):
         self.readout = GraphReadout(hidden, config.GRAPH_N_HEADS)
 
     def _edges_with_gates(self, sub, h_cond, device):
-        """Symmetrise protein-protein edges, compute the per-edge condition gate once per relation."""
+        """Compute the per-edge condition gate once per relation, then symmetrise PP edges for
+        undirected message passing.
+
+        The RETURNED ``gates[rel]`` is one value per ORIGINAL edge (length E, aligned to the
+        sub-graph's ``edge_index``) for every relation — the mirrored second direction of a PP edge
+        carries an identical gate (the gate reads only edge features + condition), so we don't double
+        it into the Module-4-facing ``edge_gates``. ponytail: gate identity mapping (gate -> (u,v)) is
+        recoverable from the sub-graph's edge_index; forward the full identity API with Module 4."""
         edges, gates = {}, {}
         for rel in _PP_RELATIONS:
             ei = sub[PROTEIN, rel, PROTEIN].edge_index
             ea = sub[PROTEIN, rel, PROTEIN].edge_attr
-            ei = torch.cat([ei, ei.flip(0)], dim=1)   # undirected message passing
-            ea = torch.cat([ea, ea], dim=0)
-            alpha = self._gate(rel, ea, h_cond)
-            edges[rel] = (ei, ea, alpha)
-            gates[rel] = alpha.squeeze(-1)
+            alpha = self._gate(rel, ea, h_cond)                       # E (one per original edge)
+            edges[rel] = (torch.cat([ei, ei.flip(0)], dim=1),         # 2E: undirected message passing
+                          torch.cat([ea, ea], dim=0),
+                          torch.cat([alpha, alpha], dim=0))
+            gates[rel] = alpha.squeeze(-1)                            # length E, consistent across relations
         ei = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index
         ea = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_attr
         alpha = self._gate(_MEMBERSHIP, ea, h_cond)
@@ -138,11 +145,26 @@ class TypedGraphEncoder(nn.Module):
         cond = h_cond.expand(edge_attr.size(0), -1)
         return torch.sigmoid(self.gate[rel](torch.cat([cond, edge_attr], dim=1)))
 
+    @staticmethod
+    def _condition_index(condition) -> int:
+        """Resolve a culture condition to its embedding row. Unknown conditions are invalid input
+        (the vocab is closed — see config.CONDITIONS), so fail fast with a legible message rather than
+        a cryptic KeyError/IndexError deep in the embedding lookup."""
+        if isinstance(condition, str):
+            if condition not in _COND_INDEX:
+                raise ValueError(f"unknown culture_condition {condition!r}; valid: {list(_COND_INDEX)}")
+            return _COND_INDEX[condition]
+        idx = int(condition)
+        if not 0 <= idx < len(config.CONDITIONS):
+            raise ValueError(f"culture_condition index {idx} out of range [0, {len(config.CONDITIONS)})")
+        return idx
+
     def encode_one(self, target_gene: str, condition, h_do: torch.Tensor):
         """Encode a single (target, condition) -> (h_graph (dim,), edge_gates dict, attn (N,))."""
         device = self.proj.weight.device
+        h_do = h_do.to(device)  # public entry point: caller's h_do may be on a different device
         sub = sample_subgraph(self.graph, target_gene, gene_to_idx=self.gene_to_idx).to(device)
-        cond_idx = _COND_INDEX[condition] if isinstance(condition, str) else int(condition)
+        cond_idx = self._condition_index(condition)
         h_cond = self.condition(torch.tensor([cond_idx], device=device))  # (1, 64)
 
         edges, gates = self._edges_with_gates(sub, h_cond, device)
@@ -160,9 +182,10 @@ class TypedGraphEncoder(nn.Module):
         """(B targets, B conditions, h_do (B, dim)) -> (h_graph (B, dim), edge_gates dict-of-lists).
 
         Each target has its own subgraph, so ``edge_gates[relation]`` is a list over the batch
-        (one gate tensor per sample) — the per-sample structure Module 4 needs. Unknown target
-        genes fall back to a zero h_graph (never crash a batch).  ponytail: per-sample loop; swap
-        for PyG mini-batching if graph-encode throughput becomes the bottleneck in Module 3.
+        (one gate tensor per sample) — the per-sample structure Module 4 needs. Unknown target genes
+        fall back to a zero h_graph; an out-of-vocab culture_condition is invalid input and raises.
+        ponytail: per-sample loop; swap for PyG mini-batching if graph-encode throughput becomes the
+        bottleneck in Module 3.
         """
         device = self.proj.weight.device
         h_do = h_do.to(device)

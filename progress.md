@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (leakage-safe splits done; feat-003)
-**Active Feature:** feat-003 Leakage-Safe Splits — **DONE**. Next: feat-005 (programs) / feat-006 (baselines), both unblocked
+**Last Updated:** 2026-07-15 (post code-review fixes applied to feat-016 + feat-003; committed 967951e)
+**Active Feature:** feat-003 + feat-016 code-review fixes — **DONE** (committed 967951e). Next: feat-005 (programs) / feat-006 (baselines), both unblocked
 
 ## Status
 
@@ -94,9 +94,25 @@
     hairball; per report G1 + Phase-1 step 6/9 "publish the similarity distribution").
   - **4-role** partition (train/val/calibration/challenge, ~60/15/10/15; realized 62.5/13/7.9/16.6)
     + random diagnostic split. Frozen + hashed to `data/splits/` (git-tracked): blocked/random CSVs,
-    manifest.json, leakage_report.json. **Effectiveness validated**: challenge genes with a ≥0.85
-    train paralog cut 53.5% (random) → 28.1% (blocked) = 47% reduction.
+    manifest.json, leakage_report.json. **Effectiveness validated** (corrected post-review): challenge
+    genes with a ≥0.85 train paralog cut 53.8% (random) → 26.4% (blocked) = 51% reduction.
   - 8 synthetic tests (`test_splits.py`); `./init.sh` green (54 pytest).
+- [x] **Post code-review fixes** (feat-016 + feat-003; committed 967951e) — **DONE**
+  - Applied the verified `/code-review` findings (`docs/reviews/2026-07-15-code-review-feat-016-feat-003.md`).
+  - **feat-003 leakage-safety (split CSVs byte-identical, sha256 unchanged):** audit now publishes
+    cap-induced family splits via an uncapped pre-cap component pass (post-cap "no split" assertion was
+    blind to families the 5% cap must break: `cap_induced_family_splits=1`); sequence residual centered
+    in one global frame (was mismatched per-subset means, understating leakage → 53.8/26.4/51% vs old
+    53.5/28.1/47%); `run()` fails closed when PLM embeddings absent (was silent fail-open).
+  - **feat-016 bugs:** graph degree columns reordered to match Module 1 `[physical, functional, complex]`;
+    `encode_one` moves `h_do` to device; flaky signed-message test seeded + false `<1.0` bound dropped.
+  - **Tier 3 (all addressed):** cheap defenses (edge-feature `nan_to_num`, gene-symbol `dropna`,
+    unknown-source fail-fast); dead config constants removed; OOV culture_condition raises a legible
+    `ValueError` (`_condition_index`); diagnostic random split uses cumulative-boundary allocation (no
+    truncated tail — `random.csv` regenerated, blocked split + effectiveness numbers unchanged);
+    `edge_gates[rel]` now length E (one per original edge) for all relations, not 2E-doubled for PP
+    (full gate→edge identity API still deferred to Module 4).
+  - Regenerated `data/splits/`; **57 pytest** green (+3 regression checks).
 
 ### What's In Progress
 

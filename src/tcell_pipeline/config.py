@@ -102,10 +102,8 @@ GRAPH_LAYERS: int = 3            # relational message-passing layers
 GRAPH_N_HEADS: int = 4           # cross-attention heads in the graph readout
 EDGE_DROPOUT: float = 0.1        # DropEdge probability during training
 EDGE_FEATURE_DIM: int = 8        # source_onehot(5)+score(1)+is_direct_binary(1)+n_supporting(1)
-N_RELATION_TYPES: int = 4        # physical_ppi, co_complex, functional_assoc, complex_membership
 COMPLEX_EMBED_DIM: int = 256     # learned protein-complex node embedding dim
 CONDITION_EMBED_DIM: int = 64    # culture-condition embedding feeding the edge gate (Module 1 pattern)
-RELATION_TYPES: tuple[str, ...] = ("physical_ppi", "co_complex", "functional_assoc", "complex_membership")
 # protein node feature vector = frozen PLM + PINNACLE + 3 PPI degrees + control baseline expr
 PROTEIN_FEATURE_DIM: int = PLM_EMBED_DIM + PINNACLE_EMBED_DIM + 4
 
@@ -119,7 +117,6 @@ SPLIT_SEED: int = 0
 # family on the real marts. A tuning knob the leakage report calibrates (see docs/specs feat-003).
 SEQ_SIM_COSINE_THRESHOLD: float = 0.85
 GROUP_SIZE_CAP: float = 0.05          # max family-group size as a fraction of target genes
-SPLIT_AUDIT_HOPS: int = 1             # physical-neighbourhood audit radius (audit-only, not a block)
 BLOCKED_SPLIT_PATH: Path = SPLITS_ROOT / "blocked_target_ood.csv"
 RANDOM_SPLIT_PATH: Path = SPLITS_ROOT / "random.csv"
 SPLIT_MANIFEST_PATH: Path = SPLITS_ROOT / "manifest.json"

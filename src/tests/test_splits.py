@@ -90,6 +90,15 @@ def test_random_split_fractions():
         assert abs(counts[r] - frac) < 0.02
 
 
+def test_random_split_covers_all_items_small_n():
+    # cumulative-boundary allocation: every item placed exactly once, no truncated tail (regression for
+    # banker's-rounding over-allocation that dropped the last role's slice at small N)
+    for n in (10, 13, 27, 101):
+        role_of = splits.assign_random(list(range(n)), seed=0)
+        assert set(role_of) == set(range(n))                               # each item assigned once
+        assert sum(1 for _ in role_of) == n                                # sizes partition n exactly
+
+
 def test_grouping_ignores_non_qpre_columns():
     # family grouping must consult only q_pre structure; an extra (q_post-named) column changes nothing
     genes, gene_vec, complex_df, _ = _synthetic()

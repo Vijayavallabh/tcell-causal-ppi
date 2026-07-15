@@ -6,11 +6,51 @@
 - Current status: **Module 0 + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings (feat-015) +
   Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done.** feat-001, feat-002,
   feat-003, feat-004, feat-014, feat-015, feat-016 done. Next: feat-005 (programs) / feat-006 (baselines).
-- Branch / commit: main. **feat-016 (Module 2) at `100a505`; feat-003 (leakage-safe splits) landed in
-  the next feature commit** — `src/tcell_pipeline/splits.py`, `test_splits.py`, `docs/specs/…feat-003…md`,
-  the frozen git-tracked `data/splits/` artifacts, `config.py`, and state-doc sync (verified `./init.sh`:
-  54 passed). The two planning docs (report + walkthrough) got as-built notes but are gitignored
-  (local-only). Latest committed is always `git log -1` on main.
+- Branch / commit: main. **feat-016 (Module 2) at `100a505`; feat-003 (leakage-safe splits) at
+  `35e3999`; the xhigh `/code-review` fixes (Tier 1 + Tier 2 + all of Tier 3) at `967951e`.** Committed
+  range this session: `100a505..967951e`. The review-fix commit touches `splits.py`, `graph_builder.py`,
+  `typed_graph_encoder.py`, `test_graph.py`, `test_splits.py`, `config.py`, regenerated
+  `data/splits/{leakage_report,manifest}.json` + `random.csv` (blocked CSV byte-identical),
+  `feature_list.json` addenda, and new `docs/reviews/2026-07-15-code-review-*.md`.
+  The two planning docs (report + walkthrough) got as-built notes but are gitignored (local-only).
+  Latest committed is always `git log -1` on main.
+
+## Completed This Session (post code-review fixes — feat-016 + feat-003)
+
+Applied the verified findings from the xhigh `/code-review`
+(`docs/reviews/2026-07-15-code-review-feat-016-feat-003.md`). **Committed at `967951e`.**
+
+- **Tier 1 (feat-003 leakage-safety) — split CSVs byte-identical (sha256 unchanged), audit corrected:**
+  - `splits.py` audit now publishes **cap-induced family splits** via an uncapped pre-cap component
+    pass (`_precap_labels`). The old post-cap "no family group spans >1 role" assertion was blind to
+    families the 5% cap *must* break: real data has `cap_induced_family_splits=1` (one giant
+    single-linkage family), `family_challenge_sharing_train_frac=0.41` (an upper bound inflated by
+    single-linkage chaining — the pairwise residual, 26.4%, is the true leakage).
+  - `_sequence_residual` now centers train+challenge in **one global frame** (was per-subset means →
+    mismatched frames understating similarity). Corrected effectiveness **53.8%→26.4% = 51% reduction**
+    (was 53.5→28.1=47). `manifest.json` gains `sequence_block_active`, `n_genes_with_embedding`.
+  - `run()` **fails closed** when PLM embeddings are absent (was silent fail-open publishing a
+    sequence-leaky split as safe); override with `SPLITS_ALLOW_NO_SEQUENCE=1`.
+- **Tier 2 (feat-016 active bugs):** `graph_builder` degree columns reordered to
+  `[physical, functional, complex]` to match Module 1's `TARGET_SCALAR_KEYS`; `typed_graph_encoder`
+  `encode_one` now moves `h_do` to the module device (was a device-mismatch crash on the public entry
+  point); `test_graph.py` signed-message test seeded + the false `|out| < 1.0` bound dropped (relu is
+  unbounded → ~13% flake).
+- **Tier 3 (all addressed):**
+  - Cheap defenses: `graph_builder` `nan_to_num` on edge features (symmetric with node features),
+    `.dropna()` on gene symbols, fail-fast on unknown PPI source; dead config constants
+    `N_RELATION_TYPES` / `RELATION_TYPES` / `SPLIT_AUDIT_HOPS` removed.
+  - `#10` OOV `culture_condition` now raises a legible `ValueError` via `_condition_index` (still
+    fail-fast — closed 3-value vocab, invalid input); the "never crash a batch" docstring narrowed to
+    unknown *genes* only.
+  - `#11` diagnostic random split uses cumulative-boundary allocation (last boundary == n, no truncated
+    tail). `random.csv` regenerated; **`blocked_target_ood.csv` still byte-identical** to 35e3999 and the
+    effectiveness numbers are unchanged (gene-level baseline doesn't shift at N=11525).
+  - `#12` returned `edge_gates[rel]` is now length **E** (one per original edge) for *all* relations,
+    aligned to the sub-graph `edge_index` (was 2E-doubled for PP — the mirror carried an identical gate).
+    Full gate→(u,v) identity-forwarding API still **deferred to Module 4** (its consumer isn't built).
+- **Regenerated** `data/splits/`; **57 pytest green** (+3 regression checks: OOV raises, edge_gates
+  length == E, random split covers all items at small N).
 
 ## Completed This Session (feat-003 — leakage-safe splits)
 
@@ -29,9 +69,9 @@ components on every axis: physical 95%, complex 23%, ESM cos≥0.95 92%, Louvain
 - [x] Frozen + hashed to **`data/splits/`** (git-tracked): `blocked_target_ood.csv`, `random.csv`,
   `manifest.json`, `leakage_report.json` (machine-readable: hard-asserts no family group split across
   roles; publishes per-axis train→challenge residual + fail-closed audit).
-- [x] **Effectiveness validated**: challenge genes with a ≥0.85 train paralog cut **53.5% (random) →
-  28.1% (blocked) = 47% reduction** (the 28% floor is irreducible given dense ESM geometry). 8 synthetic
-  tests (`test_splits.py`). `./init.sh`: **54 passed**.
+- [x] **Effectiveness validated** (numbers corrected in the post-review pass below): challenge genes
+  with a ≥0.85 train paralog cut **53.8% (random) → 26.4% (blocked) = 51% reduction** (the ~26% floor is
+  irreducible given dense ESM geometry). 8 synthetic tests (`test_splits.py`). `./init.sh`: **54 passed**.
 
 ## Completed This Session (feat-016 — Module 2 typed graph encoder)
 
@@ -100,9 +140,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **54 passed** on torch cu126 (46 + 8 feat-003); compileall clean |
+| Compile + tests | `./init.sh` | Pass | **57 passed** on torch cu126 (54 + 3 post-review regression checks); compileall clean |
 | feat-003 split tests | `pytest src/tests/test_splits.py` | Pass | 8 passed; grouping/cap/no-split/determinism/audit-fail-closed/fractions |
-| feat-003 real split | `python -m tcell_pipeline.splits` | Pass | 11525 genes → 5141 family groups (largest 5%); wrote data/splits/*; sequence leakage 53.5%→28.1% (47% cut) vs random |
+| feat-003 real split | `python -m tcell_pipeline.splits` | Pass | 11525 genes → 5141 family groups (largest 5%); wrote data/splits/*; sequence leakage **26.4% (blocked) vs 53.8% (random) = 51% cut** (corrected global-frame residual); split CSVs byte-identical to the 35e3999 freeze |
 | Module 2 graph tests | `pytest src/tests/test_graph.py` | Pass | 8 passed; synthetic graph (structure, 2-hop cap, condition gate differs, signed msg, forward finite, edge_gates, zero/absent target, attn sums to 1) |
 | Module 2 real-data smoke | `python src/tcell_pipeline/graph/run_module2_smoke.py` | Pass | full 25440-node graph ~18s; CD3E nbhd 512 proteins; Module 1 h_do -> h_graph (4,256) finite on GPU; gates differ by condition; attn sums to 1 |
 | Encoder tests (real data) | `pytest src/tests/test_encoders.py` | Pass | 10 passed; real PLM+PINNACLE parquets, real marts — no synthetic parquets |
@@ -177,10 +217,13 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 ## Recommended Next Step
 
-- Commit feat-003 (uncommitted in the working tree). Then start **feat-005 (latent program extraction)**
-  and/or **feat-006 (simple baselines)** — both depend only on feat-003 (now done) and consume the frozen
-  `data/splits/`. Fold-local fits (programs, scaling) must use the **train** role only; the loader reads
-  `load_split()` and filters by role. Before freezing H1, run the near-null-signal check on development data.
+- Post-review fixes are committed (`967951e`); working tree is clean. Start **feat-005 (latent program
+  extraction)** and/or **feat-006 (simple baselines)** — both
+  depend only on feat-003 (done) and consume the frozen `data/splits/`. Fold-local fits (programs,
+  scaling) must use the **train** role only; the loader reads `load_split()` and filters by role. Before
+  freezing H1, run the near-null-signal check on development data.
 - feat-003 calibration knob left open (`docs/specs` + leakage_report.json): the centered-cosine threshold
   (0.85) and 5% cap can be tuned on the published paralog-similarity distribution; the sequence residual
-  is 28% (vs 53% random) — tighten via pairwise must-links or curated families if a downstream result needs it.
+  is 26.4% (vs 53.8% random) — tighten via pairwise must-links or curated families if a downstream result
+  needs it. The report also now surfaces `cap_induced_family_splits` (the 5%-cap must break any family
+  bigger than one role's budget) — tightening the cap trades partition balance against that residual.
