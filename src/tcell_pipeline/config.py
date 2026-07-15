@@ -124,7 +124,8 @@ SPLIT_LEAKAGE_REPORT_PATH: Path = SPLITS_ROOT / "leakage_report.json"
 
 
 # --- Module 3 (Program Decoder) ---
-GENE_LEVEL_DIM: int = DE_N_VARS   # 10282 — full gene axis the loading matrix B spans
+# The decoder's gene axis is derived from the loaded basis B (B.shape[0]), NOT a config constant, so
+# it always matches the fold-local loadings rather than a value that could silently drift from them.
 PROGRAM_DIM: int = 128            # K latent programs (compared at 64/128/256/512 in §6.5)
 PROGRAM_METHOD: str = "sparse_pca"  # fold-local basis: sparse_pca | nmf | fastica | svd (§6.1)
 PROGRAM_LOADINGS_PATH: Path = INTERMEDIATE_ROOT / "gene_program_loadings.parquet"  # B: gene_name + program_k

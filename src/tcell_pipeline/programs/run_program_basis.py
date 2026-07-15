@@ -18,19 +18,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # src/ on path for direct runs
 
 import pandas as pd  # noqa: E402
-import scipy.sparse as sp  # noqa: E402
 
 from tcell_pipeline import config  # noqa: E402
 from tcell_pipeline.programs.program_basis import (  # noqa: E402
     fit_program_basis,
+    load_zscore_rows,
     save_program_basis,
     save_program_response,
     train_row_indices,
+    zscore_path,
 )
 
 
 def run(method: str = config.PROGRAM_METHOD, K: int = config.PROGRAM_DIM, max_iter: int = 100) -> bool:
-    for p in (config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_VAR_PATH):
+    required = (config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_VAR_PATH, zscore_path())
+    for p in required:
         if not p.exists():
             print(f"[program-basis] missing {p} — run splits / run_module0.py first")
             return False
@@ -40,8 +42,13 @@ def run(method: str = config.PROGRAM_METHOD, K: int = config.PROGRAM_DIM, max_it
     gene_names = pd.read_parquet(config.DE_VAR_PATH, columns=["gene_name"])["gene_name"].tolist()
 
     rows = train_row_indices(split, pc)
-    assert len(set(rows) & set(train_row_indices(split, pc, role="challenge"))) == 0, "fold leak!"
-    Z = sp.load_npz(config.DE_LAYERS_DIR / "zscore.npz").tocsr()[rows].toarray()
+    # Real fold-locality check (independent of train_row_indices' own logic): none of the selected
+    # rows may belong to a non-train-role gene. Raise (not assert) so it survives `python -O`.
+    train_genes = set(split.loc[split["role"] == "train", "hgnc_symbol"])
+    leaked = set(pc.loc[pc["row_index"].isin(rows), "hgnc_symbol"]) - train_genes
+    if leaked:
+        raise RuntimeError(f"fold leak: {len(leaked)} non-train genes in train rows, e.g. {sorted(leaked)[:5]}")
+    Z = load_zscore_rows(rows)
     print(f"[program-basis] {method} K={K} on {Z.shape[0]} train rows x {Z.shape[1]} genes")
 
     t0 = time.time()

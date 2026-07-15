@@ -71,9 +71,10 @@ overlap before fitting. Val/calibration/challenge responses never enter the fit.
 
 ## Config additions (`config.py`)
 
-`GENE_LEVEL_DIM = 10282` (= `DE_N_VARS`, the gene axis of `B`), `PROGRAM_DIM = 128` (K; §6.5 sweep
-64/128/256/512), `PROGRAM_METHOD = "sparse_pca"`, `PROGRAM_LOADINGS_PATH` / `PROGRAM_RESPONSE_PATH`
-(under `data/intermediate/`, gitignored), `PROGRAM_COL_PREFIX = "program_"`.
+`PROGRAM_DIM = 128` (K; §6.5 sweep 64/128/256/512), `PROGRAM_METHOD = "sparse_pca"`,
+`PROGRAM_LOADINGS_PATH` / `PROGRAM_RESPONSE_PATH` (under `data/intermediate/`, gitignored),
+`PROGRAM_COL_PREFIX = "program_"`. The decoder's gene axis is derived from the loaded basis
+`B.shape[0]`, not a config constant, so it always matches the fold-local loadings.
 
 ## Public interface
 

@@ -10,10 +10,15 @@ with nmf/fastica/svd available for the method comparison. B is frozen downstream
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 
 from tcell_pipeline import config
+
+ZSCORE_NPZ = "zscore.npz"  # clipped sparse DE z-score layer under DE_LAYERS_DIR
 
 
 def train_row_indices(split_df: pd.DataFrame, pc_df: pd.DataFrame, role: str = "train") -> np.ndarray:
@@ -25,6 +30,15 @@ def train_row_indices(split_df: pd.DataFrame, pc_df: pd.DataFrame, role: str = "
     genes = set(split_df.loc[split_df["role"] == role, "hgnc_symbol"])
     rows = pc_df.loc[pc_df["hgnc_symbol"].isin(genes), "row_index"].to_numpy()
     return np.sort(rows.astype(np.int64))
+
+
+def zscore_path() -> Path:
+    return config.DE_LAYERS_DIR / ZSCORE_NPZ
+
+
+def load_zscore_rows(rows: np.ndarray) -> np.ndarray:
+    """Dense (len(rows), G) float32 slice of the sparse z-score layer — one loader for both entrypoints."""
+    return sp.load_npz(zscore_path()).tocsr()[rows].toarray()
 
 
 def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int):
@@ -45,7 +59,9 @@ def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int):
 
         model = FastICA(n_components=K, random_state=seed, max_iter=max_iter, whiten="unit-variance")
         scores = model.fit_transform(Z)
-        return model.components_, scores
+        # ICA loadings are mixing_ (X ~= S @ mixing_.T), NOT components_ (the unmixing matrix); return
+        # mixing_.T so B = components.T = mixing_ matches the X ~= A @ B.T contract the other methods use.
+        return model.mixing_.T, scores
     if method == "nmf":
         from sklearn.decomposition import NMF
 
@@ -100,6 +116,10 @@ def load_program_basis(
     df = pd.read_parquet(path)
     prog_cols = [c for c in df.columns if c.startswith(config.PROGRAM_COL_PREFIX)]
     if gene_order is not None:
+        dups = df["gene_name"][df["gene_name"].duplicated()].unique()
+        if len(dups):  # reindex needs a unique index; a duplicate gene loading is ambiguous — fail clearly
+            raise ValueError(f"gene_program_loadings has {len(dups)} duplicate gene_name(s), "
+                             f"cannot align to gene_order: {list(dups)[:5]}")
         df = df.set_index("gene_name").reindex(gene_order).reset_index()
         df[prog_cols] = df[prog_cols].fillna(0.0)
     B = df[prog_cols].to_numpy(dtype=np.float32)

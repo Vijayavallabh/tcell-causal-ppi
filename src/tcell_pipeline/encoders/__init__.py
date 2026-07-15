@@ -1,3 +1,4 @@
+from tcell_pipeline.encoders.batch import build_encoder_batch
 from tcell_pipeline.encoders.context_encoder import ContextEncoder
 from tcell_pipeline.encoders.embedding_store import PluggableEmbeddingStore
 from tcell_pipeline.encoders.perturbation_encoder import PerturbationEncoder
@@ -10,4 +11,5 @@ __all__ = [
     "PluggableEmbeddingStore",
     "QualityEncoder",
     "TargetEncoder",
+    "build_encoder_batch",
 ]

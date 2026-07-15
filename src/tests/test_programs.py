@@ -86,6 +86,7 @@ def test_gene_decode_uses_frozen_basis_buffer():
     names_p = dict(dec.named_parameters())
     names_b = dict(dec.named_buffers())
     assert "program_basis" in names_b and "program_basis" not in names_p  # B is a buffer, not trainable
+    assert "program_basis" not in dec.state_dict()  # non-persistent: never rides in a checkpoint
     h_graph = torch.randn(3, config.GRAPH_HIDDEN_DIM)
     h_do = torch.randn(3, config.H_DO_DIM)
     out = dec(h_do, h_graph)
@@ -94,10 +95,12 @@ def test_gene_decode_uses_frozen_basis_buffer():
 
 
 def test_expression_only_variant_pins_lambda_zero():
-    dec, _ = _decoder()
+    dec, B = _decoder()
     out = dec(torch.randn(4, config.H_DO_DIM), h_graph=None)
     assert (out["lambda"] == 0).all()
     assert out["delta_x"].shape == (4, 50) and torch.isfinite(out["delta_x"]).all()
+    # no graph -> no graph-residual intercept: delta_x is exactly the program decode (clean §10.6 ablation)
+    assert torch.allclose(out["delta_x"], out["delta_z"] @ B.T, atol=1e-5)
 
 
 # ---- EGIPGModel (M1 + M2 + M3) on the synthetic graph ----

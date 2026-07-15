@@ -10,6 +10,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
+from tcell_pipeline import config
 from tcell_pipeline.encoders import PerturbationEncoder
 from tcell_pipeline.graph import TypedGraphEncoder
 from tcell_pipeline.programs.program_basis import load_program_basis
@@ -22,17 +23,19 @@ class EGIPGModel(nn.Module):
         program_basis: torch.Tensor,
         perturbation_encoder: PerturbationEncoder | None = None,
         graph_encoder: TypedGraphEncoder | None = None,
+        h_graph_dim: int = config.GRAPH_HIDDEN_DIM,
+        h_do_dim: int = config.H_DO_DIM,
     ) -> None:
         super().__init__()
         self.perturbation_encoder = perturbation_encoder or PerturbationEncoder()
         self.graph_encoder = graph_encoder  # None == expression-only nested variant
-        self.decoder = ProgramDecoder(program_basis)
+        # dims are explicit + overridable so a reduced-width encoder ablation sizes the decoder to the
+        # wrapped encoders' real output, not a hardcoded config assumption
+        self.decoder = ProgramDecoder(program_basis, h_graph_dim=h_graph_dim, h_do_dim=h_do_dim)
 
     @classmethod
     def from_saved_basis(cls, gene_order, path=None, **kw) -> "EGIPGModel":
         """Build with B loaded from the fold-local loadings parquet, aligned to ``gene_order``."""
-        from tcell_pipeline import config
-
         B, _ = load_program_basis(path or config.PROGRAM_LOADINGS_PATH, gene_order=gene_order)
         return cls(torch.from_numpy(B), **kw)
 

@@ -42,7 +42,7 @@ syncs in one commit; `git log -1` for the hash).
   nested variant (λ pinned to 0). **Remaining:** Module 4 sparse rationale head, losses, train/cal loops.
 - **Verification:** `./init.sh` green — **69 tests** (57 prior + 12 new `test_programs.py`, all synthetic).
   Real-data `run_module3_smoke.py` **PASSED** end-to-end (M1→M2→M3 on 4 real perturbations: finite,
-  λ∈[0.46,0.55], σ>0; expr-only λ==0). `config.py` +`GENE_LEVEL_DIM/PROGRAM_DIM/PROGRAM_METHOD/`
+  λ∈[0.46,0.55], σ>0; expr-only λ==0). `config.py` +`PROGRAM_DIM/PROGRAM_METHOD/`
   `PROGRAM_LOADINGS_PATH/PROGRAM_RESPONSE_PATH/PROGRAM_COL_PREFIX`.
 
 ## Completed This Session (post code-review fixes — feat-016 + feat-003)
@@ -191,11 +191,27 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
   `run_program_basis.py` (NEW package)
 - `src/tcell_pipeline/model.py` (NEW — EGIPGModel M1+M2+M3)
 - `src/tcell_pipeline/run_module3_smoke.py` (NEW — real-data e2e smoke)
+- `src/tcell_pipeline/encoders/batch.py` (NEW — shared `build_encoder_batch` for the M1/M2/M3 smokes)
 - `src/tests/test_programs.py` (NEW, 12 synthetic tests)
-- `src/tcell_pipeline/config.py` — Module 3 constants (GENE_LEVEL_DIM, PROGRAM_DIM, PROGRAM_METHOD,
+- `src/tcell_pipeline/config.py` — Module 3 constants (PROGRAM_DIM, PROGRAM_METHOD,
   PROGRAM_LOADINGS_PATH, PROGRAM_RESPONSE_PATH, PROGRAM_COL_PREFIX)
 - `feature_list.json` (feat-005 + feat-008 → in-progress), `progress.md`, `session-handoff.md`
 - `data/intermediate/{gene_program_loadings,program_response}.parquet` (gitignored artifacts from the smoke run)
+
+## Post-review fixes (Module 3 — xhigh `/code-review`, all 13 findings resolved)
+
+An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all resolved:
+- **Correctness:** FastICA basis now returns `mixing_` (loadings), not `components_` (unmixing);
+  `program_basis` buffer is `persistent=False` (a stale checkpoint can't clobber the gene-aligned B);
+  `run_program_basis` fold-leak guard is now an independent `raise` (not a tautological `assert`);
+  σ has a `1e-12` floor (no float32 underflow to 0); the expression-only variant drops the graph
+  residual bias (clean §10.6 ablation); `load_program_basis` raises a clear error on duplicate gene
+  symbols; the M3 smoke + orchestrator guards now cover every mart they read.
+- **Cleanup:** `EGIPGModel` takes overridable `h_graph_dim/h_do_dim`; shared `build_encoder_batch`
+  (encoders/batch.py) replaces the batch dict duplicated across the 3 smokes; shared `load_zscore_rows`
+  helper; hoisted the decoder's `joint` concat; removed the dead `GENE_LEVEL_DIM` config alias.
+- **Verified:** `./init.sh` 69 tests green; all three real-data smokes (M1/M2/M3) + the basis
+  orchestrator re-run clean.
 
 ## Files Added (this session, feat-003 — leakage-safe splits)
 

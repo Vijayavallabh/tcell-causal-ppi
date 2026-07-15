@@ -20,27 +20,15 @@ import pandas as pd  # noqa: E402
 import torch  # noqa: E402
 
 from tcell_pipeline import config  # noqa: E402
-from tcell_pipeline.encoders import PerturbationEncoder  # noqa: E402
+from tcell_pipeline.encoders import PerturbationEncoder, build_encoder_batch  # noqa: E402
 from tcell_pipeline.graph import COMPLEX, PROTEIN, TypedGraphEncoder, build_hetero_graph, sample_subgraph  # noqa: E402
 
-DONOR_COLS = [f"{config.DONOR_PC_PREFIX}{i:02d}" for i in range(config.DONOR_PCA_DIMS)]
 DE_OBS_PATH = config.INTERMEDIATE_ROOT / "de_obs.parquet"
 
 
 def _module1_h_do(pc: pd.DataFrame, obs: pd.DataFrame, device: str) -> torch.Tensor:
-    batch = {
-        "uniprot_id": [None if pd.isna(x) else str(x) for x in pc["uniprot_id"]],
-        "ppi_degree_physical": torch.tensor(pc["ppi_degree_physical"].to_numpy()),
-        "ppi_degree_functional": torch.tensor(pc["ppi_degree_functional"].to_numpy()),
-        "ppi_degree_complex": torch.tensor(pc["ppi_degree_complex"].to_numpy()),
-        "control_baseline_expr": torch.tensor(pc["control_baseline_expr"].to_numpy()),
-        "culture_condition": pc["culture_condition"].tolist(),
-        "donor_pc": torch.tensor(pc[DONOR_COLS].to_numpy(dtype="float32")),
-        "n_guides": torch.tensor(obs["n_guides"].to_numpy()),
-        "single_guide_estimate": torch.tensor(obs["single_guide_estimate"].to_numpy(dtype=bool)),
-    }
     with torch.no_grad():
-        return PerturbationEncoder().eval().to(device)(batch)
+        return PerturbationEncoder().eval().to(device)(build_encoder_batch(pc, obs))
 
 
 def run() -> bool:

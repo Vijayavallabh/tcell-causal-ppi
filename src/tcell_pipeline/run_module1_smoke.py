@@ -24,25 +24,9 @@ import pandas as pd  # noqa: E402
 import torch  # noqa: E402
 
 from tcell_pipeline import config  # noqa: E402
-from tcell_pipeline.encoders import PerturbationEncoder  # noqa: E402
+from tcell_pipeline.encoders import PerturbationEncoder, build_encoder_batch  # noqa: E402
 
-DONOR_COLS = [f"{config.DONOR_PC_PREFIX}{i:02d}" for i in range(config.DONOR_PCA_DIMS)]
 DE_OBS_PATH = config.INTERMEDIATE_ROOT / "de_obs.parquet"
-
-
-def _build_batch(pc: pd.DataFrame, obs: pd.DataFrame) -> dict:
-    """Assemble the Module 3 loader-contract batch dict for a slice of the real marts."""
-    return {
-        "uniprot_id": [None if pd.isna(x) else str(x) for x in pc["uniprot_id"]],
-        "ppi_degree_physical": torch.tensor(pc["ppi_degree_physical"].to_numpy()),
-        "ppi_degree_functional": torch.tensor(pc["ppi_degree_functional"].to_numpy()),
-        "ppi_degree_complex": torch.tensor(pc["ppi_degree_complex"].to_numpy()),
-        "control_baseline_expr": torch.tensor(pc["control_baseline_expr"].to_numpy()),
-        "culture_condition": pc["culture_condition"].tolist(),
-        "donor_pc": torch.tensor(pc[DONOR_COLS].to_numpy(dtype="float32")),
-        "n_guides": torch.tensor(obs["n_guides"].to_numpy()),
-        "single_guide_estimate": torch.tensor(obs["single_guide_estimate"].to_numpy(dtype=bool)),
-    }
 
 
 def run(batch_size: int = 512) -> bool:
@@ -82,7 +66,7 @@ def run(batch_size: int = 512) -> bool:
     t0 = time.time()
     with torch.no_grad():
         for i in range(0, n, batch_size):
-            h = enc(_build_batch(pc_all.iloc[i:i + batch_size].reset_index(drop=True),
+            h = enc(build_encoder_batch(pc_all.iloc[i:i + batch_size].reset_index(drop=True),
                                  obs_all.iloc[i:i + batch_size]))
             all_finite &= bool(torch.isfinite(h).all())
             hn = h.cpu().numpy()
@@ -99,7 +83,7 @@ def run(batch_size: int = 512) -> bool:
     # leakage fence on REAL q_post columns present in the mart
     qpost = [c for c in config.Q_POST_COLS if c in pc_all.columns]
     print(f"\nLeakage fence: mart has {len(qpost)} real q_post columns, e.g. {qpost[:3]}")
-    bad = _build_batch(pc_all.iloc[:4].reset_index(drop=True), obs_all.iloc[:4])
+    bad = build_encoder_batch(pc_all.iloc[:4].reset_index(drop=True), obs_all.iloc[:4])
     bad[qpost[0]] = torch.tensor(pc_all[qpost[0]].iloc[:4].to_numpy())
     try:
         enc(bad)

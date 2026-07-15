@@ -29,8 +29,15 @@ Scope was Module 3 only — Module 4, losses, and training loops deliberately ex
   basis shapes across all 4 methods, fold-local row selection, decoder shapes, λ∈[0,1], σ>0, B-is-buffer,
   `Δx=B·Δzᵀ+r`, expr-only variant, full EGIPGModel forward). Real-data `run_module3_smoke.py` **PASSED**
   end-to-end (M1→M2→M3 on 4 real perturbations: finite, λ∈[0.46,0.55], σ>0; expr-only λ==0).
-- **config additions:** `GENE_LEVEL_DIM=10282`, `PROGRAM_DIM=128`, `PROGRAM_METHOD="sparse_pca"`,
+- **config additions:** `PROGRAM_DIM=128`, `PROGRAM_METHOD="sparse_pca"`,
   `PROGRAM_LOADINGS_PATH`, `PROGRAM_RESPONSE_PATH`, `PROGRAM_COL_PREFIX`.
+- **Post-review fixes (xhigh `/code-review`, all 13 findings resolved):** FastICA basis returns
+  `mixing_` (loadings) not `components_`; `program_basis` buffer `persistent=False`; independent
+  `raise`-based fold-leak guard; σ floored at `1e-12`; expr-only variant drops the graph residual bias;
+  `load_program_basis` errors clearly on duplicate gene symbols; complete mart guards in the M3 smoke +
+  orchestrator; overridable decoder dims on `EGIPGModel`; shared `build_encoder_batch` (encoders/batch.py)
+  + `load_zscore_rows`; hoisted decoder `joint`; removed the dead `GENE_LEVEL_DIM` alias. `./init.sh`
+  69 green; M1/M2/M3 smokes + orchestrator all re-run clean.
 
 ## Status
 
