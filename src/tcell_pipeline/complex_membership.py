@@ -13,7 +13,9 @@ def parse_corum_complexes(corum: pd.DataFrame) -> pd.DataFrame:
 
     CORUM is a manually curated resource, so every membership is is_curated=1.
     """
-    gene_col = next((c for c in corum.columns if "subunits(Gene name)" in c or "Gene name" in c), None)
+    from tcell_pipeline.ppi_graph import _corum_gene_col
+
+    gene_col = _corum_gene_col(corum.columns)
     id_col = next((c for c in corum.columns if c.lower() in ("complexid", "complex_id", "complexname")), None)
     if gene_col is None or id_col is None:
         return pd.DataFrame(columns=MEMBERSHIP_COLS)

@@ -28,7 +28,8 @@ SOURCE_URLS = {
                "BIOGRID-4.4.235/BIOGRID-ORGANISM-4.4.235.tab3.zip",
     "string_links": "https://stringdb-downloads.org/download/protein.links.v12.0/9606.protein.links.v12.0.txt.gz",
     "string_info": "https://stringdb-downloads.org/download/protein.info.v12.0/9606.protein.info.v12.0.txt.gz",
-    "corum": "https://mips.helmholtz-muenchen.de/corum/download/releases/current/coreComplexes.txt.zip",
+    "corum": "https://mips.helmholtz-muenchen.de/fastapi-corum/public/file/"
+             "download_current_file?file_id=human&file_format=txt",
 }
 
 
@@ -71,6 +72,11 @@ def harmonize_edges(frames: list[pd.DataFrame]) -> pd.DataFrame:
 
 # --- downloads (best-effort; return None on any failure) ---------------------
 
+# ponytail: the helmholtz CORUM host serves a broken TLS chain (certifi also fails to
+# verify it); skip verification for this one source rather than weaken it for all.
+_NO_TLS_VERIFY = {"corum"}
+
+
 def _cache(source: str, url: str) -> Path | None:
     dest = config.PPI_CACHE_ROOT / source / Path(url.split("?")[0]).name
     if dest.exists():
@@ -79,7 +85,12 @@ def _cache(source: str, url: str) -> Path | None:
     try:
         import requests
 
-        with requests.get(url, stream=True, timeout=60) as r:
+        verify = source not in _NO_TLS_VERIFY
+        if not verify:
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        with requests.get(url, stream=True, timeout=60, verify=verify) as r:
             r.raise_for_status()
             tmp = dest.with_name(dest.name + ".tmp")
             with open(tmp, "wb") as fh:
@@ -189,12 +200,18 @@ def _load_string() -> pd.DataFrame | None:
     return _edges(out, "string", "functional-association", func=1)
 
 
+def _corum_gene_col(columns) -> str | None:
+    # matches old "subunits(Gene name)" and CORUM 5.x "subunits_gene_name"; excludes the synonyms column.
+    return next((c for c in columns
+                 if "gene name" in c.lower().replace("_", " ") and "synonym" not in c.lower()), None)
+
+
 def _load_corum() -> pd.DataFrame | None:
     p = _cache("corum", SOURCE_URLS["corum"])
     if p is None:
         return None
     df = pd.read_csv(p, sep="\t", compression="infer")
-    col = next((c for c in df.columns if "subunits(Gene name)" in c or "Gene name" in c), None)
+    col = _corum_gene_col(df.columns)
     if col is None:
         return None
     rows = []
