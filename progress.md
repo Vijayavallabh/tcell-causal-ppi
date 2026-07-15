@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (Module 2 typed graph encoder done; feat-016)
-**Active Feature:** feat-016 Typed Graph Encoder (Module 2) — **DONE**. Next: feat-003 (leakage-safe splits)
+**Last Updated:** 2026-07-15 (leakage-safe splits done; feat-003)
+**Active Feature:** feat-003 Leakage-Safe Splits — **DONE**. Next: feat-005 (programs) / feat-006 (baselines), both unblocked
 
 ## Status
 
@@ -84,15 +84,28 @@
     (`graph/run_module2_smoke.py`): full graph in ~18s, CD3E neighbourhood, Module 1 h_do ->
     Module 2 h_graph (4,256) finite on GPU, gates differ by condition, attention sums to 1.
 
+- [x] **feat-003 Leakage-Safe Splits** (`src/tcell_pipeline/splits.py`) — **DONE**
+  - Design in `docs/specs/2026-07-15-feat-003-leakage-safe-splits.md` (from the experiment-plan
+    report). **Empirical measurement forced the algorithm**: naive connected-components collapses on
+    every axis (physical 1-hop → 95% giant component, complex → 23%, raw ESM cos≥0.95 → 92%,
+    Louvain → 42%). Hard block = sequence/paralog family via **representative (non-chaining)
+    clustering on centered ESM-2 embeddings** (cos≥0.85 → 3.1% largest family) + CORUM co-membership
+    under a 5% size cap (capped union-find). Physical-PPI neighbourhood is **audit-only** (95%
+    hairball; per report G1 + Phase-1 step 6/9 "publish the similarity distribution").
+  - **4-role** partition (train/val/calibration/challenge, ~60/15/10/15; realized 62.5/13/7.9/16.6)
+    + random diagnostic split. Frozen + hashed to `data/splits/` (git-tracked): blocked/random CSVs,
+    manifest.json, leakage_report.json. **Effectiveness validated**: challenge genes with a ≥0.85
+    train paralog cut 53.5% (random) → 28.1% (blocked) = 47% reduction.
+  - 8 synthetic tests (`test_splits.py`); `./init.sh` green (54 pytest).
+
 ### What's In Progress
 
-- (none — feat-014 + feat-015 + feat-016 closed)
+- (none — feat-014 + feat-015 + feat-016 + feat-003 closed)
 
 ### What's Next
 
-1. feat-003 Leakage-Safe Train/Val/Test Splits — gene-family / protein-complex / graph-neighborhood
-   blocking, hash + freeze split files. Inputs now all present: id_mapping, protein_edges,
-   complex_membership, perturbation_condition.
+1. feat-005 Latent Program Extraction and/or feat-006 Simple Baselines — both depend only on
+   feat-003 (now done) and consume the frozen splits (fold-local fits use the train role only).
 2. Optional: near-null-signal check on development data before freezing H1 (2026-07-14 finding).
 
 ## Blockers / Risks
@@ -128,7 +141,17 @@
   reused across layers and returned as `edge_gates`. ponytail: per-target subgraph loop in forward
   (upgrade to PyG mini-batching if Module 3 graph-encode throughput demands it).
 
-## Files Added This Session (feat-016 — Module 2 typed graph encoder)
+## Files Added This Session (feat-003 — leakage-safe splits)
+
+- `src/tcell_pipeline/splits.py` (NEW): family grouping (capped union-find), 4-role partition, random
+  split, leakage audit, `run()` → frozen `data/splits/` artifacts
+- `src/tests/test_splits.py` (NEW): 8 synthetic tests
+- `docs/specs/2026-07-15-feat-003-leakage-safe-splits.md` (NEW): design doc (report-derived + empirical)
+- `data/splits/` (NEW, git-tracked): `blocked_target_ood.csv`, `random.csv`, `manifest.json`, `leakage_report.json`
+- `src/tcell_pipeline/config.py` — feat-003 constants (SPLITS_ROOT, SPLIT_ROLES/FRACTIONS/SEED, SEQ_SIM_COSINE_THRESHOLD, GROUP_SIZE_CAP, artifact paths)
+- `feature_list.json` (feat-003 → done), `progress.md`, `session-handoff.md`
+
+## Files Added Prior This Session (feat-016 — Module 2 typed graph encoder)
 
 - `src/tcell_pipeline/graph/__init__.py` (NEW)
 - `src/tcell_pipeline/graph/graph_builder.py` (NEW): `build_hetero_graph()` -> HeteroData + gene_to_idx

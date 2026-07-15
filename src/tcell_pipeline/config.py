@@ -110,6 +110,22 @@ RELATION_TYPES: tuple[str, ...] = ("physical_ppi", "co_complex", "functional_ass
 PROTEIN_FEATURE_DIM: int = PLM_EMBED_DIM + PINNACLE_EMBED_DIM + 4
 
 
+# --- feat-003 (Leakage-Safe Train/Val/Test Splits) ---
+SPLITS_ROOT: Path = Path(os.environ.get("SPLITS_ROOT", DATA_DIR / "splits"))
+SPLIT_ROLES: tuple[str, ...] = ("train", "val", "calibration", "challenge")  # challenge == sequestered test
+SPLIT_FRACTIONS: dict[str, float] = {"train": 0.60, "val": 0.15, "calibration": 0.10, "challenge": 0.15}
+SPLIT_SEED: int = 0
+# Centered ESM-2 cosine, representative (non-chaining) clustering: measured to give a 3.1% largest
+# family on the real marts. A tuning knob the leakage report calibrates (see docs/specs feat-003).
+SEQ_SIM_COSINE_THRESHOLD: float = 0.85
+GROUP_SIZE_CAP: float = 0.05          # max family-group size as a fraction of target genes
+SPLIT_AUDIT_HOPS: int = 1             # physical-neighbourhood audit radius (audit-only, not a block)
+BLOCKED_SPLIT_PATH: Path = SPLITS_ROOT / "blocked_target_ood.csv"
+RANDOM_SPLIT_PATH: Path = SPLITS_ROOT / "random.csv"
+SPLIT_MANIFEST_PATH: Path = SPLITS_ROOT / "manifest.json"
+SPLIT_LEAKAGE_REPORT_PATH: Path = SPLITS_ROOT / "leakage_report.json"
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

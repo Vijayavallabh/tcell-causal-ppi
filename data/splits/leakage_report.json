@@ -1,0 +1,24 @@
+{
+  "role_counts": {
+    "train": 7208,
+    "val": 1493,
+    "calibration": 915,
+    "challenge": 1909
+  },
+  "n_family_groups": 5141,
+  "sequence_train_to_challenge_cosine": {
+    "max": 0.9929769039154053,
+    "p99": 0.9696752429008484,
+    "p90": 0.9089661836624146,
+    "median": 0.7950039505958557,
+    "frac_ge_threshold": 0.2813487881981033
+  },
+  "complex_challenge_sharing_train_frac": 0.2069146149816658,
+  "physical_neighbour_challenge_touching_train_frac": 0.9339968569931901,
+  "note": "physical neighbourhood is audit-only: 95% of targets share one physical component, so it cannot be a hard partition block (see spec).",
+  "sequence_effectiveness_vs_random": {
+    "blocked_frac_ge_threshold": 0.2813487881981033,
+    "random_frac_ge_threshold": 0.5346534653465347,
+    "reduction": 0.474
+  }
+}

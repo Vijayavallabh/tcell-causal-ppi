@@ -3,13 +3,35 @@
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
-- Current status: **Module 0 done + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings on GPU
-  (feat-015) + Module 2 typed graph encoder (feat-016) done.** feat-001, feat-002, feat-004, feat-014,
-  feat-015, feat-016 done. Next: feat-003 (leakage-safe splits).
-- Branch / commit: main. Prior session ended at `b833aa2` (feat-015 embeddings + GPU-native encoder +
-  run_module1_smoke). This session landed **feat-016 (Module 2 typed graph encoder)** — the
-  `src/tcell_pipeline/graph/` package + `test_graph.py` + config constants + state-doc sync — in a single
-  feature commit (verified with `./init.sh`: 46 passed). Latest committed is always `git log -1` on main.
+- Current status: **Module 0 + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings (feat-015) +
+  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done.** feat-001, feat-002,
+  feat-003, feat-004, feat-014, feat-015, feat-016 done. Next: feat-005 (programs) / feat-006 (baselines).
+- Branch / commit: main. **feat-016 (Module 2) at `100a505`; feat-003 (leakage-safe splits) landed in
+  the next feature commit** — `src/tcell_pipeline/splits.py`, `test_splits.py`, `docs/specs/…feat-003…md`,
+  the frozen git-tracked `data/splits/` artifacts, `config.py`, and state-doc sync (verified `./init.sh`:
+  54 passed). The two planning docs (report + walkthrough) got as-built notes but are gitignored
+  (local-only). Latest committed is always `git log -1` on main.
+
+## Completed This Session (feat-003 — leakage-safe splits)
+
+Design brainstormed against the experiment-plan report; spec in
+`docs/specs/2026-07-15-feat-003-leakage-safe-splits.md`. **The approved CC-over-3-axes design was
+revised after empirical measurement proved it collapses** (naive connected-components → giant
+components on every axis: physical 95%, complex 23%, ESM cos≥0.95 92%, Louvain 42%).
+
+- [x] `src/tcell_pipeline/splits.py`: hard block = sequence/paralog family via **representative
+  (non-chaining, CD-HIT-style) clustering on centered ESM-2 embeddings** (cos≥0.85 → 3.1% largest
+  family) + CORUM co-membership, under a 5%-of-genes **capped union-find** (3986 giant merges refused).
+  Physical-PPI neighbourhood is **audit-only** (95% one component — can't be a hard block; report G1 +
+  Phase-1 6/9 want its distribution *published*, not zeroed).
+- [x] **4-role** partition (train/val/calibration/challenge ~60/15/10/15; realized 62.5/13/7.9/16.6),
+  assigned by whole family group, seeded, deficit-greedy. Random diagnostic split (row-level).
+- [x] Frozen + hashed to **`data/splits/`** (git-tracked): `blocked_target_ood.csv`, `random.csv`,
+  `manifest.json`, `leakage_report.json` (machine-readable: hard-asserts no family group split across
+  roles; publishes per-axis train→challenge residual + fail-closed audit).
+- [x] **Effectiveness validated**: challenge genes with a ≥0.85 train paralog cut **53.5% (random) →
+  28.1% (blocked) = 47% reduction** (the 28% floor is irreducible given dense ESM geometry). 8 synthetic
+  tests (`test_splits.py`). `./init.sh`: **54 passed**.
 
 ## Completed This Session (feat-016 — Module 2 typed graph encoder)
 
@@ -78,7 +100,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **46 passed** on torch cu126 (38 prior + 8 Module 2); compileall clean |
+| Compile + tests | `./init.sh` | Pass | **54 passed** on torch cu126 (46 + 8 feat-003); compileall clean |
+| feat-003 split tests | `pytest src/tests/test_splits.py` | Pass | 8 passed; grouping/cap/no-split/determinism/audit-fail-closed/fractions |
+| feat-003 real split | `python -m tcell_pipeline.splits` | Pass | 11525 genes → 5141 family groups (largest 5%); wrote data/splits/*; sequence leakage 53.5%→28.1% (47% cut) vs random |
 | Module 2 graph tests | `pytest src/tests/test_graph.py` | Pass | 8 passed; synthetic graph (structure, 2-hop cap, condition gate differs, signed msg, forward finite, edge_gates, zero/absent target, attn sums to 1) |
 | Module 2 real-data smoke | `python src/tcell_pipeline/graph/run_module2_smoke.py` | Pass | full 25440-node graph ~18s; CD3E nbhd 512 proteins; Module 1 h_do -> h_graph (4,256) finite on GPU; gates differ by condition; attn sums to 1 |
 | Encoder tests (real data) | `pytest src/tests/test_encoders.py` | Pass | 10 passed; real PLM+PINNACLE parquets, real marts — no synthetic parquets |
@@ -87,6 +111,14 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | Encoder real-data e2e | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (8,256) finite; real PLM+PINNACLE vectors flow through |
 | Module 1 full-mart smoke | `python src/tcell_pipeline/run_module1_smoke.py` | Pass | on GPU (cuda), 33,983 rows in ~2s; all finite; PLM 33796, PINNACLE 3135 coverage; q_post rejected |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
+
+## Files Added (this session, feat-003 — leakage-safe splits)
+
+- `src/tcell_pipeline/splits.py` (NEW), `src/tests/test_splits.py` (NEW, 8 tests)
+- `docs/specs/2026-07-15-feat-003-leakage-safe-splits.md` (NEW): design doc (report-derived + empirical)
+- `data/splits/{blocked_target_ood,random}.csv`, `{manifest,leakage_report}.json` (NEW, git-tracked frozen artifacts)
+- `src/tcell_pipeline/config.py` — feat-003 constants (SPLITS_ROOT, SPLIT_ROLES/FRACTIONS/SEED, SEQ_SIM_COSINE_THRESHOLD, GROUP_SIZE_CAP, artifact paths)
+- `feature_list.json` (feat-003 → done), `progress.md`, `session-handoff.md`
 
 ## Files Added (this session, feat-016 — Module 2)
 
@@ -145,7 +177,10 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 ## Recommended Next Step
 
-- Start **feat-003 (leakage-safe train/val/test splits)**: block gene families, protein complexes, and
-  close graph neighborhoods from leaking train->test; hash + freeze split files. All inputs are present
-  (id_mapping, protein_edges, complex_membership, perturbation_condition). Before freezing H1, run the
-  near-null-signal check on development data.
+- Commit feat-003 (uncommitted in the working tree). Then start **feat-005 (latent program extraction)**
+  and/or **feat-006 (simple baselines)** — both depend only on feat-003 (now done) and consume the frozen
+  `data/splits/`. Fold-local fits (programs, scaling) must use the **train** role only; the loader reads
+  `load_split()` and filters by role. Before freezing H1, run the near-null-signal check on development data.
+- feat-003 calibration knob left open (`docs/specs` + leakage_report.json): the centered-cosine threshold
+  (0.85) and 5% cap can be tuned on the published paralog-similarity distribution; the sequence residual
+  is 28% (vs 53% random) — tighten via pairwise must-links or curated families if a downstream result needs it.
