@@ -85,6 +85,16 @@ Required checks:
 - `uv run python -m pytest` (if tests exist)
 - `uv run python -m compileall .`
 
+## Command Safety
+
+- **Safe to re-run anytime** (idempotent / deterministic): `./init.sh`, `pytest`, `compileall`,
+  `run_module1_smoke.py`, `run_module2_smoke.py`, `python -m tcell_pipeline.splits`.
+- **DESTRUCTIVE — do NOT run to "test":** `run_module0.py` (and its steps) re-download multi-GB
+  PPI DBs and **overwrite the frozen marts in `data/`** that all downstream work depends on. Run
+  only when deliberately regenerating source data.
+- **Direct module runs need `PYTHONPATH=src`** (e.g. `PYTHONPATH=src python -m tcell_pipeline.splits`).
+  `pytest`/`compileall` don't — `conftest.py` handles them.
+
 ## Escalation
 
 If you encounter:
