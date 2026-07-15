@@ -23,7 +23,7 @@ EDGE_OUT_COLS = EDGE_IN_COLS + ["n_supporting_sources"]
 
 SOURCE_URLS = {
     "bioplex": "https://bioplex.hms.harvard.edu/data/BioPlex_293T_Network_10K_Dec_2019.tsv",
-    "huri": "http://www.interactome-atlas.org/data/HuRI.tsv",
+    "huri": "https://interactome-atlas.org/data/HuRI.tsv",
     "biogrid": "https://downloads.thebiogrid.org/Download/BioGRID/Release-Archive/"
                "BIOGRID-4.4.235/BIOGRID-ORGANISM-4.4.235.tab3.zip",
     "string_links": "https://stringdb-downloads.org/download/protein.links.v12.0/9606.protein.links.v12.0.txt.gz",
