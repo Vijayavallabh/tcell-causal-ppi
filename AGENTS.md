@@ -32,7 +32,7 @@ Key facts:
 
 ## Working Rules
 
-- **One work-unit at a time**: Pick exactly one unfinished feature from `feature_list.json`. A single
+- **One work-unit at a time** (one feature at a time by default): Pick exactly one unfinished feature from `feature_list.json`. A single
   architecture module may legitimately span more than one feature entry (e.g. Module 3 = feat-005
   program extraction + feat-008 decoder scaffold) — keep them to one session/commit and mark each
   `in-progress` until its own done-criteria are met. Don't open a second, unrelated module in parallel.
