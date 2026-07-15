@@ -76,6 +76,10 @@ Q_PRE_COLS: list[str] = [
     "control_baseline_expr",
 ]
 
+# Bookkeeping / provenance columns that are deliberately neither q_pre nor q_post.
+# Anything landing in metadata that is NOT here gets a REVIEW warning (leakage-fence tripwire).
+KNOWN_METADATA_COLS: list[str] = ["row_index", "mapping_status"]
+
 
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)

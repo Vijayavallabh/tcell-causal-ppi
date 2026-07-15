@@ -26,3 +26,11 @@ def test_donor_pcs_are_qpre_and_partition_is_complete():
     assert "donor_pc_00" in m["q_pre"] and "donor_pc_31" in m["q_pre"]
     assert "row_index" in m["metadata"] and "mapping_status" in m["metadata"]
     assert len(m["q_pre"]) + len(m["q_post"]) + len(m["metadata"]) == len(COLUMNS)
+
+
+def test_known_metadata_allowlisted_but_rogue_flagged():
+    # the leakage-fence tripwire must stay quiet on known bookkeeping cols and fire on anything else.
+    m = classify_columns([*COLUMNS, "mystery_response_col"])
+    unexpected = [c for c in m["metadata"] if c not in config.KNOWN_METADATA_COLS]
+    assert unexpected == ["mystery_response_col"]
+    assert "row_index" not in unexpected and "mapping_status" not in unexpected

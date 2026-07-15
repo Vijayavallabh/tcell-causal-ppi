@@ -29,10 +29,12 @@ def run() -> dict[str, list[str]]:
     print(f"[feature_availability] reading columns from {config.PERTURBATION_CONDITION_PATH}")
     cols = list(pd.read_parquet(config.PERTURBATION_CONDITION_PATH).columns)
     manifest = classify_columns(cols)
-    if manifest["metadata"]:
-        # metadata is the permissive fall-through; list it so a response-derived column that
-        # is not in Q_POST_COLS cannot slip past the leakage fence unnoticed.
-        print(f"[feature_availability] REVIEW metadata (neither q_pre nor q_post): {manifest['metadata']}")
+    # metadata is the permissive fall-through; warn only on UNEXPECTED metadata so a
+    # response-derived column not in Q_POST_COLS cannot slip past the leakage fence unnoticed.
+    # Known bookkeeping/provenance columns are allowlisted and stay quiet.
+    unexpected = [c for c in manifest["metadata"] if c not in config.KNOWN_METADATA_COLS]
+    if unexpected:
+        print(f"[feature_availability] REVIEW metadata (neither q_pre nor q_post): {unexpected}")
     config.ensure_dir(config.FEATURE_AVAILABILITY_PATH.parent)
     tmp = config.FEATURE_AVAILABILITY_PATH.with_name(config.FEATURE_AVAILABILITY_PATH.name + ".tmp")
     tmp.write_text(yaml.safe_dump(manifest, sort_keys=False))
