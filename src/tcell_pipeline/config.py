@@ -81,13 +81,18 @@ Q_PRE_COLS: list[str] = [
 KNOWN_METADATA_COLS: list[str] = ["row_index", "mapping_status"]
 
 # --- Module 1 (Perturbation & Context Encoder) ---
-PLM_EMBED_DIM: int = 1280        # protein language model (e.g. ESM-2 650M) per-protein vector
-PINNACLE_EMBED_DIM: int = 512    # PINNACLE cell-type-contextualised protein embedding
+PLM_EMBED_DIM: int = 1280        # ESM-2 650M (t33) per-protein vector, mean-pooled over residues
+PINNACLE_EMBED_DIM: int = 128    # PINNACLE cell-type-contextualised protein embedding (real dim)
 GUIDE_SEQ_EMBED_DIM: int = 64    # placeholder guide-sequence embedding (zeros until available)
 H_DO_DIM: int = 256              # fused perturbation-condition embedding h_do
 CONDITIONS: list[str] = ["Rest", "Stim8hr", "Stim48hr"]
 PLM_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "plm_embeddings.parquet"
 PINNACLE_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "pinnacle_embeddings.parquet"
+# PINNACLE (Li et al. 2024) contextual protein embeddings — Figshare article 22708126.
+# The screen is CD4+ T cells, so we take the CD4 helper T-cell context.
+PINNACLE_RAW_DIR: Path = DATA_ROOT / "pinnacle" / "pinnacle_embeds"
+PINNACLE_FIGSHARE_URL: str = "https://ndownloader.figshare.com/files/48005749"
+PINNACLE_CONTEXT: str = "cd4-positive helper t cell"
 
 
 def ensure_dir(path: Path) -> None:

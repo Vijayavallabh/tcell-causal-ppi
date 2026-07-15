@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (Module 1 Perturbation & Context Encoder built; feat-014 done)
+**Last Updated:** 2026-07-15 (real PLM+PINNACLE embeddings ingested on GPU; feat-015 done)
 **Active Feature:** feat-003 - Leakage-Safe Train/Val/Test Splits (not started; deps feat-002 satisfied)
 
 ## Status
@@ -58,9 +58,20 @@
     n_guides can't poison the LayerNorm'd h_do. Upgrade path = fold-fit imputation in Module 3 loader.
   - 10 tests (test_encoders.py) + real-data smoke on perturbation_condition/de_obs -> finite (4,256).
 
+- [x] **Module 1 real embedding ingestion** (feat-015, `embeddings_plm.py` + `embeddings_pinnacle.py`) — **DONE**
+  - `embeddings_plm.py`: real **ESM-2 650M** (1280-d, mean-pooled), UniProt-REST sequences, resumable,
+    **device-aware (GPU)**. Ran on an A100 -> **11419/11419 mart proteins embedded** (100% PLM coverage), finite.
+  - `embeddings_pinnacle.py`: real **PINNACLE** (Figshare 22708126) `cd4-positive helper t cell` context.
+    Real dim is **128** (config placeholder was 512 -> **corrected to 128**). Gene-symbol->UniProt via id_mapping;
+    **1119 embeddings, 1070/11419 mart proteins covered** (contextual — rest keep zero fallback).
+  - Live encoder dims now: target.out_dim **1412** (1280+128+4), fusion Linear(1574->256), **404,960** params.
+  - Tests rewritten to **real data/embeddings — no synthetic parquets** (still 10 in test_encoders.py).
+  - **GPU enabled**: swapped torch cu130->**cu126** (host driver is CUDA 12.2; cu13x can't see the 5x A100s).
+    requirements.txt: +fair-esm, +cu126 install note.
+
 ### What's In Progress
 
-- (none — feat-014 closed this session)
+- (none — feat-014 + feat-015 closed)
 
 ### What's Next
 
@@ -89,15 +100,27 @@
 - Donor key = physical CE codes; independent NTC controls come from pseudobulk (DE has none)
 - Distributional metrics: do not use Wasserstein/Energy distance as a sole headline metric
 - Stable-Shift (feat-010): first-party code unconfirmed; plan a row-compatible reimplementation
+- **Embeddings (feat-015)**: PLM = real ESM-2 650M (1280-d, mean-pooled); PINNACLE = real published
+  128-d contextual vectors (NOT the 512 placeholder), `cd4-positive helper t cell` context to match the
+  CD4+ screen (configurable via config.PINNACLE_CONTEXT). Frozen features; artifacts gitignored + regenerable.
+- **GPU**: host has 5x A100 80GB but the CUDA-12.2 driver can't run the default cu13x torch; use the
+  cu126 build (`torch==2.13.0+cu126`, minor-version compat). Embedding generation runs on GPU.
 
-## Files Modified This Session (Module 1)
+## Files Modified This Session (feat-015 — real embeddings + GPU)
+
+- `src/tcell_pipeline/embeddings_plm.py` (NEW): ESM-2 650M generator (resumable, GPU-aware)
+- `src/tcell_pipeline/embeddings_pinnacle.py` (NEW): PINNACLE CD4-context -> UniProt mapper (Figshare download)
+- `src/tcell_pipeline/config.py` — PINNACLE_EMBED_DIM 512->128; +PINNACLE_RAW_DIR/FIGSHARE_URL/CONTEXT
+- `src/tests/test_encoders.py` — rewritten to real PLM+PINNACLE data (no synthetic parquets); dim literals 1796->1412
+- `requirements.txt` — +fair-esm, +cu126 torch install note
+- `feature_list.json` — feat-015 added, status done
+- `progress.md`, `session-handoff.md` — state sync
+
+### Prior session (feat-014 — Module 1 encoder)
 
 - `src/tcell_pipeline/encoders/` (NEW package): `_tensor.py`, `embedding_store.py`, `target_encoder.py`,
   `context_encoder.py`, `quality_encoder.py`, `perturbation_encoder.py`, `__init__.py`
-- `src/tcell_pipeline/config.py` — Module 1 constants (embed dims, H_DO_DIM, CONDITIONS, embedding paths)
-- `src/tests/test_encoders.py` (NEW, 10 tests)
-- `feature_list.json` — feat-014 (Perturbation & Context Encoder) added, status done
-- `progress.md`, `session-handoff.md` — state sync
+- `src/tcell_pipeline/config.py` — Module 1 constants; `src/tests/test_encoders.py` (10 tests); feat-014 done
 - Post-review leakage-fence hardening (xhigh /code-review, 3 CONFIRMED/PLAUSIBLE latent findings):
   `feature_availability.py` — `_is_donor_pc` tightens the bare `donor_pc_` prefix to digits-only, and
   `_assert_disjoint_fence()` makes `classify_columns` REFUSE at runtime when a name is in both

@@ -3,50 +3,60 @@
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
-- Current status: **Module 0 pipeline done + Module 1 Perturbation & Context Encoder done (feat-014).**
-  feat-001, feat-002, feat-004, feat-014 done. Next: feat-003 (leakage-safe splits).
-- Branch / commit: main — Module 1 (feat-014) + post-review leakage-fence hardening landed
-  (work commits 8030dc7..e2bdff3; the docs-sync commit sits on top)
+- Current status: **Module 0 done + Module 1 encoder (feat-014) done + real PLM/PINNACLE embeddings
+  ingested on GPU (feat-015).** feat-001, feat-002, feat-004, feat-014, feat-015 done.
+  Next: feat-003 (leakage-safe splits).
+- Branch / commit: main — this session added feat-015 (real embeddings + GPU torch); commit sits on top
+  of the prior feat-014 + fence-hardening range (8030dc7..31c507a)
 
-## Completed This Session (Module 1 — Perturbation & Context Encoder, feat-014)
+## Completed This Session (feat-015 — real PLM + PINNACLE embeddings, on GPU)
 
-New package `src/tcell_pipeline/encoders/` — five nn.Modules fused into `h_do` in R^256, q_pre inputs only:
+The feat-014 encoder left both target-embedding stores at zero-fallback (no parquet on disk). This
+session generated the real embeddings so the PerturbationEncoder runs on real target vectors:
 
-- [x] `PluggableEmbeddingStore` (`embedding_store.py`): frozen PLM (1280) / PINNACLE (512) lookup by
-  UniProt accession; loads parquet if present else returns zero vectors, in-memory cache, validates dim.
-  NOT an nn.Module (data loader, not a trainable parameter) — real embeddings plug in by dropping the
-  file at `data/intermediate/{plm,pinnacle}_embeddings.parquet`.
-- [x] `TargetEncoder`: NO trainable gene-ID embedding (H1 prohibited). h_target R^1796 = PLM 1280 +
-  PINNACLE 512 + ppi_degree_physical/functional/complex + control_baseline_expr.
-- [x] `ContextEncoder`: trainable `nn.Embedding(3,64)` for Rest/Stim8hr/Stim48hr + donor_pc_00..31 through
-  `Linear(32,32)` (NO free donor-ID embedding, so leave-one-donor-out stays valid). h_context R^96.
-- [x] `QualityEncoder`: n_guides + single_guide_estimate + zeros(64) guide-seq placeholder. h_quality R^66.
-- [x] `PerturbationEncoder`: `forward(batch_dict) -> (B,256)`; fusion `Linear(1958->256)` + LayerNorm;
-  rejects any q_post column at the module boundary (ValueError) — leakage fence. 503,264 trainable params.
-- [x] NaN guard (`_tensor.as_float_vector` nan_to_num): missing control_baseline_expr (1558/33983) and
-  n_guides can't poison the LayerNorm'd h_do. Ponytail: upgrade to fold-fit imputation in Module 3 loader.
-- [x] config: PLM_EMBED_DIM/PINNACLE_EMBED_DIM/GUIDE_SEQ_EMBED_DIM/H_DO_DIM/CONDITIONS + embedding paths.
-- [x] 10 tests (`test_encoders.py`) + real-data smoke feeding perturbation_condition/de_obs head -> finite.
+- [x] `embeddings_plm.py`: real **ESM-2 650M** (1280-d, mean-pooled over final-layer residues, BOS/EOS/pad
+  excluded). Sequences from the UniProt REST accessions endpoint (cached to `uniprot_sequences.parquet`);
+  resumable (skip embedded, atomic checkpoint). **Device-aware** — ran on an A100 -> **11419/11419 mart
+  proteins embedded** (100% PLM coverage), all finite.
+- [x] `embeddings_pinnacle.py`: real **PINNACLE** (Li et al. 2024, Figshare article 22708126) contextual
+  embeddings. Real dim is **128** — config's 512 was a placeholder, **corrected to 128**. Took the
+  `cd4-positive helper t cell` context (the CD4+ screen's cell type; `config.PINNACLE_CONTEXT`); gene-symbol
+  -> UniProt via id_mapping -> **1119 embeddings, 1070/11419 mart proteins covered** (contextual embeddings
+  only span in-network proteins; the rest keep the zero fallback).
+- [x] Live encoder dims now derive to target.out_dim **1412** (1280+128+4), fusion `Linear(1574->256)`,
+  **404,960** trainable params (was 1796 / 503,264 under the 512 placeholder).
+- [x] Tests rewritten to **real data/embeddings — no synthetic parquets** (10 tests in `test_encoders.py`):
+  real PLM present-loaded + absent-id zero-fallback + dim-mismatch guard, real PINNACLE CD4-context load,
+  forward/NaN tests on the real perturbation_condition + de_obs marts.
+- [x] **GPU enabled**: host has 5x A100 80GB but the CUDA-12.2 driver can't run the default cu13x torch;
+  swapped to `torch==2.13.0+cu126` (minor-version compat). requirements.txt documents the cu126 install.
+- [x] Embedding artifacts are gitignored under `data/intermediate/`; regenerate via
+  `python -m tcell_pipeline.embeddings_{plm,pinnacle}`.
 
-Prior sessions: ~100 GB aggregate download, `examples/` inspectors, README, Module 0 implementation +
-xhigh code-review fixes, UniProt disambiguation, HuRI/CORUM download fixes, 2026-07-14 report refresh.
+Prior session (feat-014): `src/tcell_pipeline/encoders/` package — five nn.Modules fused into `h_do` R^256,
+q_pre inputs only, no trainable gene-ID embedding, no free donor-ID embedding, leakage fence at the boundary,
+NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-review fixes, UniProt/HuRI/CORUM.
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | 37 passed; compileall clean (incl. post-review fence-hardening + runtime disjointness guard) |
-| Encoder unit tests | `pytest src/tests/test_encoders.py` | Pass | 10 passed (dims, zero-fallback, q_post rejected, NaN guard) |
-| Encoder real-data smoke | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (4,256) finite with PLM/PINNACLE absent (zero-fallback), incl. NaN-baseline rows |
+| Compile + tests | `./init.sh` | Pass | 37 passed on torch cu126; compileall clean |
+| Encoder tests (real data) | `pytest src/tests/test_encoders.py` | Pass | 10 passed; real PLM+PINNACLE parquets, real marts — no synthetic parquets |
+| PLM generation (GPU) | `python -m tcell_pipeline.embeddings_plm` | Pass | 11419/11419 proteins, 1280-d, finite; A100, 100% util |
+| PINNACLE ingestion | `python -m tcell_pipeline.embeddings_pinnacle` | Pass | 1119 embeddings (128-d), 1070/11419 mart coverage (CD4 helper context) |
+| Encoder real-data e2e | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (8,256) finite; real PLM+PINNACLE vectors flow through |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
 
-## Files Changed
+## Files Changed (this session, feat-015)
 
-- `src/tcell_pipeline/encoders/` (NEW): `_tensor.py`, `embedding_store.py`, `target_encoder.py`,
-  `context_encoder.py`, `quality_encoder.py`, `perturbation_encoder.py`, `__init__.py`
-- `src/tcell_pipeline/config.py` — Module 1 constants
-- `src/tests/test_encoders.py` (NEW, 10 tests)
-- `feature_list.json` (feat-014 added, done), `progress.md`, `session-handoff.md`
+- `src/tcell_pipeline/embeddings_plm.py` (NEW): ESM-2 650M generator (resumable, GPU-aware)
+- `src/tcell_pipeline/embeddings_pinnacle.py` (NEW): PINNACLE CD4-context -> UniProt mapper (Figshare download)
+- `src/tcell_pipeline/config.py` — PINNACLE_EMBED_DIM 512->128; +PINNACLE_RAW_DIR/FIGSHARE_URL/CONTEXT
+- `src/tests/test_encoders.py` — rewritten to real PLM+PINNACLE data (no synthetic parquets); 1796->1412
+- `requirements.txt` — +fair-esm, +cu126 torch install note
+- `feature_list.json` (feat-015 added, done), `progress.md`, `session-handoff.md`
+- Prior session (feat-014): `src/tcell_pipeline/encoders/` package + config Module 1 constants + test_encoders.py
 
 ## Decisions Made
 
@@ -54,8 +64,11 @@ xhigh code-review fixes, UniProt disambiguation, HuRI/CORUM download fixes, 2026
   `ppi_degree_physical/functional/complex`, `control_baseline_expr`, `culture_condition` (str names or
   long indices), `donor_pc` (a single (B,32) tensor — loader stacks donor_pc_00..31), `n_guides`,
   `single_guide_estimate`. Any q_post key raises. The Module 3 data loader builds this dict.
-- Module 1: embeddings are FROZEN and pluggable — no PLM/PINNACLE parquet on disk yet, so the encoder
-  runs on zero target-embeddings; drop the parquet at the config paths to activate, no code change.
+- **Embeddings are real (feat-015)**: PLM = ESM-2 650M (1280-d, mean-pooled), 100% mart coverage;
+  PINNACLE = real published 128-d contextual vectors (`cd4-positive helper t cell`, config.PINNACLE_CONTEXT),
+  1070/11419 coverage. Frozen + pluggable; artifacts gitignored, regenerate via the two embeddings_* modules.
+- **GPU**: use `torch==2.13.0+cu126` on this host (CUDA-12.2 driver can't run the default cu13x wheel); the
+  5x A100s are otherwise invisible to torch. Embedding generation runs on GPU.
 - UniProt: reviewed-canonical pick; flag only equal-evidence ties; gene is the perturbation unit
 - CORUM host has a broken TLS chain -> per-source verify skip for `corum` only
 - Data scope: aggregate layer only; donor key = physical CE codes; controls from pseudobulk
@@ -64,7 +77,8 @@ xhigh code-review fixes, UniProt disambiguation, HuRI/CORUM download fixes, 2026
 
 ## Blockers / Risks
 
-- `data/raw` ~101 GB near the 105 GiB soft cap; derived marts now also on disk — watch before feat-005
+- `data/raw` ~101 GB near the 105 GiB soft cap; feat-015 added PINNACLE raw (~1.3 GB) + PLM embeddings
+  parquet (~58 MB) + uniprot sequence cache — watch disk before feat-005
 - Near-null-signal regime: H1 superiority not guaranteed on this CD4+ screen
 - (Resolved this session: HuRI + CORUM downloads; id_mapping UniProt/Entrez online pass)
 

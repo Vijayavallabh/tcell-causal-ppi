@@ -6,13 +6,15 @@
       "description": "Verify uv environment installs, data download script works, and basic AnnData reads succeed on the DE stats file",
       "dependencies": [],
       "status": "done",
-      "evidence": "Env imports OK (anndata 0.13.1, mudata 0.3.10, h5py 3.16.0). Aggregate layer downloaded and verified: data/raw ~101 GB — 4 HDF5 (DE 16.8 / pseudobulk 44.6 / by_guide 29.4 / by_donors 16.9 GB), 15 suppl tables, 12 Croissant jsonld. README download steps extended: S3 sync for on-S3 suppl+metadata, GitHub fetch for the 12 analysis tables not on S3. init.sh passes (compileall clean). Backed AnnData reads confirmed via examples/inspect_de_stats.py. Cell-level files intentionally excluded (storage-blocked)."
+      "evidence": "Env imports OK (anndata 0.13.1, mudata 0.3.10, h5py 3.16.0). Aggregate layer downloaded and verified: data/raw ~101 GB \u2014 4 HDF5 (DE 16.8 / pseudobulk 44.6 / by_guide 29.4 / by_donors 16.9 GB), 15 suppl tables, 12 Croissant jsonld. README download steps extended: S3 sync for on-S3 suppl+metadata, GitHub fetch for the 12 analysis tables not on S3. init.sh passes (compileall clean). Backed AnnData reads confirmed via examples/inspect_de_stats.py. Cell-level files intentionally excluded (storage-blocked)."
     },
     {
       "id": "feat-002",
       "name": "Data Inspection & ID Mapping",
       "description": "Load DE stats and pseudobulk AnnData/MuData objects, extract obs/var tables, build Ensembl-HGNC-UniProt-Entrez identifier mapping with ambiguity reporting",
-      "dependencies": ["feat-001"],
+      "dependencies": [
+        "feat-001"
+      ],
       "status": "done",
       "evidence": "Inspection DONE (examples/ inspectors). ID mapping DONE: src/tcell_pipeline/id_mapping.py extracts unique Ensembl from backed DE .obs[target_contrast] + .var[gene_ids] (never loads layers), maps Ensembl->HGNC offline via obs/var crossref and Ensembl->UniProt/Entrez via mygene.info. Ran online on real DE file: 12311 unique Ensembl (11526 targets, 10282 measured, 9497 both), all HGNC resolved, UniProt/Entrez filled. One-to-many UniProt DISAMBIGUATED (choose_uniprot): candidate accessions restricted to the gene's reviewed human canonical (UniProt REST gene_exact+reviewed), picked by annotation-score then lexical; uniprot_ambiguous marks ONLY equal-evidence ties (top score not strictly > runner-up). 33 multi-accession genes -> 23 resolved to a confident canonical (15 single reviewed e.g. CALM1/2/3 -> P0DP23/24/25, + 8 score-decisive where a fragment/secondary loses on annotation score), 10 genuine equal-evidence multi-product loci (CDKN2A p16/p14ARF, GNAS, MOCS2 bicistronic, TMPO isoforms) flagged uniprot_ambiguous with all candidates kept in uniprot_alternatives. Kept the gene as the perturbation unit (CRISPRi knocks down the whole locus); no forced single-protein pick for true ties. Wrote data/intermediate/id_mapping.parquet (adds uniprot_alternatives, uniprot_ambiguous) + ambiguity_report.txt. Delivered in the Module 0 pipeline (run_module0.py orchestrator). init.sh green (compileall + 20 pytest)."
     },
@@ -20,7 +22,9 @@
       "id": "feat-003",
       "name": "Leakage-Safe Train/Val/Test Splits",
       "description": "Construct splits that block gene families, protein complexes, and close graph neighborhoods from leaking between train and test; hash and freeze split files",
-      "dependencies": ["feat-002"],
+      "dependencies": [
+        "feat-002"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -28,7 +32,9 @@
       "id": "feat-004",
       "name": "PPI Graph Construction",
       "description": "Download and harmonize typed protein interaction edges from BioPlex, HuRI, BioGRID, STRING, and CORUM with full provenance; build merged heterogeneous graph table",
-      "dependencies": ["feat-002"],
+      "dependencies": [
+        "feat-002"
+      ],
       "status": "done",
       "evidence": "src/tcell_pipeline/ppi_graph.py implements the typed-edge harmonizer (undirected canonicalization, uppercase, per-(pair,source) dedup, n_supporting_sources, is_physical/is_functional/is_complex/is_direct_binary flags, score clipped to [0,1], missing score floored to 0 not 1) + best-effort downloaders for all 5 sources (log-and-continue, cache in data/raw/ppi/<source>/; BioGRID multi-member-ZIP handled, HuRI extended via mygene when online with drop logging). complex_membership.py parses CORUM into bipartite membership. ppi_degree_* now computed from the graph into perturbation_condition (ppi_graph runs before perturbation_table). Harmonizer + degree + CORUM-schema unit-tested (test_ppi_graph.py, test_perturbation_table.py, test_complex_membership.py). RUN ON REAL SOURCES: all 5 fetch+integrate -> protein_edges.parquet with 7,980,907 edges (bioplex 118162, huri 52256, biogrid 1218142, string 13715404, corum 77696); complex_membership 18932 memberships / 5628 complexes. Fixes this session: HuRI URL apex host (cert invalid for www); CORUM migrated to CORUM 5.3 fastapi endpoint (fastapi-corum/public/file/download_current_file?file_id=human&file_format=txt, new subunits_gene_name schema, per-source TLS-verify skip for the broken helmholtz cert chain)."
     },
@@ -36,7 +42,9 @@
       "id": "feat-005",
       "name": "Latent Program Extraction",
       "description": "Fit fold-local program bases (sparse PCA, NMF, ICA, shallow VAE) at 64/128/256/512 dims on training data only; compare on reconstruction, sparsity, and stability",
-      "dependencies": ["feat-003"],
+      "dependencies": [
+        "feat-003"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -44,7 +52,9 @@
       "id": "feat-006",
       "name": "Simple Baselines",
       "description": "Implement no-effect, condition-mean, ridge, elastic-net, nearest-neighbor, low-rank, and CatBoost baselines with common output schema",
-      "dependencies": ["feat-003"],
+      "dependencies": [
+        "feat-003"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -52,7 +62,10 @@
       "id": "feat-007",
       "name": "Graph Baselines",
       "description": "Implement network propagation, untyped GNN, and typed static graph baselines using the PPI graph from feat-004",
-      "dependencies": ["feat-004", "feat-006"],
+      "dependencies": [
+        "feat-004",
+        "feat-006"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -60,7 +73,10 @@
       "id": "feat-008",
       "name": "EG-IPG Model Implementation",
       "description": "Implement the full EG-IPG architecture: perturbation encoder, typed condition-gated graph encoder, program decoder with residual pathway, and sparse predictive-rationale head",
-      "dependencies": ["feat-005", "feat-007"],
+      "dependencies": [
+        "feat-005",
+        "feat-007"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -68,7 +84,9 @@
       "id": "feat-009",
       "name": "Evaluation Metrics",
       "description": "Implement MAE, RMSE, Pearson/Spearman correlation, Systema perturbation-specific metrics, centroid accuracy, top-k recall, and signed-DE F1 with two independent implementations that agree on a fixture",
-      "dependencies": ["feat-006"],
+      "dependencies": [
+        "feat-006"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -76,7 +94,10 @@
       "id": "feat-010",
       "name": "External Comparators",
       "description": "Adapt Stable-Shift and TxPert-public to the same data format, splits, and output schema; document compatibility and license status",
-      "dependencies": ["feat-006", "feat-004"],
+      "dependencies": [
+        "feat-006",
+        "feat-004"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -84,7 +105,10 @@
       "id": "feat-011",
       "name": "Model Screening & Ablations",
       "description": "Run registered screening across the nested family: expression-only, typed static graph, condition-gated typed graph, and full EG-IPG; compare on development metrics",
-      "dependencies": ["feat-008", "feat-009"],
+      "dependencies": [
+        "feat-008",
+        "feat-009"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -92,7 +116,9 @@
       "id": "feat-012",
       "name": "Predictive-Rationale Audit",
       "description": "Test necessity, sufficiency, minimality, and stability of returned subgraphs against matched random controls; run structural-OOD diagnostics",
-      "dependencies": ["feat-011"],
+      "dependencies": [
+        "feat-011"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -100,7 +126,9 @@
       "id": "feat-013",
       "name": "Reproducibility Verification",
       "description": "Clean-checkout reproduction of preprocessing hashes, final model, and strongest baselines; report REPRODUCIBLE / PARTIALLY / NOT REPRODUCIBLE verdict",
-      "dependencies": ["feat-011"],
+      "dependencies": [
+        "feat-011"
+      ],
       "status": "not-started",
       "evidence": ""
     },
@@ -108,9 +136,22 @@
       "id": "feat-014",
       "name": "Perturbation & Context Encoder (Module 1)",
       "description": "Encode each (perturbation, context) into h_do in R^256 from q_pre features only: frozen PLM+PINNACLE target embeddings + PPI degree + control baseline, trainable culture-condition embedding, donor PCs via Linear (no free donor-ID embedding), guide-quality features; leakage fence rejects q_post at the module boundary. Component of feat-008, built ahead since it depends only on Module 0 outputs.",
-      "dependencies": ["feat-002", "feat-004"],
+      "dependencies": [
+        "feat-002",
+        "feat-004"
+      ],
       "status": "done",
       "evidence": "src/tcell_pipeline/encoders/ package. PluggableEmbeddingStore: frozen PLM (1280) / PINNACLE (512) lookup by UniProt accession, in-memory cache, zero-vector fallback when the parquet is absent (embeddings not computed yet), validates embedding dim; NOT an nn.Module. TargetEncoder: NO trainable gene-ID embedding (H1 prohibited); h_target in R^1796 = PLM 1280 + PINNACLE 512 + ppi_degree_physical/functional/complex + control_baseline_expr. ContextEncoder: trainable nn.Embedding(3,64) for Rest/Stim8hr/Stim48hr + donor_pc_00..31 through Linear(32,32) (NO free donor-ID embedding, so leave-one-donor-out stays valid); h_context in R^96. QualityEncoder: n_guides + single_guide_estimate + zeros(64) guide-seq placeholder; h_quality in R^66. PerturbationEncoder: forward(batch_dict) -> (B,256); fusion Linear(1958->256) + LayerNorm; rejects any q_post column at the boundary (ValueError). CPU-only, batch-first, 503,264 trainable params. config: added PLM_EMBED_DIM/PINNACLE_EMBED_DIM/GUIDE_SEQ_EMBED_DIM/H_DO_DIM/CONDITIONS/PLM_EMBEDDINGS_PATH/PINNACLE_EMBEDDINGS_PATH. NaN guard: as_float_vector nan_to_num neutralises missing control_baseline_expr (1558/33983 rows) and n_guides so one NaN cannot poison the LayerNorm'd h_do (ponytail: upgrade to fold-fit imputation in the Module 3 loader). Verified: 10 tests in src/tests/test_encoders.py (zero-fallback, dims, distinct condition embeddings, no-NaN batch, only the 3-way condition Embedding exists, q_post rejected, missing-scalar guard) + real-data smoke feeding perturbation_condition/de_obs head through the encoder -> finite (4,256) with PLM/PINNACLE absent. init.sh green (compileall + 33 pytest)."
+    },
+    {
+      "id": "feat-015",
+      "name": "Real PLM + PINNACLE Embedding Ingestion (Module 1)",
+      "description": "Populate the frozen target-embedding stores feat-014 left as zero-fallback: generate real ESM-2 650M PLM vectors and map real PINNACLE cell-type-contextualised vectors onto the mart's UniProt IDs, so the PerturbationEncoder runs on real target embeddings. Corrects the PINNACLE dim placeholder.",
+      "dependencies": [
+        "feat-014"
+      ],
+      "status": "done",
+      "evidence": "src/tcell_pipeline/embeddings_plm.py: real ESM-2 650M (t33) per-protein embeddings (1280-d, mean-pooled over final-layer residues, BOS/EOS/pad excluded). Sequences fetched from UniProt REST accessions endpoint (cached to uniprot_sequences.parquet); resumable (skips embedded proteins, atomic checkpoint) writing config.PLM_EMBEDDINGS_PATH. Device-aware: runs on GPU when available. Ran on an A100 (torch 2.13.0+cu126) -> 11419/11419 mart proteins embedded, all finite (100% PLM coverage). src/tcell_pipeline/embeddings_pinnacle.py: real PINNACLE (Li et al. 2024, Figshare article 22708126) contextual protein embeddings. Discovered the real embedding dim is 128 (config placeholder was 512 -> CORRECTED to 128). Picked the 'cd4-positive helper t cell' context (the screen's cell type; configurable via config.PINNACLE_CONTEXT); PINNACLE keys proteins by gene symbol, mapped to UniProt via id_mapping.hgnc_symbol -> 1119 embeddings written to config.PINNACLE_EMBEDDINGS_PATH, covering 1070/11419 mart proteins (contextual embeddings only span in-network proteins; rest keep the zero fallback). config: PINNACLE_EMBED_DIM 512->128; added PINNACLE_RAW_DIR/PINNACLE_FIGSHARE_URL/PINNACLE_CONTEXT. Live encoder dims now derive to target.out_dim=1412 (1280+128+4), fusion Linear(1574->256), 404,960 trainable params. Tests rewritten to use REAL data/embeddings, no synthetic parquets (10 tests in src/tests/test_encoders.py): real PLM parquet present-loaded + absent-id zero-fallback + dim-mismatch guard, real PINNACLE CD4-context load, forward/NaN tests on the real perturbation_condition + de_obs marts. requirements.txt: +fair-esm, +cu126 torch install note for this host's CUDA-12.2 driver. Artifacts (plm/pinnacle_embeddings.parquet) are gitignored under data/intermediate, regenerable via `python -m tcell_pipeline.embeddings_{plm,pinnacle}`. init.sh green (compileall + 37 pytest)."
     }
   ]
 }

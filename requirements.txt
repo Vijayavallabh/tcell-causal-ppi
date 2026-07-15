@@ -17,9 +17,13 @@ pyarrow         # Parquet shards (perturbation_condition, program_response, prot
 scikit-learn    # linear baselines + program bases (PCA / NMF / ICA, ridge, elastic-net, GBM)
 mygene
 # --- Graphs & modeling (Tier 1: EG-IPG) ---
+# GPU note: this host's NVIDIA driver is 535/CUDA 12.2, so install the CUDA-12.6 torch build
+# (runs on 12.2 via minor-version compat) — the default cu13x wheel can't see the GPU:
+#   uv pip install --index-url https://download.pytorch.org/whl/cu126 "torch==2.13.0+cu126"
 torch
 torch-geometric # or DGL; compiled extras (torch-scatter/-sparse) via PyG's wheel index if needed
 networkx        # network-propagation baselines and graph diagnostics
+fair-esm        # ESM-2 650M PLM embeddings (embeddings_plm.py); PINNACLE embeds via Figshare download
 
 # --- Visualization ---
 matplotlib
@@ -33,7 +37,6 @@ ipykernel
 pytest
 
 # --- Optional / later phases (uncomment as needed) ---
-# transformers  # protein language-model (PLM) embeddings for target/context features
 # gseapy        # pathway / program enrichment recovery (mechanism metrics)
 # mapie         # conformal prediction / calibrated intervals
 # wandb         # experiment tracking
