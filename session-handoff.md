@@ -34,7 +34,7 @@ xhigh code-review fixes, UniProt disambiguation, HuRI/CORUM download fixes, 2026
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | 36 passed; compileall clean (incl. 3 post-review fence-hardening tests) |
+| Compile + tests | `./init.sh` | Pass | 37 passed; compileall clean (incl. post-review fence-hardening + runtime disjointness guard) |
 | Encoder unit tests | `pytest src/tests/test_encoders.py` | Pass | 10 passed (dims, zero-fallback, q_post rejected, NaN guard) |
 | Encoder real-data smoke | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (4,256) finite with PLM/PINNACLE absent (zero-fallback), incl. NaN-baseline rows |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |

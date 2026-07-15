@@ -38,6 +38,14 @@ def test_config_qpre_qpost_are_disjoint():
     assert set(config.Q_PRE_COLS).isdisjoint(config.Q_POST_COLS)
 
 
+def test_classify_raises_on_overlapping_fence(monkeypatch):
+    # the runtime guard: if a q_pre name is also declared q_post, classify_columns must refuse
+    # rather than silently drop it from q_pre (q_post wins the if/elif).
+    monkeypatch.setattr(config, "Q_POST_COLS", [*config.Q_POST_COLS, "control_baseline_expr"])
+    with pytest.raises(ValueError):
+        classify_columns(["control_baseline_expr"])
+
+
 def test_donor_pc_prefix_requires_digits():
     # a response-derived column merely sharing the donor_pc_ prefix must NOT be auto-classified
     # q_pre; it falls through to metadata where the REVIEW tripwire can fire.

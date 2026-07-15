@@ -99,9 +99,11 @@
 - `feature_list.json` — feat-014 (Perturbation & Context Encoder) added, status done
 - `progress.md`, `session-handoff.md` — state sync
 - Post-review leakage-fence hardening (xhigh /code-review, 3 CONFIRMED/PLAUSIBLE latent findings):
-  `feature_availability.py` (`_is_donor_pc` tightens the bare `donor_pc_` prefix to digits-only) +
-  `test_feature_availability.py` (config-level q_pre/q_post disjointness guard — the output-level one
-  was a tautology; donor-prefix test; committed-manifest drift guard). pytest now **36 total**.
+  `feature_availability.py` — `_is_donor_pc` tightens the bare `donor_pc_` prefix to digits-only, and
+  `_assert_disjoint_fence()` makes `classify_columns` REFUSE at runtime when a name is in both
+  Q_PRE_COLS and Q_POST_COLS (previously the output-level disjointness test was a tautology that
+  couldn't catch it). `test_feature_availability.py` — config disjointness pin, behavioral raise-on-
+  overlap test, donor-prefix test, committed-manifest drift guard. pytest now **37 total**.
 
 Prior session (Module 0 fixes, commits e453964..1732def): id_mapping.py reviewed-canonical UniProt
 disambiguation; ppi_graph.py HuRI apex URL + CORUM 5.3 fastapi + `_corum_gene_col` + TLS skip;

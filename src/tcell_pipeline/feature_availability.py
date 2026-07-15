@@ -17,7 +17,16 @@ def _is_donor_pc(col: str) -> bool:
     return col.startswith(config.DONOR_PC_PREFIX) and col[len(config.DONOR_PC_PREFIX):].isdigit()
 
 
+def _assert_disjoint_fence() -> None:
+    # the config lists ARE the fence: a name in both means q_post silently wins below and the
+    # feature vanishes from q_pre. Fail loud at runtime, not only in a test.
+    overlap = sorted(set(config.Q_PRE_COLS) & set(config.Q_POST_COLS))
+    if overlap:
+        raise ValueError(f"leakage fence broken: {overlap} declared in both Q_PRE_COLS and Q_POST_COLS")
+
+
 def classify_columns(columns: list[str]) -> dict[str, list[str]]:
+    _assert_disjoint_fence()
     q_post, q_pre, metadata = [], [], []
     for c in columns:
         if c in config.Q_POST_COLS:
