@@ -123,6 +123,15 @@ SPLIT_MANIFEST_PATH: Path = SPLITS_ROOT / "manifest.json"
 SPLIT_LEAKAGE_REPORT_PATH: Path = SPLITS_ROOT / "leakage_report.json"
 
 
+# --- Module 3 (Program Decoder) ---
+GENE_LEVEL_DIM: int = DE_N_VARS   # 10282 — full gene axis the loading matrix B spans
+PROGRAM_DIM: int = 128            # K latent programs (compared at 64/128/256/512 in §6.5)
+PROGRAM_METHOD: str = "sparse_pca"  # fold-local basis: sparse_pca | nmf | fastica | svd (§6.1)
+PROGRAM_LOADINGS_PATH: Path = INTERMEDIATE_ROOT / "gene_program_loadings.parquet"  # B: gene_name + program_k
+PROGRAM_RESPONSE_PATH: Path = INTERMEDIATE_ROOT / "program_response.parquet"       # A: row_index + program_k
+PROGRAM_COL_PREFIX: str = "program_"
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

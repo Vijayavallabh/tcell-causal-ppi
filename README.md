@@ -490,6 +490,47 @@ python src/tcell_pipeline/run_module1_smoke.py
 Unit-level checks (real PLM/PINNACLE parquets + real marts, no synthetic fixtures) run under `./init.sh`
 alongside the rest of the suite.
 
+### Verify Module 2 (typed graph encoder) on the real data
+
+`run_module2_smoke.py` builds the full HeteroData graph from the real PPI marts, samples the CD3E
+neighbourhood, runs real Module 1 `h_do` through the `TypedGraphEncoder`, and checks `h_graph` is
+finite, the readout attention sums to 1, and the **same edge is gated differently across culture
+conditions** (the condition gate is the module's core claim). GPU-automatic; exits non-zero on failure.
+
+```bash
+python src/tcell_pipeline/graph/run_module2_smoke.py
+```
+
+### Fit the fold-local program basis (Module 3)
+
+The program decoder predicts deltas in a latent-program space defined by a basis learned from the
+**training-fold DE matrix only** (`Z_train ≈ A·Bᵀ`; README §Target representations, §Training splits).
+`run_program_basis` loads the blocked split, keeps train-role rows (asserting no `challenge` overlap),
+fits the basis, and writes `data/intermediate/{gene_program_loadings,program_response}.parquet`:
+
+```bash
+# paper default: sparse PCA at K=128 (MiniBatchSparsePCA, ~15 min on the full 21k-row train set)
+PYTHONPATH=src python -m tcell_pipeline.programs.run_program_basis
+
+# fast alternatives for iteration: --method {svd,nmf,fastica}, --K {64,128,256,512}
+PYTHONPATH=src python -m tcell_pipeline.programs.run_program_basis --method svd
+```
+
+Methods compared (§Target representations): sparse PCA (default), NMF, ICA, SVD. The gene axis of `B`
+is the full `de_var` order, so it drops straight into the decoder's frozen loading buffer.
+
+### Verify Module 3 (program decoder) end to end
+
+`run_module3_smoke.py` fits a fast fold-local SVD basis on the real train rows, assembles the full
+`EGIPGModel` (Modules 1+2+3) on the real graph, and forwards 4 real perturbations — checking every
+output (`delta_z`, `delta_x`, `sigma`, `lambda`) is finite with `lambda ∈ [0,1]` and `sigma > 0`, and
+that the expression-only nested variant (`graph_encoder=None`) pins `lambda` to 0. Design + as-built:
+`docs/specs/2026-07-15-module3-program-decoder.md`.
+
+```bash
+python src/tcell_pipeline/run_module3_smoke.py
+```
+
 ## Repository / data-mart layout
 
 Downloads stay immutable under `data/raw/`; everything else is derived and reproducible. `data/` is

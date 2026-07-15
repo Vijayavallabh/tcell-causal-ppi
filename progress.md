@@ -2,8 +2,35 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (post code-review fixes applied to feat-016 + feat-003; committed 7760624)
-**Active Feature:** feat-003 + feat-016 code-review fixes — **DONE** (committed 7760624). Next: feat-005 (programs) / feat-006 (baselines), both unblocked
+**Last Updated:** 2026-07-15 (Module 3 Program Decoder built — feat-005 extraction + feat-008 decoder/model scaffold)
+**Active Feature:** Module 3 (Program Decoder) — feat-005 **in-progress** (fold-local basis extraction done; method×K comparison + VAE remain), feat-008 **in-progress** (decoder + EGIPGModel wiring scaffolded; Module 4 + losses + training remain). Next: finish feat-005 comparison study, or feat-006 (baselines) / feat-007 (graph baselines)
+
+## Module 3 (Program Decoder) — this session
+
+New package `src/tcell_pipeline/programs/` + `src/tcell_pipeline/model.py` implementing walkthrough §6.
+Scope was Module 3 only — Module 4, losses, and training loops deliberately excluded.
+
+- **feat-005 (Latent Program Extraction) — in-progress.** `program_basis.py`: `fit_program_basis`
+  (Z_train ≈ A·Bᵀ) with method dispatch — `sparse_pca` (MiniBatchSparsePCA, the scalable sparse
+  variant; the paper default, ~15 min on full train), plus `nmf` / `fastica` (ICA) / `svd`; K from
+  `config.PROGRAM_DIM=128`. `train_row_indices` is the fold-locality gate (train-role genes → row
+  indices; challenge-overlap `assert` in the orchestrator). `save/load_program_basis` +
+  `save_program_response` (atomic parquet, gene axis = full de_var order). `run_program_basis.py`
+  orchestrator (`--method`, `--K`). Ran `--method svd` on **21,262 real train rows × 10,282 genes**
+  in 6.2 s → `gene_program_loadings.parquet` (B 10282×128) + `program_response.parquet` (A 21262×128),
+  both gitignored under `data/intermediate/`. **Remaining for done:** 4-method × 4-K comparison
+  (reconstruction / sparsity / stability) + shallow VAE.
+- **feat-008 (EG-IPG Model) — in-progress (Module-3 slice).** `program_decoder.py` `ProgramDecoder`:
+  graph path `Linear(512,K)` + expr-only path `Linear(256,K)`, sigmoid mixture gate `λ∈[0,1]`, softplus
+  uncertainty `σ`, gene decode `Δx = B·Δzᵀ + r` with **B a frozen `register_buffer` (not a Parameter)**.
+  `model.py` `EGIPGModel` wraps M1+M2+M3; `graph_encoder=None` → expression-only nested variant (λ pinned
+  to 0, no edge gates). **Remaining:** Module 4 sparse rationale head, losses, train/calibration loops.
+- **Verification:** `./init.sh` green — **69 tests** (57 prior + 12 new `test_programs.py`, all synthetic:
+  basis shapes across all 4 methods, fold-local row selection, decoder shapes, λ∈[0,1], σ>0, B-is-buffer,
+  `Δx=B·Δzᵀ+r`, expr-only variant, full EGIPGModel forward). Real-data `run_module3_smoke.py` **PASSED**
+  end-to-end (M1→M2→M3 on 4 real perturbations: finite, λ∈[0.46,0.55], σ>0; expr-only λ==0).
+- **config additions:** `GENE_LEVEL_DIM=10282`, `PROGRAM_DIM=128`, `PROGRAM_METHOD="sparse_pca"`,
+  `PROGRAM_LOADINGS_PATH`, `PROGRAM_RESPONSE_PATH`, `PROGRAM_COL_PREFIX`.
 
 ## Status
 

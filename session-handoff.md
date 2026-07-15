@@ -4,16 +4,46 @@
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: **Module 0 + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings (feat-015) +
-  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done.** feat-001, feat-002,
-  feat-003, feat-004, feat-014, feat-015, feat-016 done. Next: feat-005 (programs) / feat-006 (baselines).
-- Branch / commit: main. **feat-016 (Module 2) at `100a505`; feat-003 (leakage-safe splits) at
-  `35e3999`; the xhigh `/code-review` fixes (Tier 1 + Tier 2 + all of Tier 3) at `7760624`.** Committed
-  range this session: `100a505..7760624 (+ this handoff-sync commit)`. The review-fix commit touches `splits.py`, `graph_builder.py`,
+  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done. Module 3 Program
+  Decoder built this session** — feat-005 (latent program extraction) **in-progress** (fold-local basis
+  machinery done; method×K comparison + VAE remain), feat-008 (EG-IPG model) **in-progress** (M1+M2+M3
+  decoder/EGIPGModel scaffolded; Module 4 + losses + training remain). Done: feat-001/002/003/004/014/015/016.
+  Next: finish feat-005 comparison study, or feat-006 (baselines) / feat-007 (graph baselines).
+- Branch / commit: main. **Module 3 (Program Decoder) committed this session** — all code + docs +
+  state-file syncs in a single commit (the `programs/` package, `model.py`, `run_module3_smoke.py`,
+  `test_programs.py`, `config.py`, README verify sections, `docs/specs/2026-07-15-module3-program-decoder.md`,
+  feature_list/progress/handoff). Prior landmarks: feat-016 (Module 2) `100a505`, feat-003 `35e3999`,
+  xhigh `/code-review` fixes `7760624`. **Latest committed is always `git log -1` on main.** The review-fix commit touches `splits.py`, `graph_builder.py`,
   `typed_graph_encoder.py`, `test_graph.py`, `test_splits.py`, `config.py`, regenerated
   `data/splits/{leakage_report,manifest}.json` + `random.csv` (blocked CSV byte-identical),
   `feature_list.json` addenda, and new `docs/reviews/2026-07-15-code-review-*.md`.
   The two planning docs (report + walkthrough) got as-built notes but are gitignored (local-only).
   Latest committed is always `git log -1` on main.
+
+## Completed This Session (Module 3 — Program Decoder; feat-005 + feat-008 scaffold)
+
+Built Module 3 (walkthrough §6) as a new package `src/tcell_pipeline/programs/` + top-level
+`src/tcell_pipeline/model.py`. Scope was Module 3 only; Module 4, losses, and training were
+deliberately excluded (per the goal). **Committed on main this session** (code + docs + state-file
+syncs in one commit; `git log -1` for the hash).
+
+- **feat-005 (Latent Program Extraction) — in-progress.** `programs/program_basis.py`: fold-local
+  `fit_program_basis` (Z_train ≈ A·Bᵀ) with method dispatch `sparse_pca` (MiniBatchSparsePCA — scalable
+  sparse variant, paper default, ~15 min on full train) / `nmf` / `fastica` (ICA) / `svd`; K from
+  `config.PROGRAM_DIM=128`. `train_row_indices` = fold-locality gate; `save/load_program_basis` +
+  `save_program_response` (atomic parquet). `programs/run_program_basis.py` orchestrator (`--method/--K`,
+  challenge-overlap assert). Ran `--method svd` on **21,262 real train rows × 10,282 genes** in 6.2 s →
+  `gene_program_loadings.parquet` (B 10282×128) + `program_response.parquet` (A 21262×128), gitignored.
+  **Remaining:** 4-method × 4-K comparison (reconstruction / sparsity / stability) + shallow VAE.
+- **feat-008 (EG-IPG Model) — in-progress (Module-3 slice).** `programs/program_decoder.py`
+  `ProgramDecoder`: graph path `Linear(512,K)` + expr-only `Linear(256,K)`, sigmoid mixture gate
+  `λ∈[0,1]`, softplus uncertainty `σ`, gene decode `Δx = B·Δzᵀ + r` with **B a frozen `register_buffer`,
+  not a Parameter**. `model.py` `EGIPGModel` wraps M1+M2+M3; `graph_encoder=None` → expression-only
+  nested variant (λ pinned to 0). **Remaining:** Module 4 sparse rationale head, losses, train/cal loops.
+- **Verification:** `./init.sh` green — **69 tests** (57 prior + 12 new `test_programs.py`, all synthetic).
+  Real-data `run_module3_smoke.py` **PASSED** end-to-end (M1→M2→M3 on 4 real perturbations: finite,
+  λ∈[0.46,0.55], σ>0; expr-only λ==0). `config.py` +`GENE_LEVEL_DIM/PROGRAM_DIM/PROGRAM_METHOD/`
+  `PROGRAM_LOADINGS_PATH/PROGRAM_RESPONSE_PATH/PROGRAM_COL_PREFIX`.
 
 ## Completed This Session (post code-review fixes — feat-016 + feat-003)
 
@@ -140,7 +170,10 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **57 passed** on torch cu126 (54 + 3 post-review regression checks); compileall clean |
+| Compile + tests | `./init.sh` | Pass | **69 passed** on torch cu126 (57 + 12 new Module-3 `test_programs.py`); compileall clean |
+| Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
+| Module 3 real-data smoke | `python src/tcell_pipeline/run_module3_smoke.py` | Pass | fold-local SVD basis on 21,262 real train rows (18s) → B(10282,128); M1→M2→M3 on 4 real perturbations finite, λ∈[0.46,0.55], σ>0; expr-only λ==0 |
+| Module 3 basis orchestrator | `python -m tcell_pipeline.programs.run_program_basis --method svd` | Pass | 6.2s → gene_program_loadings.parquet (B 10282×128) + program_response.parquet (A 21262×128), gitignored; challenge-overlap assert held |
 | feat-003 split tests | `pytest src/tests/test_splits.py` | Pass | 8 passed; grouping/cap/no-split/determinism/audit-fail-closed/fractions |
 | feat-003 real split | `python -m tcell_pipeline.splits` | Pass | 11525 genes → 5141 family groups (largest 5%); wrote data/splits/*; sequence leakage **26.4% (blocked) vs 53.8% (random) = 51% cut** (corrected global-frame residual); split CSVs byte-identical to the 35e3999 freeze |
 | Module 2 graph tests | `pytest src/tests/test_graph.py` | Pass | 8 passed; synthetic graph (structure, 2-hop cap, condition gate differs, signed msg, forward finite, edge_gates, zero/absent target, attn sums to 1) |
@@ -151,6 +184,18 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | Encoder real-data e2e | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (8,256) finite; real PLM+PINNACLE vectors flow through |
 | Module 1 full-mart smoke | `python src/tcell_pipeline/run_module1_smoke.py` | Pass | on GPU (cuda), 33,983 rows in ~2s; all finite; PLM 33796, PINNACLE 3135 coverage; q_post rejected |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
+
+## Files Added (this session, Module 3 — Program Decoder)
+
+- `src/tcell_pipeline/programs/__init__.py`, `program_basis.py`, `program_decoder.py`,
+  `run_program_basis.py` (NEW package)
+- `src/tcell_pipeline/model.py` (NEW — EGIPGModel M1+M2+M3)
+- `src/tcell_pipeline/run_module3_smoke.py` (NEW — real-data e2e smoke)
+- `src/tests/test_programs.py` (NEW, 12 synthetic tests)
+- `src/tcell_pipeline/config.py` — Module 3 constants (GENE_LEVEL_DIM, PROGRAM_DIM, PROGRAM_METHOD,
+  PROGRAM_LOADINGS_PATH, PROGRAM_RESPONSE_PATH, PROGRAM_COL_PREFIX)
+- `feature_list.json` (feat-005 + feat-008 → in-progress), `progress.md`, `session-handoff.md`
+- `data/intermediate/{gene_program_loadings,program_response}.parquet` (gitignored artifacts from the smoke run)
 
 ## Files Added (this session, feat-003 — leakage-safe splits)
 
@@ -217,11 +262,17 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 ## Recommended Next Step
 
-- Post-review fixes are committed (`7760624`); working tree is clean. Start **feat-005 (latent program
-  extraction)** and/or **feat-006 (simple baselines)** — both
-  depend only on feat-003 (done) and consume the frozen `data/splits/`. Fold-local fits (programs,
-  scaling) must use the **train** role only; the loader reads `load_split()` and filters by role. Before
-  freezing H1, run the near-null-signal check on development data.
+- **Module 3 (Program Decoder) is committed on main** (`git log -1`); working tree clean, `./init.sh`
+  green (69 tests). The `programs/` package, `model.py`, smoke, tests, docs, and state-file syncs all
+  landed in one commit.
+- To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction /
+  sparsity / stability + a shallow-VAE basis; run the paper-default `sparse_pca` fit via
+  `run_program_basis` (~15 min) to freeze the production loadings. To **advance feat-008**: build
+  Module 4 (sparse predictive-rationale head), losses, and the train/calibration loops on top of
+  `EGIPGModel`. Fold-local fits use the **train** role only (`train_row_indices` gate). Before freezing
+  H1, run the near-null-signal check on development data.
+- Alternatively start **feat-006 (simple baselines)** / **feat-007 (graph baselines)** — both consume
+  the frozen `data/splits/` and unblock the feat-008 comparison.
 - feat-003 calibration knob left open (`docs/specs` + leakage_report.json): the centered-cosine threshold
   (0.85) and 5% cap can be tuned on the published paralog-similarity distribution; the sequence residual
   is 26.4% (vs 53.8% random) — tighten via pairwise must-links or curated families if a downstream result

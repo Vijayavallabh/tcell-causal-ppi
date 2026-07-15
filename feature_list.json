@@ -45,8 +45,8 @@
       "dependencies": [
         "feat-003"
       ],
-      "status": "not-started",
-      "evidence": ""
+      "status": "in-progress",
+      "evidence": "IN-PROGRESS (2026-07-15): fold-local program-basis extraction machinery landed in src/tcell_pipeline/programs/ (program_basis.py: fit_program_basis + train_row_indices fold-locality gate + save/load; run_program_basis.py orchestrator). Methods sparse_pca (MiniBatchSparsePCA, default) / nmf / fastica (ICA) / svd; K configurable (config.PROGRAM_DIM=128; §6.5 sweep 64/128/256/512). Fits on TRAIN rows only (21262 real rows x 10282 genes) with a challenge-overlap assert. Validated: 12 synthetic tests (test_programs.py) + real run_program_basis --method svd (6.2s) wrote gene_program_loadings.parquet (B 10282x128) and program_response.parquet (A 21262x128). REMAINING for done: 4-method x 4-K comparison metrics (reconstruction / sparsity / stability) and a shallow-VAE basis."
     },
     {
       "id": "feat-006",
@@ -77,8 +77,8 @@
         "feat-005",
         "feat-007"
       ],
-      "status": "not-started",
-      "evidence": ""
+      "status": "in-progress",
+      "evidence": "IN-PROGRESS (2026-07-15): Module 3 program decoder + full M1+M2+M3 wiring scaffolded (delivered with the feat-005 Module-3 goal). src/tcell_pipeline/programs/program_decoder.py (ProgramDecoder: graph path Linear(512,K) + expression-only path Linear(256,K), sigmoid mixture gate lambda in [0,1], softplus uncertainty sigma, gene decode delta_x = B @ delta_z^T + r with B a FROZEN registered_buffer, not a Parameter). src/tcell_pipeline/model.py (EGIPGModel wraps PerturbationEncoder + TypedGraphEncoder + ProgramDecoder; graph_encoder=None yields the expression-only nested variant with lambda pinned to 0). Real-data smoke run_module3_smoke.py PASSED end-to-end (M1->M2->M3 on 4 real perturbations: shapes ok, finite, lambda in [0,1], sigma>0). REMAINING: Module 4 sparse predictive-rationale head, training losses, and train/calibration loops."
     },
     {
       "id": "feat-009",
