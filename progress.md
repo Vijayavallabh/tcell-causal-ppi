@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (real PLM+PINNACLE embeddings ingested on GPU; feat-015 done)
-**Active Feature:** feat-003 - Leakage-Safe Train/Val/Test Splits (not started; deps feat-002 satisfied)
+**Last Updated:** 2026-07-15 (Module 2 typed graph encoder done; feat-016)
+**Active Feature:** feat-016 Typed Graph Encoder (Module 2) — **DONE**. Next: feat-003 (leakage-safe splits)
 
 ## Status
 
@@ -69,9 +69,24 @@
   - **GPU enabled**: swapped torch cu130->**cu126** (host driver is CUDA 12.2; cu13x can't see the 5x A100s).
     requirements.txt: +fair-esm, +cu126 install note.
 
+- [x] **Module 2 Typed Graph Encoder** (feat-016, `src/tcell_pipeline/graph/`) — **DONE**
+  - `graph_builder.build_hetero_graph` -> PyG HeteroData + gene_to_idx: 25440 protein nodes
+    (frozen 1412-d TargetEncoder descriptor, graph-derived degrees, zero-fallback) + 5628 complex
+    nodes (index-only, learned embedding in the encoder); 4 relations (physical_ppi 1123205 /
+    co_complex 48389 / functional_assoc 6857702 / complex_membership 18932) with 8-d edge features.
+  - `neighborhood_sampler.sample_subgraph`: physical/co-complex-first then score-fill, cap 512
+    proteins + member complexes, induced HeteroData preserving orig_idx.
+  - `typed_graph_encoder.TypedGraphEncoder`: 3-layer per-relation MessagePassing with signed
+    message `tanh(W_sign h_u)*relu(W_mag h_u)`, condition gate `sigmoid(w_gate[h_cond||f_e])`
+    computed once/relation and returned as `edge_gates` for Module 4, residual FFN+LayerNorm,
+    DropEdge 0.1. `graph_readout.GraphReadout`: 4-head cross-attention (q=h_do) -> h_graph R^256.
+  - CPU **and** CUDA (device-aware). 8 synthetic tests (`test_graph.py`) + real-data smoke
+    (`graph/run_module2_smoke.py`): full graph in ~18s, CD3E neighbourhood, Module 1 h_do ->
+    Module 2 h_graph (4,256) finite on GPU, gates differ by condition, attention sums to 1.
+
 ### What's In Progress
 
-- (none — feat-014 + feat-015 closed)
+- (none — feat-014 + feat-015 + feat-016 closed)
 
 ### What's Next
 
@@ -105,8 +120,27 @@
   CD4+ screen (configurable via config.PINNACLE_CONTEXT). Frozen features; artifacts gitignored + regenerable.
 - **GPU**: host has 5x A100 80GB but the CUDA-12.2 driver can't run the default cu13x torch; use the
   cu126 build (`torch==2.13.0+cu126`, minor-version compat). Embedding generation runs on GPU.
+- **Module 2 (feat-016)**: protein node features reuse Module 1's frozen 1412-d TargetEncoder
+  descriptor (degrees recomputed from the graph so all 25440 nodes have them); complex nodes are
+  index-only (learned embedding lives in the encoder). Custom PyG `MessagePassing` per relation —
+  RGCNConv/GATConv can't express the signed `tanh*relu` message or the condition gate. Condition
+  gate `alpha` depends only on `h_cond` + edge features (not `h_u`), so it's computed once and
+  reused across layers and returned as `edge_gates`. ponytail: per-target subgraph loop in forward
+  (upgrade to PyG mini-batching if Module 3 graph-encode throughput demands it).
 
-## Files Modified This Session (feat-015 — real embeddings + GPU)
+## Files Added This Session (feat-016 — Module 2 typed graph encoder)
+
+- `src/tcell_pipeline/graph/__init__.py` (NEW)
+- `src/tcell_pipeline/graph/graph_builder.py` (NEW): `build_hetero_graph()` -> HeteroData + gene_to_idx
+- `src/tcell_pipeline/graph/neighborhood_sampler.py` (NEW): `sample_subgraph()`
+- `src/tcell_pipeline/graph/typed_graph_encoder.py` (NEW): `TypedGraphEncoder` + signed message + condition gate
+- `src/tcell_pipeline/graph/graph_readout.py` (NEW): `GraphReadout` cross-attention
+- `src/tcell_pipeline/graph/run_module2_smoke.py` (NEW): real-data smoke (build graph, CD3E, encode)
+- `src/tests/test_graph.py` (NEW): 8 synthetic Module 2 tests
+- `src/tcell_pipeline/config.py` — Module 2 constants (GRAPH_*, EDGE_*, N_RELATION_TYPES, PROTEIN_FEATURE_DIM, ...)
+- `feature_list.json` — feat-016 added, status done; `progress.md`, `session-handoff.md` — state sync
+
+## Files Modified Prior Session (feat-015 — real embeddings + GPU)
 
 - `src/tcell_pipeline/embeddings_plm.py` (NEW): ESM-2 650M generator (resumable, GPU-aware)
 - `src/tcell_pipeline/embeddings_pinnacle.py` (NEW): PINNACLE CD4-context -> UniProt mapper (Figshare download)

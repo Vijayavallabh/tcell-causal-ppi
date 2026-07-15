@@ -3,15 +3,43 @@
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
-- Current status: **Module 0 done + Module 1 encoder (feat-014) done + real PLM/PINNACLE embeddings
-  ingested on GPU (feat-015).** feat-001, feat-002, feat-004, feat-014, feat-015 done.
-  Next: feat-003 (leakage-safe splits).
-- Branch / commit: main — on top of the prior session (ended at 31c507a), this session landed feat-015
-  (real ESM-2 + PINNACLE embeddings, feature commit a5bcf1d) plus a device-aware GPU-native encoder and
-  the `run_module1_smoke.py` full-mart real-data check, across follow-up commits (docs, encoder-GPU,
-  smoke). Latest is always `git log -1` on main.
+- Current status: **Module 0 done + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings on GPU
+  (feat-015) + Module 2 typed graph encoder (feat-016) done.** feat-001, feat-002, feat-004, feat-014,
+  feat-015, feat-016 done. Next: feat-003 (leakage-safe splits).
+- Branch / commit: main. Prior session ended at `b833aa2` (feat-015 embeddings + GPU-native encoder +
+  run_module1_smoke). This session landed **feat-016 (Module 2 typed graph encoder)** — the
+  `src/tcell_pipeline/graph/` package + `test_graph.py` + config constants + state-doc sync — in a single
+  feature commit (verified with `./init.sh`: 46 passed). Latest committed is always `git log -1` on main.
 
-## Completed This Session (feat-015 embeddings + GPU-native Module 1 encoder + real-data smoke)
+## Completed This Session (feat-016 — Module 2 typed graph encoder)
+
+New package `src/tcell_pipeline/graph/` (PyG torch_geometric 2.8), a component of feat-008 built ahead
+(depends only on Module 0 outputs + Module 1's h_do):
+
+- [x] `graph_builder.build_hetero_graph()` -> `(HeteroData, gene_to_idx)`: **25440** protein nodes keyed
+  by upper-case HGNC, each carrying the **same frozen 1412-d descriptor as Module 1's TargetEncoder**
+  (PLM 1280 + PINNACLE 128 + 3 graph-derived degrees + control_baseline_expr, zero-fallback);
+  **5628** complex nodes (index-only, the learned `nn.Embedding` lives in the encoder). 4 relations
+  split by the `is_*` flags + bipartite membership, each with an 8-d edge feature
+  (source one-hot(5)|score|is_direct_binary|n_supporting). Real edge counts: physical_ppi 1123205,
+  co_complex 48389, functional_assoc 6857702, complex_membership 18932.
+- [x] `neighborhood_sampler.sample_subgraph()`: grows physical/co-complex first then score-fills, caps
+  at **512** proteins, pulls in member complexes, returns an induced HeteroData preserving `orig_idx`.
+- [x] `typed_graph_encoder.TypedGraphEncoder(nn.Module)`: 3-layer per-relation custom PyG
+  `MessagePassing` (RGCNConv/GATConv can't express this) with **signed message**
+  `tanh(W_sign h_u)*relu(W_mag h_u)` and **condition gate** `sigmoid(w_gate[h_cond(64)||f_e(8)])`
+  computed once per relation (layer-independent) and returned as `edge_gates` for Module 4; residual
+  FFN+LayerNorm per node type; DropEdge 0.1. `graph_readout.GraphReadout`: 4-head cross-attention
+  (q=h_do, K=V=node states) -> **h_graph R^256**, attention sums to 1. `forward(target_genes,
+  conditions, h_do)` loops per-target subgraphs; targets absent from the PPI graph -> zero h_graph.
+- [x] **CPU and CUDA** (device-aware; sampled subgraphs moved to the module device). config: GRAPH_HOPS,
+  NEIGHBORHOOD_CAP, GRAPH_HIDDEN_DIM, GRAPH_LAYERS, GRAPH_N_HEADS, EDGE_DROPOUT, EDGE_FEATURE_DIM,
+  N_RELATION_TYPES, COMPLEX_EMBED_DIM, CONDITION_EMBED_DIM, RELATION_TYPES, PROTEIN_FEATURE_DIM.
+- [x] Verified: **8** synthetic tests (`test_graph.py`) + `graph/run_module2_smoke.py` real-data smoke
+  (full graph in ~18s, CD3E neighbourhood 512 proteins/740 complexes, real Module 1 h_do -> Module 2
+  h_graph (4,256) finite on GPU, gates differ by condition, attention sums to 1). `./init.sh`: **46** passed.
+
+## Completed Prior Session (feat-015 embeddings + GPU-native Module 1 encoder + real-data smoke)
 
 The feat-014 encoder left both target-embedding stores at zero-fallback (no parquet on disk). This
 session generated the real embeddings so the PerturbationEncoder runs on real target vectors:
@@ -50,7 +78,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | 38 passed on torch cu126; compileall clean |
+| Compile + tests | `./init.sh` | Pass | **46 passed** on torch cu126 (38 prior + 8 Module 2); compileall clean |
+| Module 2 graph tests | `pytest src/tests/test_graph.py` | Pass | 8 passed; synthetic graph (structure, 2-hop cap, condition gate differs, signed msg, forward finite, edge_gates, zero/absent target, attn sums to 1) |
+| Module 2 real-data smoke | `python src/tcell_pipeline/graph/run_module2_smoke.py` | Pass | full 25440-node graph ~18s; CD3E nbhd 512 proteins; Module 1 h_do -> h_graph (4,256) finite on GPU; gates differ by condition; attn sums to 1 |
 | Encoder tests (real data) | `pytest src/tests/test_encoders.py` | Pass | 10 passed; real PLM+PINNACLE parquets, real marts — no synthetic parquets |
 | PLM generation (GPU) | `python -m tcell_pipeline.embeddings_plm` | Pass | 11419/11419 proteins, 1280-d, finite; A100, 100% util |
 | PINNACLE ingestion | `python -m tcell_pipeline.embeddings_pinnacle` | Pass | 1119 embeddings (128-d), 1070/11419 mart coverage (CD4 helper context) |
@@ -58,7 +88,14 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | Module 1 full-mart smoke | `python src/tcell_pipeline/run_module1_smoke.py` | Pass | on GPU (cuda), 33,983 rows in ~2s; all finite; PLM 33796, PINNACLE 3135 coverage; q_post rejected |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
 
-## Files Changed (this session, feat-015)
+## Files Added (this session, feat-016 — Module 2)
+
+- `src/tcell_pipeline/graph/{__init__,graph_builder,neighborhood_sampler,typed_graph_encoder,graph_readout,run_module2_smoke}.py` (NEW)
+- `src/tests/test_graph.py` (NEW): 8 synthetic Module 2 tests
+- `src/tcell_pipeline/config.py` — Module 2 constants (GRAPH_*, EDGE_*, N_RELATION_TYPES, COMPLEX/CONDITION_EMBED_DIM, RELATION_TYPES, PROTEIN_FEATURE_DIM)
+- `feature_list.json` (feat-016 added, done), `progress.md`, `session-handoff.md`
+
+## Files Changed (prior session, feat-015)
 
 - `src/tcell_pipeline/embeddings_plm.py` (NEW): ESM-2 650M generator (resumable, GPU-aware)
 - `src/tcell_pipeline/embeddings_pinnacle.py` (NEW): PINNACLE CD4-context -> UniProt mapper (Figshare download)

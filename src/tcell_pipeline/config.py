@@ -94,6 +94,21 @@ PINNACLE_RAW_DIR: Path = DATA_ROOT / "pinnacle" / "pinnacle_embeds"
 PINNACLE_FIGSHARE_URL: str = "https://ndownloader.figshare.com/files/48005749"
 PINNACLE_CONTEXT: str = "cd4-positive helper t cell"
 
+# --- Module 2 (Typed Graph Encoder) ---
+GRAPH_HOPS: int = 2               # neighbourhood radius sampled around each perturbation target
+NEIGHBORHOOD_CAP: int = 512      # max protein nodes per sampled subgraph
+GRAPH_HIDDEN_DIM: int = 256      # unified node hidden dim in message passing (== H_DO_DIM)
+GRAPH_LAYERS: int = 3            # relational message-passing layers
+GRAPH_N_HEADS: int = 4           # cross-attention heads in the graph readout
+EDGE_DROPOUT: float = 0.1        # DropEdge probability during training
+EDGE_FEATURE_DIM: int = 8        # source_onehot(5)+score(1)+is_direct_binary(1)+n_supporting(1)
+N_RELATION_TYPES: int = 4        # physical_ppi, co_complex, functional_assoc, complex_membership
+COMPLEX_EMBED_DIM: int = 256     # learned protein-complex node embedding dim
+CONDITION_EMBED_DIM: int = 64    # culture-condition embedding feeding the edge gate (Module 1 pattern)
+RELATION_TYPES: tuple[str, ...] = ("physical_ppi", "co_complex", "functional_assoc", "complex_membership")
+# protein node feature vector = frozen PLM + PINNACLE + 3 PPI degrees + control baseline expr
+PROTEIN_FEATURE_DIM: int = PLM_EMBED_DIM + PINNACLE_EMBED_DIM + 4
+
 
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
