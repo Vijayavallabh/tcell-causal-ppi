@@ -34,7 +34,9 @@ Key facts:
 
 - **One feature at a time**: Pick exactly one unfinished feature from `feature_list.json`
 - **Verification required**: Don't claim done without running `./init.sh`
-- **Update artifacts**: Before ending session, update `progress.md` and `feature_list.json`
+- **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
+  `session-handoff.md` — all three must match committed reality (a structurally valid but stale
+  state file silently misroutes the next session)
 - **Stay in scope**: Don't modify files unrelated to the current feature
 - **Leave clean state**: Next session must be able to run `./init.sh` immediately
 
@@ -60,9 +62,13 @@ Before ending a session:
 
 1. Update `progress.md` with current state
 2. Update `feature_list.json` with new feature status
-3. Record any unresolved risks or blockers
-4. Commit with descriptive message once work is in safe state
-5. Leave repo clean enough for next session to run `./init.sh` immediately
+3. Update `session-handoff.md` (completed work, evidence, blockers, recommended next step)
+4. Record any unresolved risks or blockers
+5. Commit with descriptive message once work is in safe state
+6. Leave repo clean enough for next session to run `./init.sh` immediately
+
+Cross-check: whenever `feature_list.json` status changes, `progress.md` and `session-handoff.md`
+must change in the same commit. Structural validators pass on stale docs — content drift is on you.
 
 ## Verification Commands
 
