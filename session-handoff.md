@@ -6,8 +6,9 @@
 - Current status: **Module 0 done + Module 1 encoder (feat-014) done + real PLM/PINNACLE embeddings
   ingested on GPU (feat-015).** feat-001, feat-002, feat-004, feat-014, feat-015 done.
   Next: feat-003 (leakage-safe splits).
-- Branch / commit: main — this session added feat-015 (real embeddings + GPU torch); commit sits on top
-  of the prior feat-014 + fence-hardening range (8030dc7..31c507a)
+- Branch / commit: main — this session's work sits on top of the prior session (ended at 31c507a):
+  feat-015 feature commit (a5bcf1d) + doc follow-ups (requirements/README, embedding_store docstring);
+  a docs-sync commit closes the session on top. Latest is always `git log -1` on main.
 
 ## Completed This Session (feat-015 — real PLM + PINNACLE embeddings, on GPU)
 
@@ -54,7 +55,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 - `src/tcell_pipeline/embeddings_pinnacle.py` (NEW): PINNACLE CD4-context -> UniProt mapper (Figshare download)
 - `src/tcell_pipeline/config.py` — PINNACLE_EMBED_DIM 512->128; +PINNACLE_RAW_DIR/FIGSHARE_URL/CONTEXT
 - `src/tests/test_encoders.py` — rewritten to real PLM+PINNACLE data (no synthetic parquets); 1796->1412
-- `requirements.txt` — +fair-esm, +cu126 torch install note
+- `requirements.txt` — +fair-esm, +pyyaml (was undeclared), +cu126 torch install note
+- `README.md` — GPU/cu126 setup note + "Precompute target embeddings" step; PINNACLE 128-d detail
+- `src/tcell_pipeline/encoders/embedding_store.py` — docstring refresh (embeddings now generated)
 - `feature_list.json` (feat-015 added, done), `progress.md`, `session-handoff.md`
 - Prior session (feat-014): `src/tcell_pipeline/encoders/` package + config Module 1 constants + test_encoders.py
 
