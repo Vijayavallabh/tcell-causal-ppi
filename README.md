@@ -347,17 +347,18 @@ uv pip install -r requirements.txt
 uv tool install awscli
 ```
 
-**GPU (embedding generation).** ESM-2 PLM embeddings run far faster on a GPU. `torch` from the default
-index is built for the newest CUDA and may not match an older driver — if `python -c "import torch;
-print(torch.cuda.is_available())"` prints `False` on a GPU host, install the torch build matching the
-driver's CUDA version. On this host (NVIDIA driver 535 / CUDA 12.2) that is the CUDA-12.6 build (runs on
-12.2 via minor-version compatibility):
+**GPU (embeddings + encoder).** ESM-2 PLM embedding generation and the Module 1 encoder both run far
+faster on a GPU. `torch` from the default index is built for the newest CUDA and may not match an older
+driver — if `python -c "import torch; print(torch.cuda.is_available())"` prints `False` on a GPU host,
+install the torch build matching the driver's CUDA version. On this host (NVIDIA driver 535 / CUDA 12.2)
+that is the CUDA-12.6 build (runs on 12.2 via minor-version compatibility):
 
 ```bash
 uv pip install --index-url https://download.pytorch.org/whl/cu126 "torch==2.13.0+cu126"
 ```
 
-The encoders fall back to CPU automatically when no GPU is visible.
+`embeddings_plm` uses the GPU automatically. `PerturbationEncoder` is device-aware: `enc.to("cuda")`
+runs the whole forward on GPU; with no `.to()` it stays on CPU, so tests and GPU-less hosts work unchanged.
 
 ### Download data (staged)
 
@@ -474,6 +475,20 @@ up automatically by `PluggableEmbeddingStore` at the paths in `config.py`. PLM c
 PINNACLE is contextual (~1,070 of the screen's proteins fall in the CD4 helper context — the rest keep the
 zero fallback). Both are gitignored under `data/intermediate/` and fully regenerable. The PINNACLE context
 is configurable via `config.PINNACLE_CONTEXT`.
+
+### Verify Module 1 on the real data
+
+`run_module1_smoke.py` is the Module 1 analogue of `run_module0.py`: it drives all 33,983 real
+perturbation-condition rows through `PerturbationEncoder`, reporting PLM/PINNACLE coverage, asserting
+every `h_do` is finite (the NaN guard), and checking the leakage fence rejects the mart's real `q_post`
+columns. Uses the GPU automatically when available. Exits non-zero on any NaN or fence breach.
+
+```bash
+python src/tcell_pipeline/run_module1_smoke.py
+```
+
+Unit-level checks (real PLM/PINNACLE parquets + real marts, no synthetic fixtures) run under `./init.sh`
+alongside the rest of the suite.
 
 ## Repository / data-mart layout
 
