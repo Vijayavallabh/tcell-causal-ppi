@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (post code-review fixes applied to feat-016 + feat-003; committed 967951e)
-**Active Feature:** feat-003 + feat-016 code-review fixes — **DONE** (committed 967951e). Next: feat-005 (programs) / feat-006 (baselines), both unblocked
+**Last Updated:** 2026-07-15 (post code-review fixes applied to feat-016 + feat-003; committed 7760624)
+**Active Feature:** feat-003 + feat-016 code-review fixes — **DONE** (committed 7760624). Next: feat-005 (programs) / feat-006 (baselines), both unblocked
 
 ## Status
 
@@ -97,7 +97,7 @@
     manifest.json, leakage_report.json. **Effectiveness validated** (corrected post-review): challenge
     genes with a ≥0.85 train paralog cut 53.8% (random) → 26.4% (blocked) = 51% reduction.
   - 8 synthetic tests (`test_splits.py`); `./init.sh` green (54 pytest).
-- [x] **Post code-review fixes** (feat-016 + feat-003; committed 967951e) — **DONE**
+- [x] **Post code-review fixes** (feat-016 + feat-003; committed 7760624) — **DONE**
   - Applied the verified `/code-review` findings (`docs/reviews/2026-07-15-code-review-feat-016-feat-003.md`).
   - **feat-003 leakage-safety (split CSVs byte-identical, sha256 unchanged):** audit now publishes
     cap-induced family splits via an uncapped pre-cap component pass (post-cap "no split" assertion was

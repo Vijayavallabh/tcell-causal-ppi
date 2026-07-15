@@ -7,8 +7,8 @@
   Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done.** feat-001, feat-002,
   feat-003, feat-004, feat-014, feat-015, feat-016 done. Next: feat-005 (programs) / feat-006 (baselines).
 - Branch / commit: main. **feat-016 (Module 2) at `100a505`; feat-003 (leakage-safe splits) at
-  `35e3999`; the xhigh `/code-review` fixes (Tier 1 + Tier 2 + all of Tier 3) at `967951e`.** Committed
-  range this session: `100a505..967951e`. The review-fix commit touches `splits.py`, `graph_builder.py`,
+  `35e3999`; the xhigh `/code-review` fixes (Tier 1 + Tier 2 + all of Tier 3) at `7760624`.** Committed
+  range this session: `100a505..7760624 (+ this handoff-sync commit)`. The review-fix commit touches `splits.py`, `graph_builder.py`,
   `typed_graph_encoder.py`, `test_graph.py`, `test_splits.py`, `config.py`, regenerated
   `data/splits/{leakage_report,manifest}.json` + `random.csv` (blocked CSV byte-identical),
   `feature_list.json` addenda, and new `docs/reviews/2026-07-15-code-review-*.md`.
@@ -18,7 +18,7 @@
 ## Completed This Session (post code-review fixes — feat-016 + feat-003)
 
 Applied the verified findings from the xhigh `/code-review`
-(`docs/reviews/2026-07-15-code-review-feat-016-feat-003.md`). **Committed at `967951e`.**
+(`docs/reviews/2026-07-15-code-review-feat-016-feat-003.md`). **Committed at `7760624`.**
 
 - **Tier 1 (feat-003 leakage-safety) — split CSVs byte-identical (sha256 unchanged), audit corrected:**
   - `splits.py` audit now publishes **cap-induced family splits** via an uncapped pre-cap component
@@ -217,7 +217,7 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 ## Recommended Next Step
 
-- Post-review fixes are committed (`967951e`); working tree is clean. Start **feat-005 (latent program
+- Post-review fixes are committed (`7760624`); working tree is clean. Start **feat-005 (latent program
   extraction)** and/or **feat-006 (simple baselines)** — both
   depend only on feat-003 (done) and consume the frozen `data/splits/`. Fold-local fits (programs,
   scaling) must use the **train** role only; the loader reads `load_split()` and filters by role. Before

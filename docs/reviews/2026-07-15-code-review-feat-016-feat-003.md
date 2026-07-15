@@ -19,7 +19,7 @@ Severity assessments below are mine (author), layered on top of the verifier ver
 ## Resolution (2026-07-15, applied)
 
 Tier 1 + Tier 2 + all of Tier 3 (the cheap defenses first, then #10/#11/#12) were addressed and
-committed at `967951e`; `data/splits/` was regenerated and **57 pytest** stay green (+3 regression
+committed at `7760624`; `data/splits/` was regenerated and **57 pytest** stay green (+3 regression
 checks: OOV-condition raises, edge_gates length == E, random split covers all items at small N).
 
 | # | Location | Outcome |
