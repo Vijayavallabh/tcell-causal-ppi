@@ -11,12 +11,18 @@ import yaml
 from tcell_pipeline import config
 
 
+def _is_donor_pc(col: str) -> bool:
+    # only donor_pc_<digits> (the PCA dims) count as q_pre; a bare prefix match would let a
+    # response-derived donor_pc_* column slip into q_pre without tripping the REVIEW tripwire.
+    return col.startswith(config.DONOR_PC_PREFIX) and col[len(config.DONOR_PC_PREFIX):].isdigit()
+
+
 def classify_columns(columns: list[str]) -> dict[str, list[str]]:
     q_post, q_pre, metadata = [], [], []
     for c in columns:
         if c in config.Q_POST_COLS:
             q_post.append(c)
-        elif c in config.Q_PRE_COLS or c.startswith(config.DONOR_PC_PREFIX):
+        elif c in config.Q_PRE_COLS or _is_donor_pc(c):
             q_pre.append(c)
         else:
             metadata.append(c)

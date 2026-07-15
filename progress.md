@@ -95,9 +95,13 @@
 - `src/tcell_pipeline/encoders/` (NEW package): `_tensor.py`, `embedding_store.py`, `target_encoder.py`,
   `context_encoder.py`, `quality_encoder.py`, `perturbation_encoder.py`, `__init__.py`
 - `src/tcell_pipeline/config.py` — Module 1 constants (embed dims, H_DO_DIM, CONDITIONS, embedding paths)
-- `src/tests/test_encoders.py` (NEW, 10 tests) — pytest now 33 total
+- `src/tests/test_encoders.py` (NEW, 10 tests)
 - `feature_list.json` — feat-014 (Perturbation & Context Encoder) added, status done
 - `progress.md`, `session-handoff.md` — state sync
+- Post-review leakage-fence hardening (xhigh /code-review, 3 CONFIRMED/PLAUSIBLE latent findings):
+  `feature_availability.py` (`_is_donor_pc` tightens the bare `donor_pc_` prefix to digits-only) +
+  `test_feature_availability.py` (config-level q_pre/q_post disjointness guard — the output-level one
+  was a tautology; donor-prefix test; committed-manifest drift guard). pytest now **36 total**.
 
 Prior session (Module 0 fixes, commits e453964..1732def): id_mapping.py reviewed-canonical UniProt
 disambiguation; ppi_graph.py HuRI apex URL + CORUM 5.3 fastapi + `_corum_gene_col` + TLS skip;
