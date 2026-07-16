@@ -59,23 +59,28 @@ def _loader(dataset, batch_size: int) -> DataLoader:
 
 
 def collect_predictions(model, dataset, device: str = "cpu", batch_size: int = config.BATCH_SIZE) -> dict:
-    """Forward ``model`` over ``dataset`` (eval mode, no grad) → stacked numpy Δz / Δx / σ / row_index."""
+    """Forward ``model`` over ``dataset`` (eval, no grad) → stacked numpy Δz / Δx / σ / row_index AND the
+    supervised Δz_true / Δx_true, all from the SAME single pass — so scoring the val fold needs one loader
+    pass, not a forward pass plus a separate truth pass."""
     model = model.to(device)
     model.eval()
-    dz, dx, sig, ri = [], [], [], []
+    dz, dx, sig, ri, dzt, dxt = [], [], [], [], [], []
     with torch.no_grad():
-        for batch, targets, conditions, _dz, _dx, rows in _loader(dataset, batch_size):
+        for batch, targets, conditions, dz_true, dx_true, rows in _loader(dataset, batch_size):
             out = model(batch, targets, conditions)
             dz.append(out["delta_z"].detach().cpu().numpy())
             dx.append(out["delta_x"].detach().cpu().numpy())
             sig.append(out["sigma"].detach().cpu().numpy())
+            dzt.append(dz_true.numpy())
+            dxt.append(dx_true.numpy())
             ri.extend(rows)
-    return {"row_index": np.asarray(ri), "delta_z": np.concatenate(dz),
-            "delta_x": np.concatenate(dx), "sigma": np.concatenate(sig)}
+    return {"row_index": np.asarray(ri), "delta_z": np.concatenate(dz), "delta_x": np.concatenate(dx),
+            "sigma": np.concatenate(sig), "dz_true": np.concatenate(dzt), "dx_true": np.concatenate(dxt)}
 
 
 def collect_truth(dataset, batch_size: int = config.BATCH_SIZE) -> dict:
-    """Stack the dataset's supervised Δz_true (=z@B) / Δx_true (=z) / row_index — no model forward needed."""
+    """Stack the dataset's supervised Δz_true (=z@B) / Δx_true (=z) / row_index via the loader — no model
+    forward. ``dataset_delta_z`` is the faster CSR path when only Δz is needed (e.g. the training mean)."""
     dz, dx, ri = [], [], []
     for _batch, _targets, _conditions, dz_true, dx_true, rows in _loader(dataset, batch_size):
         dz.append(dz_true.numpy())
@@ -84,32 +89,29 @@ def collect_truth(dataset, batch_size: int = config.BATCH_SIZE) -> dict:
     return {"row_index": np.asarray(ri), "delta_z": np.concatenate(dz), "delta_x": np.concatenate(dx)}
 
 
+def dataset_delta_z(dataset) -> np.ndarray:
+    """Δz_true (=z@B) for every row straight from the dataset's zscore CSR (the run_module6_smoke._fold
+    path), skipping the per-row __getitem__ encoder-batch build (PLM/PINNACLE/donor lookups) — used for the
+    training-set mean, where only the target is needed and the encoder inputs would be discarded."""
+    Z = dataset._zscore[dataset.row_index].toarray().astype("float32")  # (N, G)
+    return Z @ dataset.B.numpy()                                        # (N, K)
+
+
 def collect_targets_truth(dataset, batch_size: int = config.BATCH_SIZE) -> dict:
-    """Per-row target symbol + supervised Δz_true/Δx_true/row_index, in dataset order — what the non-neural
-    NetworkPropagationBaseline needs (it fits on target genes, not a forwarded model)."""
-    genes, dz, dx, ri = [], [], [], []
-    for _batch, targets, _conditions, dz_true, dx_true, rows in _loader(dataset, batch_size):
-        genes.extend(targets)
-        dz.append(dz_true.numpy())
-        dx.append(dx_true.numpy())
-        ri.extend(rows)
-    return {"genes": genes, "delta_z": np.concatenate(dz), "delta_x": np.concatenate(dx),
-            "row_index": np.asarray(ri)}
+    """Per-row target symbol + Δz_true(=z@B) / Δx_true(=z) / row_index straight from the zscore CSR + the
+    perturbation table (the vectorised path), avoiding the per-row __getitem__ encoder-batch build — what the
+    non-neural NetworkPropagationBaseline needs (it fits on target genes, not a forwarded model).
+    ``batch_size`` is accepted for signature parity but unused (this is one vectorised read)."""
+    Z = dataset._zscore[dataset.row_index].toarray().astype("float32")
+    return {"genes": dataset.pc["hgnc_symbol"].astype(str).tolist(),
+            "delta_z": Z @ dataset.B.numpy(), "delta_x": Z, "row_index": np.asarray(dataset.row_index)}
 
 
 def compute_all_metrics(dz_hat, dx_hat, dz_true, dx_true, train_mean) -> dict:
-    """The evaluation suite on both spaces: program-space (Δz) correlation/centroid/cosine and gene-space
-    (Δx) error/recall/sign. ``systema`` (the primary endpoint) removes the program-space training mean."""
-    return {
-        "pearson": M.pearson_corr(dz_hat, dz_true),
-        "systema": M.systema_pert_specific_delta(dz_hat, dz_true, train_mean),
-        "centroid": M.centroid_accuracy(dz_hat, dz_true),
-        "prog_cos": M.program_cosine(dz_hat, dz_true),
-        "mae": M.mae(dx_hat, dx_true),
-        "rmse": M.rmse(dx_hat, dx_true),
-        "topk": M.topk_recall(dx_hat, dx_true),
-        "sign": M.sign_accuracy(dx_hat, dx_true),
-    }
+    """The 8-metric response suite (program-space Δz correlation/centroid/cosine + gene-space Δx
+    error/recall/sign; ``systema`` is the primary endpoint). Delegates to the single shared definition so
+    screening scores can't drift from the Module-6 headline scores (run_module6_smoke._score)."""
+    return M.response_metric_suite(dz_hat, dx_hat, dz_true, dx_true, train_mean)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -184,11 +186,10 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
         result = trainer.run()
         if result["best_ckpt"]:  # score the best-validation weights, not the last epoch's
             model.load_state_dict(torch.load(result["best_ckpt"], map_location=device)["model"])
-        pred = collect_predictions(model, val_ds, device, bs)
-        truth = collect_truth(val_ds, bs)
-        metrics = compute_all_metrics(pred["delta_z"], pred["delta_x"], truth["delta_z"], truth["delta_x"],
+        pred = collect_predictions(model, val_ds, device, bs)  # one pass yields predictions AND truths
+        metrics = compute_all_metrics(pred["delta_z"], pred["delta_x"], pred["dz_true"], pred["dx_true"],
                                       train_mean)
-        write_predictions(truth["row_index"], pred["delta_z"], pred["delta_x"], pred["sigma"],
+        write_predictions(pred["row_index"], pred["delta_z"], pred["delta_x"], pred["sigma"],
                           model=name, split=split, seed=seed, root=predictions_root)
         gpu_hours = (time.perf_counter() - start) / 3600.0
         results = {"name": name, "seed": seed, "n_epochs": cfg["n_epochs"], "status": "completed",
@@ -268,8 +269,17 @@ def run_screening(configs: list[dict], train_ds, val_ds, *, device: str = "cpu",
     ``extra_scorers`` are non-neural reference scorers (e.g. ``score_network_propagation``) run after the
     trained configs on the same fold, each called as ``scorer(train_ds, val_ds, train_mean,
     predictions_root=, screening_root=, split=)`` and returning a results row; they share the same failure
-    isolation but never enter the H2a/H2b nested comparison."""
-    train_mean = collect_truth(train_ds)["delta_z"].mean(0)
+    isolation but never enter the H2a/H2b nested comparison.
+
+    One seed per config name per call: the results table + H2a/H2b comparison are keyed by config name, so
+    duplicate names are rejected up front. Multi-seed promotion runs separate calls per seed and aggregates
+    (a separate step)."""
+    names = [c["name"] for c in configs]
+    dupes = sorted({n for n in names if names.count(n) > 1})
+    if dupes:
+        raise ValueError(f"duplicate config names {dupes} in one run_screening call — the comparison is keyed "
+                         f"by name, so run one seed per name per call and aggregate seeds separately")
+    train_mean = dataset_delta_z(train_ds).mean(0)  # CSR path, not the per-row __getitem__ encoder build
     results = []
     for cfg in configs:
         try:

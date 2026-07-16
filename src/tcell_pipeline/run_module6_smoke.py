@@ -63,17 +63,8 @@ def _model_predict(ds: PerturbationDataset, device: str):
 
 
 def _score(name, dz_hat, dx_hat, dz_true, dx_true, train_mean) -> dict:
-    return {
-        "model": name,
-        "pearson": M.pearson_corr(dz_hat, dz_true),
-        "systema": M.systema_pert_specific_delta(dz_hat, dz_true, train_mean),
-        "centroid": M.centroid_accuracy(dz_hat, dz_true),
-        "prog_cos": M.program_cosine(dz_hat, dz_true),
-        "mae": M.mae(dx_hat, dx_true),
-        "rmse": M.rmse(dx_hat, dx_true),
-        "topk": M.topk_recall(dx_hat, dx_true),
-        "sign": M.sign_accuracy(dx_hat, dx_true),
-    }
+    # shared 8-metric block (screening.compute_all_metrics uses the same one — they can't drift)
+    return {"model": name, **M.response_metric_suite(dz_hat, dx_hat, dz_true, dx_true, train_mean)}
 
 
 def run(device: str = "cpu", seed: int = 0) -> int:

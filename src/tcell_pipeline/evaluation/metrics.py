@@ -193,3 +193,20 @@ def signed_de_metrics(probs, labels) -> dict:
                      "f1": float(f1), "auprc": auprc}
     out["macro_f1"] = float(np.mean([out["up"]["f1"], out["down"]["f1"]]))
     return out
+
+
+def response_metric_suite(dz_hat, dx_hat, dz_true, dx_true, train_mean) -> dict:
+    """The 8-metric response-prediction block: program-space (Δz) pearson / systema / centroid / cosine and
+    gene-space (Δx) mae / rmse / topk / sign; ``systema`` (the primary H1 endpoint) removes the program-space
+    training mean. One definition shared by ``screening.compute_all_metrics`` and ``run_module6_smoke._score``
+    so the screening scores and the Module-6 headline scores can never silently diverge."""
+    return {
+        "pearson": pearson_corr(dz_hat, dz_true),
+        "systema": systema_pert_specific_delta(dz_hat, dz_true, train_mean),
+        "centroid": centroid_accuracy(dz_hat, dz_true),
+        "prog_cos": program_cosine(dz_hat, dz_true),
+        "mae": mae(dx_hat, dx_true),
+        "rmse": rmse(dx_hat, dx_true),
+        "topk": topk_recall(dx_hat, dx_true),
+        "sign": sign_accuracy(dx_hat, dx_true),
+    }

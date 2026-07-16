@@ -26,6 +26,7 @@ from tcell_pipeline.screening import (
     TYPED_STATIC,
     collect_predictions,
     collect_truth,
+    dataset_delta_z,
     load_registry,
     log_run,
     nested_family_configs,
@@ -320,6 +321,31 @@ def test_screen_config_scores_best_not_last_checkpoint(tmp_path):
     assert not np.allclose(dz_best, dz_last)                              # non-vacuous: best epoch != last epoch
     assert np.allclose(written, dz_best.astype("float32"), atol=1e-4)     # scored the BEST-val weights...
     assert not np.allclose(written, dz_last.astype("float32"), atol=1e-4)  # ...not the last epoch's
+
+
+# --- Tier 4 efficiency / DRY cleanups -------------------------------------------------------------
+def test_collect_predictions_returns_truths_in_one_pass(tmp_path):
+    paths, cfgs = _configs(tmp_path, [EXPRESSION_ONLY])
+    val_ds = PerturbationDataset("val", **paths)
+    pred = collect_predictions(cfgs[0]["model_factory"](), val_ds, "cpu", 2)
+    assert pred["dz_true"].shape == pred["delta_z"].shape          # truths returned from the SAME pass...
+    assert pred["dx_true"].shape == pred["delta_x"].shape
+    assert np.allclose(pred["dz_true"], collect_truth(val_ds)["delta_z"], atol=1e-5)  # ...and equal the loader truth
+
+
+def test_dataset_delta_z_matches_loader_path(tmp_path):
+    paths, *_ = _fixture(tmp_path)
+    ds = PerturbationDataset("train", **paths)
+    # CSR fast path (z@B straight from the sparse matrix) == the loader/__getitem__ path, exactly
+    assert np.allclose(dataset_delta_z(ds), collect_truth(ds)["delta_z"], atol=1e-5)
+
+
+def test_run_screening_rejects_duplicate_config_names(tmp_path):
+    paths, cfgs = _configs(tmp_path, [EXPRESSION_ONLY])
+    train_ds, val_ds = PerturbationDataset("train", **paths), PerturbationDataset("val", **paths)
+    with pytest.raises(ValueError, match="duplicate config names"):  # fails fast, before any training
+        run_screening([cfgs[0], dict(cfgs[0])], train_ds, val_ds,
+                      predictions_root=tmp_path / "pred", screening_root=tmp_path / "scr")
 
 
 def test_screen_config_logs_completed_run(tmp_path):
