@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 7 — Graph Baselines + Screening Harness built, reviewed, real-data-smoked; **NOT yet committed**. Module 6 landed earlier as `9f4f9d6`→`fe3a724`→`4043250`→`7ac113b`.)
+**Last Updated:** 2026-07-16 (Module 7 — Graph Baselines + Screening Harness **committed + two review passes fully resolved**: `6b6021f` (module) → xhigh `/code-review` 15 findings fixed across Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync. Module 6 landed earlier as `9f4f9d6`→`fe3a724`→`4043250`→`7ac113b`.)
 **Active Feature:** Module 7 (Graph Baselines + Screening Harness) — **feat-007 done** (3 graph baselines), **feat-011 in-progress** (harness done; the 32-trial campaign + 5-seed promotion remain). Also open: feat-006 in-progress (elastic-net + CatBoost deferred), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress, feat-010 not-started. Next: the full screening campaign with convergent training, feat-006 remainder, feat-010 external comparators, or feat-008 Stage-B fit loops.
 
 ## Module 7 (Graph Baselines + Screening Harness) — this session (2026-07-16)
@@ -34,8 +34,14 @@ under the report's frozen trial budget. **Not yet committed.**
   regime on untrained-to-convergence models. **Memory ceiling:** the typed encoder OOMs 80 GB on real dense
   subgraphs at batch 32 (first real training of the graph model — Module 5's real run was expr-only); fits at
   batch 4 / `expandable_segments`; failure isolation keeps one OOM lane from aborting the wave.
-- **Verification:** `./init.sh` green at **159 tests** (145 prior + 14 Module 7). Spec
-  `docs/specs/2026-07-16-module7-screening.md`.
+- **Verification:** `./init.sh` green at **171 tests** (145 prior + 26 Module 7, after the xhigh review's
+  15 fixes). Spec `docs/specs/2026-07-16-module7-screening.md`; review record
+  `docs/reviews/2026-07-16-code-review-module7.md` (both review passes + the 4-tier resolution).
+- **xhigh /code-review resolved (2026-07-16):** 15 findings across 4 tiers — Tier 1 (registry distinct-config
+  cap, valid summary.json, exit codes, **network-prop scoring path**), Tier 2 (seed-namespaced ckpts,
+  gpu_hours, comparator-family cap), Tier 3 (best-vs-last + completed-log tests, `seeded_init` weight-init
+  reproducibility), Tier 4 (one-pass val scoring, CSR train_mean, shared `response_metric_suite`, dup-name
+  guard). All four tiers re-validated on the real blocked-target-OOD fold.
 
 ## Module 6 (Evaluation Metrics + Simple Baselines) — this session (2026-07-16)
 

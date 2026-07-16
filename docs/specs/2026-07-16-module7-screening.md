@@ -91,10 +91,22 @@ direction against the per-config `systema`), (2) `load_registry` returning `None
 the driver artifact guard omitting `ID_MAPPING_PATH`. A pre-review fix caught the shared perturbation-encoder
 that would have co-trained two configs' weights.
 
+A second, deeper **xhigh `/code-review`** of the committed module (6 finders → 24 candidates → 21 verifiers)
+surfaced **15 verified findings** (4 refuted), fixed across four tiers — see
+`docs/reviews/2026-07-16-code-review-module7.md`. The as-built consequences folded into this module: the
+registry cap counts **distinct configs** (dev re-runs no longer exhaust it); `summary.json` is sanitized to
+valid JSON; the driver exits non-zero on a wholly-failed wave; the **network-propagation baseline now has a
+scoring path** (`score_network_propagation` + `run_screening(extra_scorers=…)`); checkpoints are
+seed-namespaced and `gpu_hours` is logged; a `MAX_COMPARATOR_FAMILIES=2` cap; a `seeded_init(seed)` context
+manager so weight init is reproducible from the seed (the Trainer's generators cover only data shuffling);
+one-pass val scoring + a CSR `train_mean`; and one shared `response_metric_suite` so screening and Module-6
+scores can't drift.
+
 ## Verification
 
-`./init.sh` green at **159 tests** (145 prior + 14 Module 7: 7 in `test_graph_baselines.py`, 7 in
-`test_screening.py`). Fully synthetic — tiny marts + a small in-memory PPI graph.
+`./init.sh` green at **171 tests** (145 prior + 26 Module 7: 7 in `test_graph_baselines.py`, 18 in
+`test_screening.py`, + the `seeded_init` test in `test_training.py`). Fully synthetic — tiny marts + a
+small in-memory PPI graph.
 
 **Real-data smoke** — `screening/run_screening.py --device cuda` on the real blocked-target-OOD split
 (40-row bounded, 1 epoch, batch 4) trained and scored all four wave members (expression-only, untyped-GNN,

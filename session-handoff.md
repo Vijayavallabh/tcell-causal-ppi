@@ -17,7 +17,8 @@
   Harness) built this session:** **feat-007 (3 graph baselines) done**, **feat-011 (screening harness)
   in-progress** (harness + registry done; the 32-trial campaign + 5-seed promotion remain). Next: the full
   screening campaign with convergent training, feat-006 remainder (elastic-net + CatBoost), feat-010
-  external comparators, or feat-008 Stage-B fit loops. **Module 7 is NOT yet committed.**
+  external comparators, or feat-008 Stage-B fit loops. **Module 7 committed (`6b6021f`) + its xhigh
+  `/code-review` fully resolved (15 findings, Tiers 1-4: `9db57ae`→`32fb473`→`4e25f4b`→`04e6148`).**
 - Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
   state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
   `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,
@@ -51,8 +52,16 @@
   (systema 0.377 expr-only / 0.362 typed-static / 0.348 condition-gated; H2a Δ=−0.015, H2b Δ=−0.015, neither
   supported). **Memory ceiling found:** the typed encoder OOMs 80 GB on real dense subgraphs at batch 32
   (first real training of the graph model); fits at batch 4 / `expandable_segments` — CPU is the report's
-  home for graph message passing. `./init.sh` green at **159 tests**. Spec
-  `docs/specs/2026-07-16-module7-screening.md`. **NOT yet committed** (awaiting the user's go-ahead).
+  home for graph message passing. `./init.sh` green.
+- **xhigh `/code-review` fully resolved (2026-07-16)** — a second, deeper pass (6 finders → 24 candidates →
+  21 verifiers) found **15 verified findings** (4 refuted; correctness-critical maths again held), fixed
+  across four tiers (`9db57ae`→`32fb473`→`4e25f4b`→`04e6148`): registry distinct-config cap, valid
+  summary.json, exit codes, **the network-propagation baseline's scoring path** (`score_network_propagation`
+  + `run_screening(extra_scorers=…)`), seed-namespaced ckpts + `gpu_hours`, `MAX_COMPARATOR_FAMILIES=2`,
+  `seeded_init(seed)` weight-init reproducibility (the Trainer's seeded gens cover only data shuffling — a
+  real Module-5 reproducibility gap now closed), one-pass val scoring, CSR `train_mean`, and one shared
+  `response_metric_suite`. `./init.sh` green at **171 tests**; all four tiers re-validated on real data.
+  Review record `docs/reviews/2026-07-16-code-review-module7.md`. **All committed on main.**
 
 ## Completed Earlier (Module 6 — Evaluation Metrics + Simple Baselines; feat-009 + feat-006)
 
