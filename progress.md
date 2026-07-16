@@ -2,10 +2,44 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-15 (Module 3 Program Decoder built — feat-005 extraction + feat-008 decoder/model scaffold)
-**Active Feature:** Module 3 (Program Decoder) — feat-005 **in-progress** (fold-local basis extraction done; method×K comparison + VAE remain), feat-008 **in-progress** (decoder + EGIPGModel wiring scaffolded; Module 4 + losses + training remain). Next: finish feat-005 comparison study, or feat-006 (baselines) / feat-007 (graph baselines)
+**Last Updated:** 2026-07-16 (Module 4 Sparse Predictive-Rationale Head built — feat-008 rationale head + faithfulness eval)
+**Active Feature:** Module 4 (Sparse Predictive-Rationale Head) — feat-008 **in-progress** (M1+M2+M3 + Module 4 rationale head / loss / faithfulness eval built; the training-loss OPTIMIZATION loop + train/calibration loops remain, and feat-007 is not-started). feat-005 **in-progress** (fold-local basis + frozen sparse_pca production loadings done; method×K comparison + shallow-VAE remain). Next: feat-008 training loop, or feat-006 (baselines) / feat-007 (graph baselines)
 
-## Module 3 (Program Decoder) — this session
+## Module 4 (Sparse Predictive-Rationale Head) — this session (2026-07-16)
+
+New package `src/tcell_pipeline/rationale/` implementing walkthrough §7 / report §Module 4. **Stage B**:
+fitted AFTER the H1 predictor freeze — a **predictive rationale, NOT a causal mechanism** (deletion
+scores are fixed-model perturbation tests, report line 499/718). No training loops (out of scope by
+design — modules + loss + faithfulness eval only).
+
+- **RationaleHead** (`rationale_head.py`): per edge `imp = ᾱ · sigmoid(Linear([h_u‖h_v‖f_e]))` (gate ×
+  learned relevance, both in [0,1]); the scorer is **zero-initialised** so an untrained head ranks by the
+  frozen condition gate (faithful by construction — training refines it). Top-k selection across all 4
+  relations → `selection_mask` + `selected` (sorted). Output labelled `predictive_rationale`, never
+  `causal`; `edge_gates=None` (expression-only member) → empty rationale.
+- **RationaleLoss** (`rationale_loss.py`): `λ_sp·|S| + λ_suff·‖dz_S−dz_full‖² + λ_nec·relu(δ−‖dz_\S−dz_full‖)²
+  + λ_ct·contrastive`. Pure function of pre-computed deltas + importance; differentiable to the head when
+  the caller passes soft-mask deltas.
+- **FaithfulnessTester** (`faithfulness.py`): fixed-model deletion tests — `sufficiency`/`necessity` re-run
+  the FROZEN encoder with the rationale kept / removed (their gate zeroed) and measure how `Δz` moves;
+  `structural_ood_audit` reports degree / component-count / sparsity / hop-distance before-vs-after.
+- **MatchedRandomSampler** (`matched_random.py`): negative controls matched on per-relation edge count
+  (→ size + relation composition + sparsity). ponytail: richer degree/connectivity/hop matching deferred.
+- **Module-2 enabler:** `TypedGraphEncoder.encode_subgraph(...)` added to expose final node states +
+  accept a per-edge gate mask; `encode_one` unchanged (delegates to it, 3-tuple contract preserved).
+- **config:** `RATIONALE_TOP_K=15`, `RATIONALE_TAU=0.5`, `LAMBDA_SPARSE/SUFF/NEC/CONTRAST`, `N_MATCHED_CONTROLS=100`.
+- **Verification:** `./init.sh` green — **78 tests** (69 prior + 9 new `test_rationale.py`, all synthetic:
+  imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation
+  match, structural_ood dict, loss components+gradients, expr-only→empty rationale, label predictive_rationale
+  not causal). Real-data `run_module4_smoke.py` **PASSED** on the real PPI graph (A1BG neighbourhood:
+  sufficiency<matched-random, necessity>matched-random, labelled `predictive_rationale`).
+- **Perf note:** this 64-core box (shared with CVAT workers) thrashes torch's thread pool on the tiny
+  per-subgraph GNN ops (2.5s→20ms per encode); the CPU-only Module-4 tests + smoke pin `torch.set_num_threads(1)`.
+- **Remaining for feat-008 done:** the training-loss OPTIMIZATION loop + train/calibration loops (the loss
+  module exists, no fit loop yet); feat-007 graph baselines still not-started. The FaithfulnessTester +
+  MatchedRandomSampler are also the machinery feat-012 (predictive-rationale audit) will run on the trained model.
+
+## Module 3 (Program Decoder) — prior session
 
 New package `src/tcell_pipeline/programs/` + `src/tcell_pipeline/model.py` implementing walkthrough §6.
 Scope was Module 3 only — Module 4, losses, and training loops deliberately excluded.
@@ -169,13 +203,18 @@ DBs and overwrites the frozen marts). All green:
 
 ### What's In Progress
 
-- (none — feat-014 + feat-015 + feat-016 + feat-003 closed)
+- **feat-005 Latent Program Extraction** — fold-local basis machinery + frozen sparse_pca production
+  loadings done; the 4-method × 4-K comparison (reconstruction / sparsity / stability) + shallow-VAE basis remain.
+- **feat-008 EG-IPG Model** — M1+M2+M3 decoder/EGIPGModel + Module 4 rationale head / loss / faithfulness
+  eval built; the training-loss OPTIMIZATION loop + train/calibration loops remain (and feat-007 is not-started).
 
 ### What's Next
 
-1. feat-005 Latent Program Extraction and/or feat-006 Simple Baselines — both depend only on
-   feat-003 (now done) and consume the frozen splits (fold-local fits use the train role only).
-2. Optional: near-null-signal check on development data before freezing H1 (2026-07-14 finding).
+1. feat-008 training loop: wire RationaleLoss + the decoder losses into a Stage-A (predictor) then
+   Stage-B (rationale) fit; then feat-011 screening consumes it.
+2. feat-006 Simple Baselines / feat-007 Graph Baselines — consume the frozen splits, unblock the feat-008 comparison.
+3. feat-005 method×K comparison + shallow VAE (extraction machinery done; only the study remains).
+4. Optional: near-null-signal check on development data before freezing H1 (2026-07-14 finding).
 
 ## Blockers / Risks
 

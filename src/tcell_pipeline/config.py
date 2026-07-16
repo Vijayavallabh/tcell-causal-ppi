@@ -133,6 +133,18 @@ PROGRAM_RESPONSE_PATH: Path = INTERMEDIATE_ROOT / "program_response.parquet"    
 PROGRAM_COL_PREFIX: str = "program_"
 
 
+# --- Module 4 (Sparse Predictive-Rationale Head; Stage B, fitted AFTER the H1 predictor freeze) ---
+# This head produces a PREDICTIVE rationale (which evidence edges the frozen model leans on), NOT a
+# causal mechanism — deletion scores are fixed-model perturbation tests, not interventions.
+RATIONALE_TOP_K: int = 15         # edges kept in the sparse rationale S (top-k by importance)
+RATIONALE_TAU: float = 0.5        # necessity distance margin / contrastive margin (delta_nec)
+LAMBDA_SPARSE: float = 0.01       # |S| sparsity penalty
+LAMBDA_SUFF: float = 1.0          # sufficiency: ||dz_S - dz_full||^2
+LAMBDA_NEC: float = 1.0           # necessity: hinge on ||dz_\S - dz_full||
+LAMBDA_CONTRAST: float = 0.5      # rationale beats matched-random reconstruction
+N_MATCHED_CONTROLS: int = 100     # matched-random controls per rationale (size + relation matched)
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

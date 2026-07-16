@@ -159,24 +159,53 @@ class TypedGraphEncoder(nn.Module):
             raise ValueError(f"culture_condition index {idx} out of range [0, {len(config.CONDITIONS)})")
         return idx
 
-    def encode_one(self, target_gene: str, condition, h_do: torch.Tensor):
-        """Encode a single (target, condition) -> (h_graph (dim,), edge_gates dict, attn (N,))."""
+    def encode_subgraph(self, sub, condition, h_do: torch.Tensor, keep_mask=None) -> dict:
+        """Run message passing on an ALREADY-sampled subgraph, exposing the final-layer node states
+        Module 4's rationale head reads. ``keep_mask`` (dict relation -> per-edge weight of length E,
+        bool or float) scales that relation's condition gate, so the faithfulness deletion tests can
+        re-run this frozen encoder with a rationale kept (weight on the selected edges) or removed
+        (weight on the complement) — the gate multiplies every message, so a zero weight drops the
+        edge at all layers. Returns ``{h_graph (dim,), gates, node_states, attn (N,)}`` where
+        node_states is ``{protein: h_p, complex: h_c}``."""
         device = self.proj.weight.device
         h_do = h_do.to(device)  # public entry point: caller's h_do may be on a different device
-        sub = sample_subgraph(self.graph, target_gene, gene_to_idx=self.gene_to_idx).to(device)
-        cond_idx = self._condition_index(condition)
-        h_cond = self.condition(torch.tensor([cond_idx], device=device))  # (1, 64)
+        sub = sub.to(device)
+        h_cond = self.condition(torch.tensor([self._condition_index(condition)], device=device))  # (1, 64)
 
         edges, gates = self._edges_with_gates(sub, h_cond, device)
+        if keep_mask is not None:
+            edges = self._weight_edges(edges, keep_mask, device)
         h_p = self.proj(sub[PROTEIN].x)
         c_idx = sub[COMPLEX].orig_idx if sub[COMPLEX].num_nodes else torch.zeros(0, dtype=torch.long, device=device)
         h_c = self.complex_embed(c_idx)
         for layer in self.layers:
             h_p, h_c = layer(h_p, h_c, edges)
 
-        node_states = torch.cat([h_p, h_c], dim=0)
-        h_graph, weights = self.readout(h_do.unsqueeze(0), node_states)
-        return h_graph.squeeze(0), gates, weights.squeeze(0)
+        h_graph, weights = self.readout(h_do.unsqueeze(0), torch.cat([h_p, h_c], dim=0))
+        return {"h_graph": h_graph.squeeze(0), "gates": gates,
+                "node_states": {PROTEIN: h_p, COMPLEX: h_c}, "attn": weights.squeeze(0)}
+
+    @staticmethod
+    def _weight_edges(edges: dict, keep_mask: dict, device) -> dict:
+        """Scale each relation's gate by a per-edge weight (Module 4 faithfulness masking). PP gates
+        were mirrored to 2E for undirected passing, so the length-E weight is duplicated to match."""
+        out = {}
+        for rel, (ei, ea, alpha) in edges.items():
+            w = keep_mask.get(rel)
+            if w is None:
+                out[rel] = (ei, ea, alpha)
+                continue
+            w = w.to(device=device, dtype=alpha.dtype).reshape(-1, 1)
+            if rel in _PP_RELATIONS:  # alpha is 2E (both directions); the weight is E, so mirror it
+                w = torch.cat([w, w], dim=0)
+            out[rel] = (ei, ea, alpha * w)
+        return out
+
+    def encode_one(self, target_gene: str, condition, h_do: torch.Tensor):
+        """Encode a single (target, condition) -> (h_graph (dim,), edge_gates dict, attn (N,))."""
+        sub = sample_subgraph(self.graph, target_gene, gene_to_idx=self.gene_to_idx)
+        r = self.encode_subgraph(sub, condition, h_do)
+        return r["h_graph"], r["gates"], r["attn"]
 
     def forward(self, target_genes: list[str], conditions: list[str], h_do: torch.Tensor):
         """(B targets, B conditions, h_do (B, dim)) -> (h_graph (B, dim), edge_gates dict-of-lists).

@@ -4,23 +4,53 @@
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: **Module 0 + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings (feat-015) +
-  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done. Module 3 Program
-  Decoder built this session** — feat-005 (latent program extraction) **in-progress** (fold-local basis
-  machinery done; method×K comparison + VAE remain), feat-008 (EG-IPG model) **in-progress** (M1+M2+M3
-  decoder/EGIPGModel scaffolded; Module 4 + losses + training remain). Done: feat-001/002/003/004/014/015/016.
-  Next: finish feat-005 comparison study, or feat-006 (baselines) / feat-007 (graph baselines).
-- Branch / commit: main. **Module 3 (Program Decoder) committed this session** — all code + docs +
-  state-file syncs in a single commit (the `programs/` package, `model.py`, `run_module3_smoke.py`,
-  `test_programs.py`, `config.py`, README verify sections, `docs/specs/2026-07-15-module3-program-decoder.md`,
-  feature_list/progress/handoff). Prior landmarks: feat-016 (Module 2) `100a505`, feat-003 `35e3999`,
-  xhigh `/code-review` fixes `7760624`. **Latest committed is always `git log -1` on main.** The review-fix commit touches `splits.py`, `graph_builder.py`,
-  `typed_graph_encoder.py`, `test_graph.py`, `test_splits.py`, `config.py`, regenerated
-  `data/splits/{leakage_report,manifest}.json` + `random.csv` (blocked CSV byte-identical),
-  `feature_list.json` addenda, and new `docs/reviews/2026-07-15-code-review-*.md`.
-  The two planning docs (report + walkthrough) got as-built notes but are gitignored (local-only).
-  Latest committed is always `git log -1` on main.
+  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done. Module 3 Program Decoder
+  (prior session) + Module 4 Sparse Predictive-Rationale Head built this session** — feat-005 (latent
+  program extraction) **in-progress** (fold-local basis + frozen sparse_pca production loadings done;
+  method×K comparison + VAE remain), feat-008 (EG-IPG model) **in-progress** (M1+M2+M3 decoder/EGIPGModel
+  + Module 4 rationale head / loss / faithfulness eval built; the **training-loss OPTIMIZATION loop +
+  train/calibration loops remain**, and feat-007 is not-started). Done: feat-001/002/003/004/014/015/016.
+  Next: feat-008 training loop, or feat-006 (baselines) / feat-007 (graph baselines).
+- Branch / commit: main. **Module 4 (Sparse Predictive-Rationale Head) committed this session** — all code
+  + state-file syncs in a single commit: the new `rationale/` package (`rationale_head.py`,
+  `rationale_loss.py`, `faithfulness.py`, `matched_random.py`, `run_module4_smoke.py`, `__init__.py`), the
+  `encode_subgraph` enabler on `graph/typed_graph_encoder.py`, `config.py` (Module 4 constants),
+  `src/tests/test_rationale.py`, and feature_list/progress/handoff. Prior landmarks: Module 3 (Program
+  Decoder) + feat-005 sparse_pca production basis (`172a506`/`fc385ef`), feat-016 (Module 2) `100a505`,
+  feat-003 `35e3999`, xhigh `/code-review` fixes `7760624`, AGENTS.md keyword restore `358cf59`.
+  The two planning docs (report + walkthrough) carry as-built notes but are gitignored (local-only).
+  **Latest committed is always `git log -1` on main.**
 
-## Completed This Session (Module 3 — Program Decoder; feat-005 + feat-008 scaffold)
+## Completed This Session (Module 4 — Sparse Predictive-Rationale Head; feat-008)
+
+Built Module 4 (walkthrough §7 / report §Module 4) as a new package `src/tcell_pipeline/rationale/`.
+**Stage B** — fitted AFTER the H1 predictor freeze; a **predictive rationale, NOT a causal mechanism**
+(deletion scores are fixed-model perturbation tests, report line 499/718). No training loops (out of scope
+by design — modules + loss + faithfulness eval only). **Committed on main this session** (`git log -1`).
+
+- **RationaleHead** — per-edge importance `ᾱ · sigmoid(Linear([h_u‖h_v‖f_e]))` (both factors in [0,1]);
+  scorer **zero-initialised** so an untrained head ranks by the frozen condition gate (faithful by
+  construction). Top-k over all 4 relations. Output labelled `predictive_rationale`, never `causal`;
+  no graph (`edge_gates=None`) → empty rationale.
+- **RationaleLoss** — `λ_sp·|S| + λ_suff·‖dz_S−dz_full‖² + λ_nec·relu(δ−‖dz_\S−dz_full‖)² + λ_ct·contrastive`;
+  differentiable to the head via soft gate weights.
+- **FaithfulnessTester** — fixed-model deletion tests (`sufficiency`, `necessity`) re-run the frozen encoder
+  with the rationale kept / removed; `structural_ood_audit` reports degree / components / sparsity /
+  hop-distance before-vs-after.
+- **MatchedRandomSampler** — negative controls matched on per-relation edge count (size + relation composition).
+- **Module-2 enabler** — `TypedGraphEncoder.encode_subgraph(...)` exposes final node states + accepts a
+  per-edge gate mask; `encode_one` unchanged (delegates; 3-tuple contract preserved; all its callers untouched).
+- **config** — `RATIONALE_TOP_K=15`, `RATIONALE_TAU=0.5`, `LAMBDA_SPARSE/SUFF/NEC/CONTRAST`, `N_MATCHED_CONTROLS=100`.
+- **Verification** — `./init.sh` green, **78 tests** (69 prior + 9 new `test_rationale.py`, synthetic).
+  Real-data `run_module4_smoke.py` **PASSED** on the real PPI graph (A1BG neighbourhood:
+  sufficiency<matched-random, necessity>matched-random, labelled `predictive_rationale`).
+- **Perf** — this 64-core box (shared with CVAT workers) thrashes torch's thread pool on tiny per-subgraph
+  GNN ops (2.5s→20ms/encode), so the CPU-only Module-4 tests + smoke pin `torch.set_num_threads(1)`.
+- **Remaining (feat-008):** the training-loss OPTIMIZATION loop + train/calibration loops (loss module exists,
+  no fit loop); feat-007 not-started. FaithfulnessTester + MatchedRandomSampler are also the machinery
+  **feat-012** (predictive-rationale audit) will run on the trained model.
+
+## Completed Prior Session (Module 3 — Program Decoder; feat-005 + feat-008 scaffold)
 
 Built Module 3 (walkthrough §6) as a new package `src/tcell_pipeline/programs/` + top-level
 `src/tcell_pipeline/model.py`. Scope was Module 3 only; Module 4, losses, and training were
@@ -173,7 +203,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **69 passed** on torch cu126 (57 + 12 new Module-3 `test_programs.py`); compileall clean |
+| Compile + tests | `./init.sh` | Pass | **78 passed** on torch cu126 (69 prior + 9 new Module-4 `test_rationale.py`); compileall clean |
+| Module 4 unit tests | `pytest src/tests/test_rationale.py` | Pass | 9 passed (synthetic): imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation match, structural_ood dict, loss components+gradients, expr-only→empty rationale, label predictive_rationale not causal |
+| Module 4 real-data smoke | `python src/tcell_pipeline/rationale/run_module4_smoke.py` | Pass | real PPI graph, A1BG neighbourhood (33,754 edges, |S|=15): sufficiency<matched-random, necessity>matched-random, structural-OOD audit, labelled `predictive_rationale` (not causal) |
 | Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
 | Module 3 real-data smoke | `python src/tcell_pipeline/run_module3_smoke.py` | Pass | fold-local SVD basis on 21,262 real train rows (18s) → B(10282,128); M1→M2→M3 on 4 real perturbations finite, λ∈[0.46,0.55], σ>0; expr-only λ==0 |
 | Module 3 basis orchestrator | `python -m tcell_pipeline.programs.run_program_basis --method svd` | Pass | 6.2s → gene_program_loadings.parquet (B 10282×128) + program_response.parquet (A 21262×128), gitignored; challenge-overlap assert held |
@@ -190,7 +222,18 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | Module 1 full-mart smoke | `python src/tcell_pipeline/run_module1_smoke.py` | Pass | on GPU (cuda), 33,983 rows in ~2s; all finite; PLM 33796, PINNACLE 3135 coverage; q_post rejected |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
 
-## Files Added (this session, Module 3 — Program Decoder)
+## Files Added (this session, Module 4 — Sparse Predictive-Rationale Head)
+
+- `src/tcell_pipeline/rationale/__init__.py`, `rationale_head.py`, `rationale_loss.py`, `faithfulness.py`,
+  `matched_random.py`, `run_module4_smoke.py` (NEW package)
+- `src/tests/test_rationale.py` (NEW, 9 synthetic tests)
+- `src/tcell_pipeline/graph/typed_graph_encoder.py` — added `encode_subgraph(...)` (exposes final node
+  states + accepts a per-edge gate mask); `encode_one` delegates to it (3-tuple contract preserved)
+- `src/tcell_pipeline/config.py` — Module 4 constants (`RATIONALE_TOP_K`, `RATIONALE_TAU`, `LAMBDA_SPARSE`,
+  `LAMBDA_SUFF`, `LAMBDA_NEC`, `LAMBDA_CONTRAST`, `N_MATCHED_CONTROLS`)
+- `feature_list.json` (feat-008 → Module-4 addendum, stays in-progress), `progress.md`, `session-handoff.md`
+
+## Files Added (prior session, Module 3 — Program Decoder)
 
 - `src/tcell_pipeline/programs/__init__.py`, `program_basis.py`, `program_decoder.py`,
   `run_program_basis.py` (NEW package)
@@ -283,16 +326,20 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
 
 ## Recommended Next Step
 
-- **Module 3 (Program Decoder) is committed on main** (`git log -1`); working tree clean, `./init.sh`
-  green (69 tests). The `programs/` package, `model.py`, smoke, tests, docs, and state-file syncs all
-  landed in one commit.
-- The paper-default `sparse_pca` production loadings are **now frozen** (289s real-fold fit,
-  gene_program_loadings/program_response.parquet, gitignored). To **finish feat-005**: add the
-  4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity / stability + a shallow-VAE
-  basis (the extraction machinery is done; only the study remains). To **advance feat-008**: build
-  Module 4 (sparse predictive-rationale head), losses, and the train/calibration loops on top of
-  `EGIPGModel`. Fold-local fits use the **train** role only (`train_row_indices` gate). Before freezing
-  H1, run the near-null-signal check on development data.
+- **Module 4 (Sparse Predictive-Rationale Head) is committed on main** (`git log -1`); working tree clean,
+  `./init.sh` green (**78 tests**). The `rationale/` package, the `encode_subgraph` enabler, config, tests,
+  and state-file syncs all landed in one commit.
+- To **advance feat-008**: the Module 4 rationale head / loss / faithfulness eval is now built — next is the
+  **training-loss OPTIMIZATION loop** (Stage A: fit the EGIPGModel predictor with the decoder losses; then
+  Stage B: freeze it and fit `RationaleHead` with `RationaleLoss`) + the train/calibration loops on top of
+  `EGIPGModel`. Fold-local fits use the **train** role only (`train_row_indices` gate). Before freezing H1,
+  run the near-null-signal check on development data. (feat-008 also depends on feat-007, still not-started.)
+- To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity /
+  stability + a shallow-VAE basis (the extraction machinery is done and the sparse_pca production loadings
+  are frozen — only the study remains).
+- The **FaithfulnessTester + MatchedRandomSampler** built this session are also the machinery **feat-012**
+  (predictive-rationale audit: necessity / sufficiency / minimality / stability vs matched random + structural-OOD)
+  will run once the model is trained.
 - Alternatively start **feat-006 (simple baselines)** / **feat-007 (graph baselines)** — both consume
   the frozen `data/splits/` and unblock the feat-008 comparison.
 - feat-003 calibration knob left open (`docs/specs` + leakage_report.json): the centered-cosine threshold
