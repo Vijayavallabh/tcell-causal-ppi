@@ -2,8 +2,22 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 5 Loss + Training built — feat-008 Stage A training loop + Stage B calibration loss; the four model modules are now trainable)
+**Last Updated:** 2026-07-16 (Module 5 Loss + Training built + xhigh-reviewed twice + all fixes applied; full real-data run on the A100)
 **Active Feature:** Module 5 (Loss + Training) — feat-008 **in-progress** (M1+M2+M3 + Module 4 rationale head/faithfulness + **Module 5 Stage A training loop + Stage B calibration loss** built; the Stage-B calibration + rationale **fit loops** + the near-null-signal freeze gate remain, and feat-007 is not-started). feat-005 **in-progress** (fold-local basis + frozen sparse_pca production loadings done; method×K comparison + shallow-VAE remain). Next: feat-008 Stage-B fit loops, or feat-006 (baselines) / feat-007 (graph baselines)
+
+## Full real-data run on GPU incl. Module 5 (2026-07-16)
+
+Ran every non-destructive real-data entrypoint end-to-end (M0 excluded — destructive), GPU where it helps.
+- `./init.sh` — **92 passed**, zero warnings.
+- **Module 1** (encoder): 33,983 rows on **A100** in **1.38 s** (24.7k rows/s); all `h_do` finite; q_post fence held.
+- **Module 2** (typed graph): 25,440-node graph on **A100**; `h_graph` finite; per-condition gates differ; attn sums to 1.
+- **Module 3** (M1→M2→M3): on **A100**; finite; λ∈[0.31,0.67]; σ>0; expr-only λ=0 (fold-local SVD basis on 21,262 rows in 17.8 s).
+- **Module 4** (rationale/faithfulness): real PPI graph (A1BG, 33,754 edges, |S|=15); sufficiency<matched-random; necessity>matched-random; structural-OOD audit; labelled `predictive_rationale` (CPU, thread-pinned).
+- **feat-003 splits**: re-run **byte-identical** (sha256 unchanged, git clean) → deterministic; 51% leakage reduction.
+- **Module 5 Stage A** (NEW; `run_train.py` gained `--device cpu|cuda`):
+  - **expr-only, FULL train fold** (21,262 train / 4,400 val), 3 epochs, **A100**: best_val 3.468; train response 3.333→3.324, de 0.173→0.120, **donor-invariance 0.113→0.0016** (encoder learning donor-invariance); **val invariance 0.0** (deterministic, the train-only fix); atomic best+last checkpoints (~80 MB) written.
+  - **full-graph M1→M2→M3**, capped, **A100**: all components incl. **donor-invariance 1.55** + **wired `edge_confidences`** (source-aware `L_graph` ≈16.6k); trains + checkpoints; back-props through the confidence-weighted graph term.
+- **GPU relevance (honest):** the Module 1/2/3 encode smokes are genuinely GPU-accelerated (24.7k rows/s). **Stage-A training is data-loading-bound** (per-row pandas + sparse slice in the DataLoader) and the graph path is **CPU-bound** in the per-subgraph loop, so the A100 sat ~1-3% utilized during training — compute isn't the bottleneck. PyG mini-batching + a batched loader (+ the donor node-state cache) are the documented upgrades to make training GPU-bound.
 
 ## Module 5 (Loss + Training) — this session (2026-07-16)
 

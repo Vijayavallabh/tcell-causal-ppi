@@ -27,7 +27,7 @@ from tcell_pipeline.training.trainer import Trainer  # noqa: E402
 
 
 def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, seed=config.SPLIT_SEED,
-        n_max=None, expr_only=False, donor_invariance=config.DONOR_INVARIANCE) -> dict | None:
+        n_max=None, expr_only=False, donor_invariance=config.DONOR_INVARIANCE, device="cpu") -> dict | None:
     torch.set_num_threads(1)  # many-core box: tiny per-subgraph GNN ops thrash the default thread pool
     required = [config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_OBS_PATH,
                 config.DE_VAR_PATH, config.PROGRAM_LOADINGS_PATH, zscore_path()]
@@ -52,7 +52,8 @@ def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, se
         print("[train] WARNING donor_invariance requested but <2 donors available — the term is inactive")
 
     trainer = Trainer(model, train_ds, val_ds, lr=lr, max_epochs=epochs, batch_size=batch_size, seed=seed,
-                      donor_invariance=donor_invariance)
+                      donor_invariance=donor_invariance, device=device)
+    print(f"[train] device={device}")
     result = trainer.run()
     print(f"[train] {result['epochs_run']} epochs, best_val={result['best_val']:.4f} -> {result['best_ckpt']}")
     return result
@@ -68,6 +69,7 @@ if __name__ == "__main__":
     ap.add_argument("--expr-only", action="store_true", help="expression-only nested variant (no graph)")
     ap.add_argument("--no-donor-invariance", action="store_true",
                     help="disable the real per-donor invariance term (skips the extra donor forwards)")
+    ap.add_argument("--device", default="cpu", help="cpu | cuda (the graph message passing is CPU-bound)")
     a = ap.parse_args()
     sys.exit(0 if run(a.lr, a.epochs, a.batch_size, a.seed, a.n_max, a.expr_only,
-                      donor_invariance=not a.no_donor_invariance) else 1)
+                      donor_invariance=not a.no_donor_invariance, device=a.device) else 1)
