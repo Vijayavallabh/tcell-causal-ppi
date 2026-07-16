@@ -103,16 +103,23 @@ keeps challenge-split scoring model-agnostic. `config.PREDICTIONS_ROOT`.
 
 ## Review history
 
-Adversarial workflow review of the Module 6 diff (2026-07-16): 6 finder dimensions
-(metric-correctness, metric-agreement, gate-and-control, baseline-correctness, schema-and-config,
-test-quality) → per-finding adversarial verify. **8/8 confirmed, all fixed** — see
-`docs/reviews/2026-07-16-code-review-module6.md`. Headline fixes: the degenerate-predictor guard in
-`centroid_accuracy`; full non-finite agreement between the two implementations (was 0.0 vs NaN/crash); the
-N1 derangement; the single-program `(M,1)` baseline shape; and three too-weak tests upgraded to actually
-exercise the guarantees they name.
+**Round 1** — adversarial workflow review (2026-07-16): 6 finder dimensions → per-finding adversarial
+verify. **8/8 confirmed, all fixed**. Headline: the degenerate-predictor guard in `centroid_accuracy`;
+non-finite agreement between the two implementations; the N1 derangement; the single-program `(M,1)`
+baseline shape; three too-weak tests upgraded.
+
+**Round 2** — xhigh workflow-backed `/code-review` of the committed diff (2026-07-16): **12 findings**
+(7 CONFIRMED correctness, 2 PLAUSIBLE, 3 cleanup), all fixed — see
+`docs/reviews/2026-07-16-code-review-module6.md`. These caught two-impl divergences round 1 missed (it only
+corrupted `pred`, never `true`): non-finite `true` collapsing `centroid_accuracy` to 0.0, the `1e-12`
+norm-floor inflating tiny-norm wrong-direction predictions, the FP-fragile `std==0` constant guard (both
+impls now gate on `max==min`), product-form underflow (separate roots), the missing `topk`/`sign`
+degeneracy guard, the baseline `X=None`/`conditions=None` contract, the `**kwargs` control hook, and three
+cleanups (vectorised `topk`/`sign`, `rng.permuted` row-shuffle, a shared `_arrays.to_numpy`).
 
 ## Verification
 
-`./init.sh` green at **131 tests** (92 prior + 39 Module 6: 23 in `test_metrics.py`, 16 in
-`test_baselines.py` — 11 functions, the per-baseline shape test parametrized over all 6 baselines), zero
-warnings. Fully synthetic — no marts required.
+`./init.sh` green at **145 tests** (92 prior + 53 Module 6: 30 in `test_metrics.py`, 23 in
+`test_baselines.py` — 14 functions, three parametrized). Fully synthetic — no marts required. Both metric
+implementations verified to agree on non-degenerate, zero/constant, non-finite (`pred` and `true`),
+high-dimensional constant, tiny-norm, and extreme-scale rows under `-W error`.

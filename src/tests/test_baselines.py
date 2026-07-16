@@ -112,6 +112,27 @@ def test_nearest_neighbor_returns_neighbor_values():
     assert np.allclose(dz, z)
 
 
+@pytest.mark.parametrize("name", ["ridge", "nearest_neighbor", "low_rank"])
+def test_feature_requiring_baselines_reject_none_features(name):
+    X, z, B, _, conds, conds_t = _data()
+    with pytest.raises(ValueError, match="requires a feature matrix X"):
+        BASELINES[name](basis=B).fit(None, z)                 # clear error, not an opaque sklearn crash
+
+
+@pytest.mark.parametrize("name", ["zero", "perturbed_mean", "condition_mean"])
+def test_feature_free_baselines_accept_none_features(name):
+    X, z, B, _, conds, conds_t = _data()
+    dz, _ = BASELINES[name](basis=B).fit(None, z, conditions=conds).predict(None, conditions=conds_t)
+    assert dz.shape == (_M, _K)                                # feature-free lane works uniformly
+
+
+def test_condition_mean_without_conditions_falls_back_to_global():
+    X, z, B, Xt, conds, conds_t = _data()
+    model = ConditionMeanBaseline(basis=B).fit(X, z, conditions=conds)
+    dz, _ = model.predict(Xt)                                  # no conditions -> global perturbed mean
+    assert np.allclose(dz, np.broadcast_to(z.mean(0), dz.shape))
+
+
 def test_ridge_and_low_rank_handle_single_program():
     rng = np.random.default_rng(4)
     X = rng.standard_normal((20, _D))

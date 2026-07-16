@@ -13,12 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-
-def _np(a) -> np.ndarray:
-    if hasattr(a, "detach"):
-        a = a.detach().cpu().numpy()
-    a = np.asarray(a, dtype=np.float64)
-    return a.reshape(1, -1) if a.ndim == 1 else a
+from tcell_pipeline.evaluation._arrays import to_numpy as _np
 
 
 def zero_prediction(true) -> np.ndarray:
@@ -56,11 +51,7 @@ def label_permutation(true, rng: np.random.Generator) -> np.ndarray:
 def row_shuffle(true, rng: np.random.Generator) -> np.ndarray:
     """N2: each row's gene values shuffled within the row, destroying the response pattern while keeping
     its marginal — catches metrics that reward matching only the value distribution."""
-    t = _np(true)
-    out = t.copy()
-    for i in range(out.shape[0]):
-        out[i] = out[i, rng.permutation(out.shape[1])]
-    return out
+    return rng.permuted(_np(true), axis=1)
 
 
 def oracle_prediction(true) -> np.ndarray:

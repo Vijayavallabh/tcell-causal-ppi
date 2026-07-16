@@ -5,11 +5,20 @@ response (report: "Observational unit: one perturbation-target by condition resp
 IS per-perturbation — this deliberately avoids micro-averaging (pooling all genes across all rows into one
 correlation), which the G2-MQ gate treats as a leakage-prone shortcut.
 
-Zero/constant-vector convention: a row whose predicted OR true vector has zero variance carries no
-linear/rank information, so its correlation contributes 0.0 (not NaN). This makes a zero predictor score
-0 — the worst — exactly as the metric-qualification gate requires, and lets ``metrics_ref`` reproduce the
-same numbers with a completely separate code path. ``metrics_ref.py`` is a second, independent
-implementation that must agree with this one on a fixed fixture.
+Higher-is-better metrics (correlation, cosine, accuracy) apply a degeneracy convention: a row whose
+predicted OR true vector is CONSTANT (bit-identical across genes, ``max == min`` — including all-zero) or
+NON-FINITE carries no signal, so it contributes 0.0 (not NaN). This makes a zero predictor score 0 — the
+worst — exactly as the metric-qualification gate requires, and lets ``metrics_ref`` reproduce the same
+numbers with a completely separate code path. The constant test is deliberately ``max == min`` rather than
+``std == 0``: at a realistic gene dimension a genuinely-constant row's variance underflows to ~1e-16 (not
+exactly 0), which ``std``-based guards miss. Correlation denominators use ``sqrt(a)*sqrt(b)`` (separate
+roots), not ``sqrt(a*b)``, so a tiny-magnitude row doesn't underflow the product to a spurious 0.
+``metrics_ref.py`` is a second, independent implementation that must agree with this one on a fixed
+fixture AND on degenerate/non-finite rows.
+
+The error metrics ``mae``/``rmse`` are lower-is-better, so the 0.0 convention does NOT apply — a
+non-finite prediction propagates to a non-finite error (surfacing the corruption) rather than being
+silently rewarded with zero error.
 """
 from __future__ import annotations
 
@@ -17,36 +26,46 @@ import numpy as np
 from sklearn.metrics import average_precision_score, precision_recall_fscore_support
 
 from tcell_pipeline import config
+from tcell_pipeline.evaluation._arrays import to_numpy as _np
 
 
-def _np(a) -> np.ndarray:
-    if hasattr(a, "detach"):
-        a = a.detach().cpu().numpy()
-    a = np.asarray(a, dtype=np.float64)
-    return a.reshape(1, -1) if a.ndim == 1 else a
+def _degenerate_rows(*mats: np.ndarray) -> np.ndarray:
+    """Boolean per-row mask: True where any given matrix's row is non-finite or constant (max == min)."""
+    mask = np.zeros(mats[0].shape[0], dtype=bool)
+    with np.errstate(invalid="ignore"):
+        for m in mats:
+            mask |= ~np.isfinite(m).all(1) | (m.max(1) == m.min(1))
+    return mask
 
 
 def _rowwise_pearson(pred: np.ndarray, true: np.ndarray) -> np.ndarray:
     with np.errstate(invalid="ignore", divide="ignore"):
         p = pred - pred.mean(1, keepdims=True)
         t = true - true.mean(1, keepdims=True)
-        num = (p * t).sum(1)
-        den = np.sqrt((p * p).sum(1) * (t * t).sum(1))
-        # a constant OR non-finite row carries no signal -> 0.0 (matches metrics_ref by construction)
-        return np.where((den > 0) & np.isfinite(den) & np.isfinite(num), num / den, 0.0)
+        # separate roots (not sqrt of the product) so a tiny-magnitude row doesn't underflow the denominator
+        den = np.sqrt((p * p).sum(1)) * np.sqrt((t * t).sum(1))
+        r = np.divide((p * t).sum(1), den, out=np.zeros(pred.shape[0]), where=den > 0)
+        return np.where(_degenerate_rows(pred, true) | ~np.isfinite(r), 0.0, r)
 
 
 def _rowwise_cosine(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     with np.errstate(invalid="ignore", divide="ignore"):
-        num = (a * b).sum(1)
-        den = np.sqrt((a * a).sum(1) * (b * b).sum(1))
-        return np.where((den > 0) & np.isfinite(den) & np.isfinite(num), num / den, 0.0)
+        den = np.sqrt((a * a).sum(1)) * np.sqrt((b * b).sum(1))
+        r = np.divide((a * b).sum(1), den, out=np.zeros(a.shape[0]), where=den > 0)
+        finite = np.isfinite(a).all(1) & np.isfinite(b).all(1)
+        return np.where(finite & (den > 0) & np.isfinite(r), r, 0.0)
 
 
 def _cosine_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     with np.errstate(invalid="ignore", divide="ignore"):
-        an = a / np.clip(np.linalg.norm(a, axis=1, keepdims=True), 1e-12, None)
-        bn = b / np.clip(np.linalg.norm(b, axis=1, keepdims=True), 1e-12, None)
+        a = np.where(np.isfinite(a), a, 0.0)  # non-finite entries -> 0 (matches metrics_ref's sanitisation)
+        b = np.where(np.isfinite(b), b, 0.0)
+        na = np.linalg.norm(a, axis=1, keepdims=True)
+        nb = np.linalg.norm(b, axis=1, keepdims=True)
+        # proper zero-norm masking (no 1e-12 floor): a tiny-norm row normalises to a real unit vector, a
+        # zero-norm row to zeros — so `own` and the bank use one consistent normalisation
+        an = np.divide(a, na, out=np.zeros_like(a), where=na > 0)
+        bn = np.divide(b, nb, out=np.zeros_like(b), where=nb > 0)
         return an @ bn.T
 
 
@@ -68,12 +87,12 @@ def spearman_corr(pred, true) -> float:
     from scipy.stats import rankdata
 
     p, t = _np(pred), _np(true)
-    # rank first, but a non-finite row would rank into a finite vector and score spuriously, so its
-    # contribution is forced to 0.0 (matching metrics_ref, which rejects the raw row before ranking)
-    finite = np.isfinite(p).all(1) & np.isfinite(t).all(1)
+    # a non-finite row would rank into a finite vector and score spuriously, and a constant raw row has no
+    # rank order, so both are forced to 0.0 (on the RAW rows, matching metrics_ref which gates pre-rank)
+    degenerate = _degenerate_rows(p, t)
     rp = rankdata(np.where(np.isfinite(p), p, 0.0), axis=1).astype(np.float64)
     rt = rankdata(np.where(np.isfinite(t), t, 0.0), axis=1).astype(np.float64)
-    return float(np.where(finite, _rowwise_pearson(rp, rt), 0.0).mean())
+    return float(np.where(degenerate, 0.0, _rowwise_pearson(rp, rt)).mean())
 
 
 def systema_pert_specific_delta(pred, true, train_mean) -> float:
@@ -101,31 +120,41 @@ def centroid_accuracy(pred, true, all_true=None) -> float:
     return float((pred_ok & (own >= _cosine_matrix(p, bank).max(1) - 1e-9)).mean())
 
 
+def _topk_indices(mat: np.ndarray, k: int) -> np.ndarray:
+    """(N, k) indices of each row's k strongest-magnitude entries, vectorised over rows."""
+    g = mat.shape[1]
+    return np.argpartition(np.abs(mat), g - k, axis=1)[:, g - k:]
+
+
 def topk_recall(pred, true, k: int = config.METRICS_TOP_K) -> float:
-    """Per-row recall of the k strongest-magnitude (up or down) true genes among the k predicted."""
+    """Per-row recall of the k strongest-magnitude (up or down) true genes among the k predicted.
+
+    A non-finite or constant (no strongest genes) prediction row scores 0.0, consistent with the
+    higher-is-better degeneracy convention (a diverged/zero predictor must not earn chance recall)."""
     p, t = _np(pred), _np(true)
     k = min(k, p.shape[1])
     if k == 0:
         return 0.0
-    recalls = []
-    for pr, tr in zip(p, t):
-        ti = set(np.argpartition(np.abs(tr), -k)[-k:])
-        pi = set(np.argpartition(np.abs(pr), -k)[-k:])
-        recalls.append(len(ti & pi) / k)
-    return float(np.mean(recalls))
+    t_top, p_top = _topk_indices(t, k), _topk_indices(p, k)
+    overlap = np.array([np.intersect1d(tr, pr, assume_unique=True).size
+                        for tr, pr in zip(t_top, p_top)], dtype=np.float64) / k
+    with np.errstate(invalid="ignore"):
+        ok = np.isfinite(p).all(1) & (p.max(1) != p.min(1))
+    return float(np.where(ok, overlap, 0.0).mean())
 
 
 def sign_accuracy(pred, true, top_n: int = config.METRICS_SIGN_TOP_N) -> float:
-    """Fraction of correct signs among the ``top_n`` strongest-magnitude true effects, per row."""
+    """Fraction of correct signs among the ``top_n`` strongest-magnitude true effects, per row. A
+    non-finite prediction row scores 0.0 (a diverged predictor is not credited with chance sign hits)."""
     p, t = _np(pred), _np(true)
     n = min(top_n, p.shape[1])
     if n == 0:
         return 0.0
-    accs = []
-    for pr, tr in zip(p, t):
-        idx = np.argpartition(np.abs(tr), -n)[-n:]
-        accs.append(float((np.sign(pr[idx]) == np.sign(tr[idx])).mean()))
-    return float(np.mean(accs))
+    idx = _topk_indices(t, n)
+    rows = np.arange(p.shape[0])[:, None]
+    match = (np.sign(p[rows, idx]) == np.sign(t[rows, idx])).mean(1)
+    ok = np.isfinite(p).all(1)
+    return float(np.where(ok, match, 0.0).mean())
 
 
 def program_cosine(pred_z, true_z) -> float:

@@ -2,15 +2,15 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 6 Evaluation Metrics + Simple Baselines built + adversarial-reviewed [8/8 findings fixed]; **NOT yet committed**)
+**Last Updated:** 2026-07-16 (Module 6 committed as `9f4f9d6`; xhigh workflow-backed /code-review round 2 → 12 findings all fixed [**round-2 fixes NOT yet committed**])
 **Active Feature:** Module 6 (Evaluation Metrics + Simple Baselines) — **feat-009 done**, **feat-006 in-progress** (6 of 8 simple baselines; elastic-net + CatBoost deferred). Also still open: feat-008 **in-progress** (Stage-B calibration + rationale fit loops + near-null-signal freeze gate remain), feat-005 in-progress, feat-007 not-started. Next: feat-006 remainder (elastic-net + CatBoost), feat-007 (graph baselines — now unblocked by the shared baseline protocol + output schema), or feat-008 Stage-B fit loops.
 
 ## Module 6 (Evaluation Metrics + Simple Baselines) — this session (2026-07-16)
 
 New packages `src/tcell_pipeline/evaluation/` (feat-009) + `src/tcell_pipeline/baselines/` (feat-006).
 Makes model output **scorable** and gives every headline table its mandatory simple references. Fully
-synthetic tests — no marts required. **Built + adversarial-reviewed but not yet committed** (awaiting the
-commit go-ahead).
+synthetic tests — no marts required. **Round 1 committed as `9f4f9d6`; the round-2 xhigh-review fixes are
+not yet committed.**
 
 - **Metrics** (`evaluation/metrics.py`) — 10 fns / 8 groups, per-row then macro-averaged (a row = one
   perturbation-target×condition response, so per-row *is* per-perturbation): mae, rmse, pearson_corr,
@@ -33,13 +33,18 @@ commit go-ahead).
   gene block): Zero / PerturbedMean / ConditionMean / Ridge / NearestNeighbor / LowRank. **Deferred within
   feat-006:** elastic-net + CatBoost.
 - **config:** METRICS_TOP_K=20, METRICS_SIGN_TOP_N=50, PREDICTIONS_ROOT.
-- **Verified:** `./init.sh` **131 passed** (92 prior + 39: 23 in `test_metrics.py`, 16 in
+- **Verified:** `./init.sh` **145 passed** (92 prior + 53: 30 in `test_metrics.py`, 23 in
   `test_baselines.py`), zero warnings; both metric impls agree on non-degenerate + zero/constant +
-  non-finite rows under warnings-as-errors.
-- **Adversarial review** (dynamic workflow, 6 dimensions × per-finding verify — 8/8 confirmed then fixed,
-  `docs/reviews/2026-07-16-code-review-module6.md`): centroid degenerate-predictor guard; full non-finite
-  agreement (was 0.0 vs NaN/crash); N1 derangement; single-program `(M,1)` baseline shape; and 3 too-weak
-  tests upgraded (magnitude selection, degenerate/non-finite agreement, imperfect-probs signed-DE).
+  non-finite (`pred` AND `true`) + high-dim-constant + tiny-norm + extreme-scale rows under `-W error`.
+- **Review round 1** (dynamic workflow, 6 dimensions × per-finding verify — 8/8 confirmed then fixed):
+  centroid degenerate-predictor guard; non-finite agreement; N1 derangement; single-program `(M,1)` shape;
+  3 too-weak tests upgraded.
+- **Review round 2** (xhigh workflow-backed `/code-review` of `9f4f9d6` — 12 findings, all fixed;
+  `docs/reviews/2026-07-16-code-review-module6.md`): non-finite-`true` centroid collapse; the `1e-12`
+  norm-floor inflating tiny-norm wrong-direction preds; the FP-fragile `std==0` constant guard (both impls
+  now gate on `max==min`); product-form underflow (separate roots); `topk`/`sign` degeneracy guard; the
+  baseline `X=None`/`conditions=None` contract; the `**kwargs` control hook; + 3 cleanups (vectorised
+  `topk`/`sign`, `rng.permuted` shuffle, shared `_arrays.to_numpy`). +14 regression tests.
 - Design+as-built: `docs/specs/2026-07-16-module6-evaluation.md`.
 
 ## Full real-data run on GPU incl. Module 5 (2026-07-16)

@@ -28,8 +28,8 @@
 
 ## Completed This Session (Module 6 — Evaluation Metrics + Simple Baselines; feat-009 + feat-006)
 
-**Built + adversarial-reviewed (8/8 findings fixed) but NOT yet committed** — awaiting the commit
-go-ahead. All fully synthetic (no marts). `./init.sh` green at **131 tests** (92 prior + 39).
+**Round 1 committed as `9f4f9d6`; the round-2 xhigh-review fixes are NOT yet committed** — awaiting the
+commit go-ahead. All fully synthetic (no marts). `./init.sh` green at **145 tests** (92 prior + 53).
 
 - **feat-009 (metrics) — done.** New package `src/tcell_pipeline/evaluation/`: `metrics.py` (10 fns / 8
   groups, per-row → macro; primary H1 endpoint `systema_pert_specific_delta`; zero/constant/non-finite →
@@ -42,14 +42,17 @@ go-ahead. All fully synthetic (no marts). `./init.sh` green at **131 tests** (92
   @ B.T; basis=None → empty gene block); Zero / PerturbedMean / ConditionMean / Ridge / NearestNeighbor /
   LowRank. **Deferred:** elastic-net + CatBoost (named in the feature description, out of this goal's scope).
 - **config:** METRICS_TOP_K, METRICS_SIGN_TOP_N, PREDICTIONS_ROOT.
-- **Tests:** `src/tests/test_metrics.py` (23), `src/tests/test_baselines.py` (16 cases / 11 functions).
-- **Review:** dynamic adversarial workflow, 6 dimensions × per-finding verify → 8/8 confirmed then fixed
-  (`docs/reviews/2026-07-16-code-review-module6.md`): centroid degenerate-predictor guard, full non-finite
-  two-impl agreement (was 0.0 vs NaN/crash), N1 derangement, single-program `(M,1)` baseline shape, 3
-  too-weak tests upgraded. Design+as-built: `docs/specs/2026-07-16-module6-evaluation.md`.
-- **To commit** (when asked): the two new packages + `config.py` + the two test files +
-  `docs/specs/2026-07-16-module6-evaluation.md` + `docs/reviews/2026-07-16-code-review-module6.md` +
-  feature_list/progress/handoff — one commit (the DoD triad + code + docs together).
+- **Tests:** `src/tests/test_metrics.py` (30), `src/tests/test_baselines.py` (23 cases / 14 functions).
+- **Review round 1** (committed in `9f4f9d6`): dynamic adversarial workflow → 8/8 fixed (centroid
+  degenerate-predictor guard, non-finite agreement, N1 derangement, single-program `(M,1)` shape, 3 tests
+  upgraded). **Review round 2** (xhigh workflow-backed `/code-review` of `9f4f9d6` — 12 findings all fixed;
+  `docs/reviews/2026-07-16-code-review-module6.md` round-2 section): two-impl divergences round 1 missed
+  (non-finite `true` collapse, `1e-12` norm-floor, FP-fragile `std==0` → both gate on `max==min`,
+  product-form underflow), the `topk`/`sign` degeneracy guard, the baseline `X=None`/`conditions=None`
+  contract, the `**kwargs` control hook, + 3 cleanups. New file `evaluation/_arrays.py`.
+- **Round-2 fixes to commit** (when asked): `evaluation/{metrics,metrics_ref,metric_qualification,
+  control_reference}.py` + the new `evaluation/_arrays.py` + `baselines/simple_baselines.py` + the two test
+  files + `docs/specs/…module6…` + `docs/reviews/…module6…` + feature_list/progress/handoff — one commit.
 
 ## Completed Prior Session (Module 5 — Loss + Training; feat-008)
 

@@ -29,22 +29,32 @@ def _finite(*vs) -> bool:
     return all(np.isfinite(v).all() for v in vs)
 
 
+def _constant(v: np.ndarray) -> bool:
+    # bit-identical row (incl. all-zero) == no signal. `max == min` is exact where `std == 0` is not: at a
+    # realistic gene dimension a genuinely-constant row's std underflows to ~1e-16 and slips a std guard.
+    return v.max() == v.min()
+
+
+def _finite_or_zero(r: float) -> float:
+    return float(r) if np.isfinite(r) else 0.0
+
+
 def _pearson_row(x: np.ndarray, y: np.ndarray) -> float:
-    if not _finite(x, y) or x.std() == 0 or y.std() == 0:
+    if not _finite(x, y) or _constant(x) or _constant(y):
         return 0.0
-    return float(pearsonr(x, y)[0])
+    return _finite_or_zero(pearsonr(x, y)[0])
 
 
 def _spearman_row(x: np.ndarray, y: np.ndarray) -> float:
-    if not _finite(x, y) or x.std() == 0 or y.std() == 0:
+    if not _finite(x, y) or _constant(x) or _constant(y):
         return 0.0
-    return float(spearmanr(x, y).statistic)
+    return _finite_or_zero(spearmanr(x, y).statistic)
 
 
 def _cosine_row(x: np.ndarray, y: np.ndarray) -> float:
     if not _finite(x, y) or np.linalg.norm(x) == 0 or np.linalg.norm(y) == 0:
         return 0.0
-    return float(1.0 - cosine_distance(x, y))
+    return _finite_or_zero(1.0 - cosine_distance(x, y))
 
 
 def mae(pred, true) -> float:

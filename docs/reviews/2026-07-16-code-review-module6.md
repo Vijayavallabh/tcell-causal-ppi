@@ -55,7 +55,52 @@ all 8 were nonetheless fixed.
    imperfect-case AUPRC unverified. **Fixed:** `test_signed_de_metrics_imperfect_probs_discriminate`
    (P=R=0.5 on up, P=0.75/R=1.0 on down, AUPRC<1, macro-F1∈(0,1)).
 
-## Outcome
+## Outcome (round 1)
 
 `./init.sh` green at **131 tests** (92 prior + 39 Module 6), zero warnings; both metric implementations
 verified to agree on non-degenerate, zero/constant, and non-finite rows under warnings-as-errors.
+
+---
+
+## Round 2 — xhigh workflow-backed `/code-review` (2026-07-16)
+
+Formal `Workflow({name:"code-review", args:"xhigh …"})` over the committed Module 6 diff (9f4f9d6):
+finder angles across correctness + cleanup, an independent verifier for every distinct `(file, line)`.
+**12 findings** (7 CONFIRMED correctness, 2 PLAUSIBLE correctness, 3 cleanup) — all fixed. These went
+deeper than round 1's own adversarial pass, chiefly on `true`/bank-side and high-dimensional degeneracy
+that round 1's agreement tests never exercised (they only corrupted `pred`).
+
+1. **`centroid_accuracy` — non-finite in `true`/bank collapsed the whole fold to 0.0** (metrics.py). The
+   bank was sanitised in `metrics_ref` but not in `metrics.py`, so one `inf`/`nan` in any true centroid
+   NaN-poisoned every row's `.max(1)`. **Fixed:** `_cosine_matrix` sanitises non-finite entries to 0.
+2. **`centroid_accuracy` — inconsistent normalisation** (metrics.py): `own` used full normalisation while
+   the bank floored norms at `1e-12`, so a tiny-norm prediction pointing at the *wrong* centroid scored a
+   spurious 1.0. **Fixed:** `_cosine_matrix` uses proper zero-norm masking (no `1e-12` floor), so `own`
+   and the bank share one normalisation.
+3. **`metrics_ref` constant-row guard `std()==0` is FP-fragile** (metrics_ref.py): a genuinely-constant
+   row at ~2000 genes has `std()≈1e-16≠0`, so scipy returned NaN and poisoned the macro-average.
+   **Fixed:** both implementations gate degeneracy on `max == min` (exact, representation-independent).
+4. **product-form underflow** (metrics.py): `sqrt(Σp²·Σt²)` underflowed for tiny-magnitude rows where the
+   per-vector norms don't. **Fixed:** separate roots `sqrt(Σp²)·sqrt(Σt²)`.
+5. **`topk_recall`/`sign_accuracy` had no non-finite/degenerate guard** (metrics.py): a NaN/zero
+   prediction earned chance recall instead of 0.0. **Fixed:** degenerate/non-finite prediction rows → 0.0.
+6. **Ridge/NN/LowRank crashed on `X=None`** with opaque errors (simple_baselines.py). **Fixed:** a
+   `requires_features` flag → a clear `ValueError`, while the feature-free baselines still accept `X=None`.
+7. **`ConditionMeanBaseline.predict` raised on `conditions=None`** (simple_baselines.py). **Fixed:**
+   degrades to the global perturbed mean, so a uniform `predict(X)` sweep works.
+8. **`independent_control_metric` couldn't delegate to the 3-arg primary endpoint** (control_reference.py).
+   **Fixed:** `**metric_kwargs` forwarded, so `metric=systema_pert_specific_delta, train_mean=…` composes.
+9. **`mae`/`rmse` had no non-finite handling, contradicting the docstring's blanket "→0.0" claim**
+   (metrics.py). **Fixed (doc):** the 0.0 convention is scoped to higher-is-better metrics; error metrics
+   propagate non-finite (a corrupted prediction must not be rewarded with zero error).
+10. **cleanup:** `topk_recall`/`sign_accuracy` per-row Python loops → vectorised `argpartition(axis=1)`.
+11. **cleanup:** `row_shuffle` Python loop → `rng.permuted(t, axis=1)`.
+12. **cleanup:** the copy-pasted `_np` helper consolidated into `evaluation/_arrays.py:to_numpy`
+    (`metrics_ref` keeps its own converter — it is the independent implementation).
+
+### Outcome (round 2)
+
+`./init.sh` green at **145 tests** (92 prior + 53 Module 6: 30 in `test_metrics.py`, 23 in
+`test_baselines.py`), zero warnings. +14 regression tests covering every fix; both implementations verified
+to agree on non-finite `true`, high-dimensional constant rows, tiny-norm wrong-direction predictions, and
+extreme-scale (no underflow collapse) under `-W error`.

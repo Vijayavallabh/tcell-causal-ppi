@@ -14,27 +14,24 @@ from __future__ import annotations
 
 import numpy as np
 
+from tcell_pipeline.evaluation._arrays import to_numpy as _np
 from tcell_pipeline.evaluation.metrics import pearson_corr
 
 
-def _np(a) -> np.ndarray:
-    if hasattr(a, "detach"):
-        a = a.detach().cpu().numpy()
-    a = np.asarray(a, dtype=np.float64)
-    return a.reshape(1, -1) if a.ndim == 1 else a
-
-
-def independent_control_metric(pred, true, ctrl_a, ctrl_b, metric=pearson_corr) -> float:
+def independent_control_metric(pred, true, ctrl_a, ctrl_b, metric=pearson_corr, **metric_kwargs) -> float:
     """Corrected estimator: subtract independent controls before scoring — ``ctrl_a`` off the prediction,
-    ``ctrl_b`` off the truth. This is the version that should be reported."""
-    return float(metric(_np(pred) - _np(ctrl_a), _np(true) - _np(ctrl_b)))
+    ``ctrl_b`` off the truth. This is the version that should be reported. Extra keyword args are forwarded
+    to ``metric``, so the 3-arg primary endpoint composes:
+    ``independent_control_metric(pred, true, ctrl_a, ctrl_b, metric=systema_pert_specific_delta,
+    train_mean=tm)``."""
+    return float(metric(_np(pred) - _np(ctrl_a), _np(true) - _np(ctrl_b), **metric_kwargs))
 
 
-def shared_control_diagnostic(pred, true, shared_ctrl, metric=pearson_corr) -> float:
+def shared_control_diagnostic(pred, true, shared_ctrl, metric=pearson_corr, **metric_kwargs) -> float:
     """Bias diagnostic ONLY: subtract the same control from both sides. Its gap above the independent
     estimate measures the shared-control inflation, and it must never be reported as the headline number."""
     c = _np(shared_ctrl)
-    return float(metric(_np(pred) - c, _np(true) - c))
+    return float(metric(_np(pred) - c, _np(true) - c, **metric_kwargs))
 
 
 def null_control_predictor(ctrl) -> np.ndarray:

@@ -187,6 +187,71 @@ def test_two_implementations_agree_on_non_finite_rows():
     assert np.isfinite(a) and a == pytest.approx(b, abs=1e-9)
 
 
+def test_centroid_accuracy_agrees_when_true_has_non_finite():
+    true = np.eye(3)
+    true[2, 0] = np.inf                                        # a single non-finite in the bank
+    pred = np.eye(3)
+    a, b = metrics.centroid_accuracy(pred, true), metrics_ref.centroid_accuracy(pred, true)
+    assert a == pytest.approx(b)                               # no whole-fold collapse; both sanitise the bank
+    assert a > 0.0                                             # the two finite rows still resolve
+
+
+def test_two_impls_agree_on_high_dimensional_constant_row():
+    rng = np.random.default_rng(21)
+    pred = np.full((1, 2000), 0.1)                             # std underflows to ~1e-16 (not exactly 0)
+    true = rng.standard_normal((1, 2000))
+    assert metrics.pearson_corr(pred, true) == 0.0 == metrics_ref.pearson_corr(pred, true)
+    assert metrics.spearman_corr(pred, true) == 0.0 == metrics_ref.spearman_corr(pred, true)
+
+
+def test_centroid_accuracy_tiny_norm_wrong_direction_is_miss():
+    u0 = np.array([1.0, 0.0])
+    v = np.array([0.5, np.sqrt(0.75)])                         # cos(v, u0) = 0.5
+    true = np.stack([u0, v])
+    pred = np.stack([1e-13 * v, u0])                           # row 0: near-zero, points at the WRONG centroid
+    a, b = metrics.centroid_accuracy(pred, true), metrics_ref.centroid_accuracy(pred, true)
+    assert a == pytest.approx(b)                               # consistent normalisation (no 1e-12 floor)
+    assert a == pytest.approx(0.0)                             # not a spurious perfect hit
+
+
+def test_pearson_is_scale_robust_no_underflow_collapse():
+    rng = np.random.default_rng(22)
+    base_p = rng.standard_normal((3, 60))
+    base_t = 0.7 * base_p + 0.5 * rng.standard_normal((3, 60))
+    ref = metrics.pearson_corr(base_p, base_t)
+    for scale in (1.0, 1e-160):                                # correlation is scale-invariant
+        a = metrics.pearson_corr(base_p * scale, base_t * scale)
+        b = metrics_ref.pearson_corr(base_p * scale, base_t * scale)
+        assert abs(a - ref) < 1e-3 and abs(b - ref) < 1e-3    # neither collapses to a spurious 0.0
+        assert abs(a - b) < 1e-3
+
+
+def test_topk_and_sign_ignore_degenerate_prediction_rows():
+    rng = np.random.default_rng(23)
+    true = rng.standard_normal((2, 30))
+    nan_pred = true.copy()
+    nan_pred[0] = np.nan                                       # a diverged row must not earn chance recall
+    assert metrics.topk_recall(nan_pred, true, k=5) == pytest.approx(0.5 * metrics.topk_recall(true, true, k=5))
+    assert metrics.topk_recall(np.zeros((2, 30)), true, k=5) == 0.0
+    assert metrics.sign_accuracy(np.zeros((2, 30)), true, top_n=5) == 0.0
+
+
+def test_independent_control_metric_forwards_kwargs_to_primary_endpoint():
+    rng = np.random.default_rng(24)
+    pred, true = rng.standard_normal((4, 10)), rng.standard_normal((4, 10))
+    ctrl_a, ctrl_b = rng.standard_normal((4, 10)), rng.standard_normal((4, 10))
+    val = cr.independent_control_metric(pred, true, ctrl_a, ctrl_b,
+                                        metric=metrics.systema_pert_specific_delta, train_mean=true.mean(0))
+    assert np.isfinite(val)                                    # 3-arg primary endpoint composes, no TypeError
+
+
+def test_row_shuffle_permutes_within_each_row():
+    true = np.arange(12).reshape(3, 4).astype(float)
+    shuffled = mq.row_shuffle(true, np.random.default_rng(1))
+    assert np.array_equal(np.sort(shuffled, axis=1), np.sort(true, axis=1))  # marginal preserved per row
+    assert not np.array_equal(shuffled, true)
+
+
 def test_g2mq_gate_orders_controls():
     pred, true = _fixture(3)
     rng = np.random.default_rng(3)

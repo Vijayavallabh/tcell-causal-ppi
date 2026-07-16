@@ -27,20 +27,33 @@ def _np(a, dtype=np.float64) -> np.ndarray:
 
 
 class BaseBaseline:
-    """Common protocol; subclasses implement ``_fit``/``_predict_z`` and inherit gene decoding."""
+    """Common protocol; subclasses implement ``_fit``/``_predict_z`` and inherit gene decoding.
+
+    ``requires_features`` marks the baselines that regress on X (ridge, kNN, low-rank): calling them with
+    ``X=None`` raises a clear error rather than an opaque sklearn crash, while the feature-free baselines
+    (zero, perturbed-mean, condition-mean) accept ``X=None`` — a uniform, honest fit/predict contract."""
+
+    requires_features: bool = False
 
     def __init__(self, basis=None) -> None:
         self.B = None if basis is None else _np(basis)  # (G, K) frozen fold-local loadings
         self._k: int | None = None
 
+    def _features(self, X):
+        if X is None:
+            if self.requires_features:
+                raise ValueError(f"{type(self).__name__} requires a feature matrix X (got None)")
+            return None
+        return _np(X)
+
     def fit(self, X, z, conditions=None) -> "BaseBaseline":
         z = _np(z)
         self._k = z.shape[1]
-        self._fit(None if X is None else _np(X), z, conditions)
+        self._fit(self._features(X), z, conditions)
         return self
 
     def predict(self, X, conditions=None) -> tuple[np.ndarray, np.ndarray]:
-        dz = self._predict_z(None if X is None else _np(X), conditions)
+        dz = self._predict_z(self._features(X), conditions)
         return dz, self._decode_genes(dz)
 
     def _decode_genes(self, dz: np.ndarray) -> np.ndarray:
@@ -91,13 +104,16 @@ class ConditionMeanBaseline(BaseBaseline):
                 self._by_cond[c] = z[mask].mean(0)
 
     def _predict_z(self, X, conditions) -> np.ndarray:
-        if conditions is None:
-            raise ValueError("ConditionMeanBaseline.predict needs the per-row conditions")
+        if conditions is None:  # no condition info -> degrade to the global perturbed mean (uniform contract)
+            n = _n_rows(X, conditions)
+            return np.broadcast_to(self._global, (n, self._k)).copy()
         return np.stack([self._by_cond.get(c, self._global) for c in conditions])
 
 
 class RidgeBaseline(BaseBaseline):
     """Ridge regression from context features X to program delta z (multi-output)."""
+
+    requires_features = True
 
     def __init__(self, basis=None, alpha: float = 1.0) -> None:
         super().__init__(basis)
@@ -112,6 +128,8 @@ class RidgeBaseline(BaseBaseline):
 
 class NearestNeighborBaseline(BaseBaseline):
     """kNN by target/context profile: predict the mean program delta of the k nearest training rows."""
+
+    requires_features = True
 
     def __init__(self, basis=None, k: int = 1) -> None:
         super().__init__(basis)
@@ -132,6 +150,8 @@ class LowRankBaseline(BaseBaseline):
     Fits the top-``rank`` right singular directions of the centred training responses, learns a ridge map
     from features into those reduced coordinates, and decodes back — a denoised linear predictor that
     cannot chase program directions unsupported by the training responses."""
+
+    requires_features = True
 
     def __init__(self, basis=None, rank: int = 8, alpha: float = 1.0) -> None:
         super().__init__(basis)
