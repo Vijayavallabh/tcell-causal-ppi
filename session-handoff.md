@@ -58,6 +58,18 @@ by design — modules + loss + faithfulness eval only). **Committed on main this
   no fit loop); feat-007 not-started. FaithfulnessTester + MatchedRandomSampler are also the machinery
   **feat-012** (predictive-rationale audit) will run on the trained model.
 
+## Also This Session (2026-07-16) — full real-data verification + warnings cleanup
+
+- **Full real-data run** (GPU where device-aware; M0 excluded — destructive): `./init.sh` **79 passed**;
+  M1 (33,983 rows, **A100**), M2 (25,440-node graph, A100), M3 (M1→M2→M3, A100), M4 (real PPI graph, CPU)
+  all PASSED; `sparse_pca` production basis re-fit + validated (**304 s**, B 10282×128 / A 21262×128,
+  fold-locality exact, 22.7% zero loadings / 0 dead programs, recon MAE 0.686 vs 0.817); `splits.py`
+  **byte-identical** (4/4 sha256). GPU: 5× A100 80GB (torch 2.13.0+cu126).
+- **Warnings cleanup** (commit `2bf1653`): silenced the expected third-party `torch.jit.script` deprecation
+  (torch_geometric 2.8 on torch 2.13) + sklearn `ConvergenceWarning` (LARS / NMF / FastICA) at their
+  sources; `./init.sh` now 79 passed with a **clean warnings summary** (was 4 warnings). Module 4 docs sync
+  (README + `docs/specs/2026-07-16-module4-rationale-head.md`) committed at `b094b5e`.
+
 ## Completed Prior Session (Module 3 — Program Decoder; feat-005 + feat-008 scaffold)
 
 Built Module 3 (walkthrough §6) as a new package `src/tcell_pipeline/programs/` + top-level

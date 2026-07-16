@@ -49,6 +49,29 @@ design — modules + loss + faithfulness eval only).
   module exists, no fit loop yet); feat-007 graph baselines still not-started. The FaithfulnessTester +
   MatchedRandomSampler are also the machinery feat-012 (predictive-rationale audit) will run on the trained model.
 
+## Full real-data run + warnings cleanup (2026-07-16)
+
+Re-ran every non-destructive real-data entrypoint end-to-end (M0 excluded — it re-downloads multi-GB PPI
+DBs and overwrites the frozen marts), GPU where the code is device-aware. All green:
+- `./init.sh` — **79 passed** (compileall clean).
+- Module 1 smoke (feat-014/015): 33,983 rows on **A100 (cuda)** @24.7k/s; all `h_do` finite; q_post fence held.
+- Module 2 smoke (feat-016): 25,440-node graph on **cuda**; CD3E nbhd 512 proteins; per-condition gates differ; attn sums to 1.
+- Module 3 smoke (feat-008 slice): M1→M2→M3 on **cuda**; finite; λ∈[0.42,0.65]; σ>0; expr-only λ==0.
+- Module 4 smoke (feat-008): real PPI graph; sufficiency<matched-random; necessity>matched-random; labelled `predictive_rationale`.
+- feat-005 production basis: `run_program_basis --method sparse_pca` re-fit the real train fold in **304s**
+  → B(10282,128)/A(21262,128); all finite; fold-locality exact; 22.7% zero loadings / **0 dead programs**;
+  recon MAE 0.686 vs 0.817 baseline. Parquets gitignored.
+- feat-003 splits: re-run **byte-identical** (4/4 sha256), 26.4% blocked vs 53.8% random = 0.509 cut.
+- **GPU:** 5× A100 80GB, torch 2.13.0+cu126 (CUDA-12.2 driver). M1–M3 ran on cuda; the basis fit is
+  sklearn/CPU and Module 4 is CPU-only by design.
+
+**Warnings cleanup (commit `2bf1653`):** silenced the expected warnings the run surfaced — `torch.jit.script`
+DeprecationWarning (torch_geometric 2.8 on torch 2.13; filtered in `tcell_pipeline/__init__.py` before PyG
+import) and sklearn `ConvergenceWarning` (LARS early-stop / capped-iter NMF/FastICA; scope-silenced in
+`program_basis._factor`). `./init.sh` now **79 passed with a clean warnings summary** (was "79 passed, 4
+warnings"); verified under `-W error::DeprecationWarning` + a ConvergenceWarning-leak probe. Module 4
+docs sync (README + `docs/specs/2026-07-16-module4-rationale-head.md`) committed at `b094b5e`.
+
 ## Module 3 (Program Decoder) — prior session
 
 New package `src/tcell_pipeline/programs/` + `src/tcell_pipeline/model.py` implementing walkthrough §6.
