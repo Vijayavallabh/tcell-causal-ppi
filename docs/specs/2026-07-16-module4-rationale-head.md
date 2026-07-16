@@ -143,7 +143,8 @@ copy); `_pp_edges` is vectorised; the smoke uses the public API. Kept as spec-ma
 
 - **No training loop** (Stage B fit) here by design — the report freezes H1 first, then fits
   `L_rationale`; the loss + faithfulness machinery are in place for that loop, but the loop itself is
-  feat-008's remaining work.
+  feat-008's remaining work. The **Stage A** training loop that produces the frozen H1 checkpoint this
+  head sits on top of is Module 5 — `docs/specs/2026-07-16-module5-training.md`.
 - **MatchedRandomSampler matches per-relation count only** — full degree/connectivity/hop matching is the
   feat-012 audit's job.
 - **structural_ood_audit anchors hop-distance at node 0** (`ponytail:` the audit signature carries no

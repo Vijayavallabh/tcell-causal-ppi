@@ -4,22 +4,61 @@
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction
 - Current status: **Module 0 + Module 1 encoder (feat-014) + real PLM/PINNACLE embeddings (feat-015) +
-  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done. Module 3 Program Decoder
-  (prior session) + Module 4 Sparse Predictive-Rationale Head built this session** — feat-005 (latent
-  program extraction) **in-progress** (fold-local basis + frozen sparse_pca production loadings done;
-  method×K comparison + VAE remain), feat-008 (EG-IPG model) **in-progress** (M1+M2+M3 decoder/EGIPGModel
-  + Module 4 rationale head / loss / faithfulness eval built; the **training-loss OPTIMIZATION loop +
-  train/calibration loops remain**, and feat-007 is not-started). Done: feat-001/002/003/004/014/015/016.
-  Next: feat-008 training loop, or feat-006 (baselines) / feat-007 (graph baselines).
-- Branch / commit: main. **Module 4 (Sparse Predictive-Rationale Head) committed this session** — all code
-  + state-file syncs in a single commit: the new `rationale/` package (`rationale_head.py`,
-  `rationale_loss.py`, `faithfulness.py`, `matched_random.py`, `run_module4_smoke.py`, `__init__.py`), the
-  `encode_subgraph` enabler on `graph/typed_graph_encoder.py`, `config.py` (Module 4 constants),
-  `src/tests/test_rationale.py`, and feature_list/progress/handoff. Prior landmarks: Module 3 (Program
-  Decoder) + feat-005 sparse_pca production basis (`172a506`/`fc385ef`), feat-016 (Module 2) `100a505`,
-  feat-003 `35e3999`, xhigh `/code-review` fixes `7760624`, AGENTS.md keyword restore `358cf59`.
-  The two planning docs (report + walkthrough) carry as-built notes but are gitignored (local-only).
-  **Latest committed is always `git log -1` on main.**
+  Module 2 typed graph encoder (feat-016) + leakage-safe splits (feat-003) done. Module 3 Program Decoder +
+  Module 4 Sparse Predictive-Rationale Head + Module 5 Loss + Training (Stage A loop + Stage B calibration
+  loss) built** — the four model modules are now **trainable**. feat-005 (latent program extraction)
+  **in-progress** (fold-local basis + frozen sparse_pca production loadings done; method×K comparison + VAE
+  remain), feat-008 (EG-IPG model) **in-progress** (M1+M2+M3 decoder/EGIPGModel + Module 4 rationale head /
+  faithfulness + **Module 5 Stage A training loop + Stage B calibration loss** built; the **Stage-B
+  calibration + rationale FIT loops + the near-null-signal freeze gate remain**, and feat-007 is
+  not-started). Done: feat-001/002/003/004/014/015/016. Next: feat-008 Stage-B fit loops, or feat-006
+  (baselines) / feat-007 (graph baselines).
+- Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
+  state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
+  `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,
+  `docs/specs/2026-07-16-module5-training.md`, README (train section), a Module 4-spec cross-ref, and
+  feature_list/progress/handoff. Prior landmarks: Module 4 (`rationale/` package + `encode_subgraph`
+  enabler + docs) `953bd3f`/`b094b5e`, full real-data run + warnings cleanup `2bf1653`/`6dcf196`, Module 3
+  (Program Decoder) + feat-005 sparse_pca basis `172a506`/`fc385ef`, feat-016 (Module 2) `100a505`,
+  feat-003 `35e3999`. The two planning docs (report + walkthrough) carry as-built notes but are gitignored
+  (local-only). **Latest committed is always `git log -1` on main.**
+
+## Completed This Session (Module 5 — Loss + Training; feat-008)
+
+Built Module 5 (walkthrough §8) as a new package `src/tcell_pipeline/training/`, making the four model
+modules **trainable**. Two frozen stages (§8.1): **Stage A** fits the H1 predictor (Module 1+2+3); the
+**Stage B** loss modules (calibration + Module 4 rationale) are fitted after the H1 freeze — no fit loop
+here by design. **Committed on main this session** (`git log -1`).
+
+- **StageALoss** (`losses.py`) — `L_pred = Huber response (program + gene, δ=1) + λ_DE·focal-BCE DE
+  up/down (DEHead=Linear(256,2G), γ=2, labels from |zscore|≥1.645 as the `adj_p<0.1` proxy the dataset
+  carries) + λ_inv·donor-invariance (f_shared=Linear(K,K)) + λ_graph·L_graph (Σ|ᾱ| + Σ(1−conf)ᾱ² from
+  `edge_gates`; conf defaults 0)`. **StageBCalibrationLoss** — Gaussian NLL, a **loss module only**.
+  **DEHead** — `Linear(256,2G)` → up/down logits, `.probs()` in [0,1].
+- **PerturbationDataset** (`dataset.py`) — split-aware (`blocked_target_ood.csv`); `__getitem__ →
+  (batch_dict, target, condition, Δz_true, Δx_true, row_index)`; **q_pre-only** (fence held downstream);
+  `Δz_true` = `program_response` A for train rows else `z@B` projection out-of-fold; `Δx_true` = zscore
+  row; `+ collate`. Paths injectable → tiny-fixture tests.
+- **Trainer** (`trainer.py`) — AdamW(1e-3/1e-5) over model **and** loss params; frozen B
+  (`persistent=False` buffer) **neither optimised nor checkpointed**; grad-clip 1.0, patience-10 early
+  stop, atomic best+last checkpoints (`data/checkpoints/`), per-epoch logs (`data/logs/`).
+- **run_train.py** — Stage A orchestrator on real marts (`--lr/--epochs/--batch-size/--seed/--n-max/
+  --expr-only`); pins `set_num_threads(1)`. `RationaleLoss` (Module 4) **not** reimplemented.
+- **config** — `LR/WEIGHT_DECAY/MAX_EPOCHS/EARLY_STOP_PATIENCE/BATCH_SIZE/GRAD_CLIP/HUBER_DELTA/
+  FOCAL_GAMMA/LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/CHECKPOINTS_ROOT/LOGS_ROOT`.
+- **Verification** — `./init.sh` green, **87 tests** (79 prior + 8 new `test_training.py`, synthetic),
+  zero warnings. Real-data Stage A smoke PASSED both ways: expr-only (256×3, best_val 3.48) and full-graph
+  M1→M2→M3 (n_max 4×1, `L_graph` active on real `edge_gates`) — train, back-prop, write atomic checkpoints.
+- **Post-review (adversarial workflow — 3 dims → per-finding verify; loss-math clean, 1 refuted, 1
+  confirmed):** `L_invariance` is **inert on the real marts** — Module 0 averages donor PCs to condition
+  level (`control_profiles`), so there are no per-donor rows and the donor-pair objective is *vacuously
+  satisfied*. The `(target,condition)` key is correct; the sole artefact is an upstream id_mapping paralog
+  collision (GPR89A/GPR89B→`GPHRA`, 6/33,983 rows, negligible) — a **feat-002** concern, not a loss defect.
+  **Documented as a `ponytail:` ceiling, not silently patched**; activates when a per-donor axis returns
+  upstream. Refuted: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
+- **Remaining (feat-008):** the Stage-B calibration + rationale **fit loops** (both loss modules exist,
+  no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines, still not-started).
+- Design + as-built: `docs/specs/2026-07-16-module5-training.md`.
 
 ## Completed This Session (Module 4 — Sparse Predictive-Rationale Head; feat-008)
 
@@ -223,7 +262,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **79 passed** on torch cu126 (69 prior + 10 Module-4 `test_rationale.py`, incl. the post-review determinism test); compileall clean |
+| Compile + tests | `./init.sh` | Pass | **87 passed** on torch cu126 (79 prior + 8 Module-5 `test_training.py`); compileall clean; zero warnings |
+| Module 5 unit tests | `pytest src/tests/test_training.py` | Pass | 8 passed (synthetic, tiny fixture marts): Stage A shapes+gradient flow (h_do/DE head/f_shared), graph-gate penalty (confidence lowers unsourced term), Stage B Gaussian NLL+grad, DE probs∈[0,1], learnable λ mixture, dataset keys+q_post fence+program_response-vs-projection dz, 2-epoch checkpointed run, param-update |
+| Module 5 real-data Stage A smoke | `python -m tcell_pipeline.training.run_train --expr-only --n-max 256 --epochs 3` | Pass | 256 train/val; trains + back-props + atomic best/last checkpoint (best_val 3.48). Full-graph `--n-max 4 --epochs 1` also PASSED (L_graph active on real edge_gates) |
 | Module 4 unit tests | `pytest src/tests/test_rationale.py` | Pass | 10 passed (synthetic): imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation match, structural_ood (deleted-fraction vs independent count + component monotonicity), loss components+gradients, expr-only→empty rationale, label predictive_rationale not causal, faithfulness determinism under active DropEdge |
 | Module 4 real-data smoke | `python src/tcell_pipeline/rationale/run_module4_smoke.py` | Pass | real PPI graph, A1BG neighbourhood (33,754 edges, |S|=15): sufficiency<matched-random, necessity>matched-random, structural-OOD audit, labelled `predictive_rationale` (not causal) |
 | Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
@@ -241,6 +282,18 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 | Encoder real-data e2e | head of perturbation_condition/de_obs -> PerturbationEncoder | Pass | h_do (8,256) finite; real PLM+PINNACLE vectors flow through |
 | Module 1 full-mart smoke | `python src/tcell_pipeline/run_module1_smoke.py` | Pass | on GPU (cuda), 33,983 rows in ~2s; all finite; PLM 33796, PINNACLE 3135 coverage; q_post rejected |
 | Module 0 full run (prior) | `python src/tcell_pipeline/run_module0.py` | Pass | all 7 steps on real data; 7.98M edges; leakage fence disjoint |
+
+## Files Added (this session, Module 5 — Loss + Training)
+
+- `src/tcell_pipeline/training/__init__.py`, `losses.py`, `dataset.py`, `trainer.py`, `run_train.py` (NEW package)
+- `src/tests/test_training.py` (NEW, 8 synthetic tests)
+- `docs/specs/2026-07-16-module5-training.md` (NEW — design + as-built + the reviewed `L_invariance` ceiling)
+- `src/tcell_pipeline/config.py` — Module 5 constants (`LR`, `WEIGHT_DECAY`, `MAX_EPOCHS`,
+  `EARLY_STOP_PATIENCE`, `BATCH_SIZE`, `GRAD_CLIP`, `HUBER_DELTA`, `FOCAL_GAMMA`, `LAMBDA_DE/INV/GRAPH/GENE`,
+  `DE_CALL_ZSCORE`, `CHECKPOINTS_ROOT`, `LOGS_ROOT`)
+- `README.md` (Train the H1 predictor / Stage A section), `docs/specs/2026-07-16-module4-rationale-head.md`
+  (Stage A cross-ref), the two gitignored planning docs (§8 / §Loss as-built notes)
+- `feature_list.json` (feat-008 → Module-5 addendum, stays in-progress), `progress.md`, `session-handoff.md`
 
 ## Files Added (this session, Module 4 — Sparse Predictive-Rationale Head)
 
@@ -346,14 +399,20 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
 
 ## Recommended Next Step
 
-- **Module 4 (Sparse Predictive-Rationale Head) is committed on main** (`git log -1`); working tree clean,
-  `./init.sh` green (**78 tests**). The `rationale/` package, the `encode_subgraph` enabler, config, tests,
-  and state-file syncs all landed in one commit.
-- To **advance feat-008**: the Module 4 rationale head / loss / faithfulness eval is now built — next is the
-  **training-loss OPTIMIZATION loop** (Stage A: fit the EGIPGModel predictor with the decoder losses; then
-  Stage B: freeze it and fit `RationaleHead` with `RationaleLoss`) + the train/calibration loops on top of
-  `EGIPGModel`. Fold-local fits use the **train** role only (`train_row_indices` gate). Before freezing H1,
-  run the near-null-signal check on development data. (feat-008 also depends on feat-007, still not-started.)
+- **Module 5 (Loss + Training) is committed on main** (`git log -1`); working tree clean, `./init.sh` green
+  (**87 tests**, zero warnings). The `training/` package, config, tests, the Module 5 spec, README, and
+  state-file syncs all landed in one commit. Stage A trains M1+M2+M3; Stage B calibration is a loss module.
+- To **advance feat-008 (the last pieces)**:
+  1. **Stage A production run** — fit `EGIPGModel` on the full **train** fold with `run_train.py` (fold-local:
+     `PerturbationDataset("train")`), select on **val**, then **freeze** the H1 checkpoint. Before the freeze,
+     run the **near-null-signal check** on development data (H1 superiority is not guaranteed on this CD4+
+     screen — a negative result is valid). The graph path is CPU-bound per subgraph, so a full multi-A100 run
+     wants **PyG mini-batching** of the subgraphs first (the `ponytail:` note in `typed_graph_encoder.forward`).
+  2. **Stage B fit loops** — on the frozen H1: fit `StageBCalibrationLoss` on the **calibration** partition,
+     and fit `RationaleHead` with Module 4's `RationaleLoss` (both loss modules exist; the fit loops don't).
+- **Known ceiling carried forward:** `L_invariance` is inert on the donor-averaged marts (documented
+  `ponytail:` in `losses.py`); it activates only if Module 0 re-emits a per-donor axis. The paralog HGNC
+  collision it exposes (GPR89A/GPR89B→`GPHRA`) is an upstream **feat-002** id_mapping item, not Module 5's.
 - To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity /
   stability + a shallow-VAE basis (the extraction machinery is done and the sparse_pca production loadings
   are frozen — only the study remains).

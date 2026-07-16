@@ -145,6 +145,26 @@ LAMBDA_CONTRAST: float = 0.5      # rationale beats matched-random reconstructio
 N_MATCHED_CONTROLS: int = 100     # matched-random controls per rationale (size + relation matched)
 
 
+# --- Module 5 (Loss + Training; Stage A trains M1+M2+M3, Stage B is a loss module only) ---
+LR: float = 1e-3
+WEIGHT_DECAY: float = 1e-5
+MAX_EPOCHS: int = 100
+EARLY_STOP_PATIENCE: int = 10
+BATCH_SIZE: int = 64
+GRAD_CLIP: float = 1.0
+HUBER_DELTA: float = 1.0          # L_response/L_gene Huber transition point
+FOCAL_GAMMA: float = 2.0          # focal down-weighting of easy (abundant non-DE) genes in L_DE
+LAMBDA_DE: float = 0.1            # weight on the DE up/down classification head
+LAMBDA_INV: float = 0.1           # weight on donor-invariance of the shared program component
+LAMBDA_GRAPH: float = 0.01        # weight on the edge-gate sparsity + unsourced-reliance penalty
+LAMBDA_GENE: float = 0.5          # weight on gene-level (delta_x) reconstruction vs program-level
+# DE up/down call from the per-gene z-score: |z| >~ 1.64 is the two-sided 10% tail, the proxy this
+# dataset carries for adj_p < 0.1 (the exact adj_p layer is not part of the __getitem__ contract).
+DE_CALL_ZSCORE: float = 1.645
+CHECKPOINTS_ROOT: Path = Path(os.environ.get("CHECKPOINTS_ROOT", DATA_DIR / "checkpoints"))
+LOGS_ROOT: Path = Path(os.environ.get("LOGS_ROOT", DATA_DIR / "logs"))
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

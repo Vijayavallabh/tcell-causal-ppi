@@ -555,6 +555,27 @@ python src/tcell_pipeline/rationale/run_module4_smoke.py
 
 The synthetic unit checks (`src/tests/test_rationale.py`) run under `./init.sh` with the rest of the suite.
 
+### Train the H1 predictor (Module 5 — Stage A)
+
+Module 5 makes the four model modules trainable (README §Loss function; walkthrough §8). **Stage A**
+fits Module 1+2+3 with `StageALoss` — Huber response (program + gene) + a focal-BCE DE up/down head +
+donor-invariance + an edge-gate sparsity/unsourced regulariser — over AdamW with grad-clipping, early
+stopping, and atomic best/last checkpoints to `data/checkpoints/`. Supervision is q_pre-only
+(`PerturbationDataset` enforces the leakage fence); `Δz_true` is the fold-local `program_response` score
+for train rows and the `z@B` projection out of fold. **Stage B** (Gaussian-NLL calibration +
+`RationaleLoss`) are loss modules only — fitted after the H1 freeze; their fit loops are feat-008's last
+piece. Design + as-built: `docs/specs/2026-07-16-module5-training.md`.
+
+```bash
+# expression-only nested variant, quick real-data smoke (no graph encoder)
+PYTHONPATH=src python -m tcell_pipeline.training.run_train --expr-only --n-max 256 --epochs 3
+
+# full M1→M2→M3 Stage A (graph path is CPU-bound per subgraph — cap for a smoke)
+PYTHONPATH=src python -m tcell_pipeline.training.run_train --n-max 4 --epochs 1
+```
+
+The synthetic unit checks (`src/tests/test_training.py`) run under `./init.sh` with the rest of the suite.
+
 ## Repository / data-mart layout
 
 Downloads stay immutable under `data/raw/`; everything else is derived and reproducible. `data/` is

@@ -2,8 +2,48 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 4 Sparse Predictive-Rationale Head built — feat-008 rationale head + faithfulness eval)
-**Active Feature:** Module 4 (Sparse Predictive-Rationale Head) — feat-008 **in-progress** (M1+M2+M3 + Module 4 rationale head / loss / faithfulness eval built; the training-loss OPTIMIZATION loop + train/calibration loops remain, and feat-007 is not-started). feat-005 **in-progress** (fold-local basis + frozen sparse_pca production loadings done; method×K comparison + shallow-VAE remain). Next: feat-008 training loop, or feat-006 (baselines) / feat-007 (graph baselines)
+**Last Updated:** 2026-07-16 (Module 5 Loss + Training built — feat-008 Stage A training loop + Stage B calibration loss; the four model modules are now trainable)
+**Active Feature:** Module 5 (Loss + Training) — feat-008 **in-progress** (M1+M2+M3 + Module 4 rationale head/faithfulness + **Module 5 Stage A training loop + Stage B calibration loss** built; the Stage-B calibration + rationale **fit loops** + the near-null-signal freeze gate remain, and feat-007 is not-started). feat-005 **in-progress** (fold-local basis + frozen sparse_pca production loadings done; method×K comparison + shallow-VAE remain). Next: feat-008 Stage-B fit loops, or feat-006 (baselines) / feat-007 (graph baselines)
+
+## Module 5 (Loss + Training) — this session (2026-07-16)
+
+New package `src/tcell_pipeline/training/` implementing walkthrough §8 — makes the four model modules
+**trainable**. Two frozen stages (§8.1): **Stage A** fits the H1 predictor (Module 1+2+3); **Stage B**
+loss modules (calibration + Module 4 rationale) are fitted *after* the H1 freeze — no fit loop here by design.
+
+- **StageALoss** (`losses.py`): `L_pred = L_response(Huber program, δ=1) + λ_gene·L_gene(Huber gene) +
+  λ_DE·L_DE(focal BCE up/down, γ=2) + λ_inv·L_invariance + λ_graph·L_graph`. **DEHead** = `Linear(256,2G)`
+  over `h_do`; DE up/down labels derived from `|Δx_true(zscore)| ≥ 1.645` (two-sided 10% tail — the
+  `adj_p<0.1` proxy the dataset contract carries). `f_shared = Linear(K,K)` donor-invariance; `L_graph` =
+  `Σ|ᾱ| + Σ(1−conf)·ᾱ²` from `edge_gates` (conf defaults 0 → L2 on gates; optional `edge_confidences`).
+- **StageBCalibrationLoss** (`losses.py`): Gaussian NLL `0.5·Σ[log σ² + (Δz−Δẑ)²/σ²]` — a **loss module
+  only** (fitted on the calibration partition after the H1 freeze; no loop).
+- **PerturbationDataset** (`dataset.py`): split-aware (`blocked_target_ood.csv`); `__getitem__ →
+  (batch_dict, target, condition, Δz_true, Δx_true, row_index)`; **q_pre-only** (leakage fence held
+  downstream — `q_post` never in features); `Δz_true` = `program_response` A for train rows else `z@B`
+  projection out-of-fold; `Δx_true` = zscore row; `+ collate`. All paths injectable (tiny-fixture tests).
+- **Trainer** (`trainer.py`): AdamW(1e-3/1e-5) over the model **and** loss params (DE head + `f_shared`);
+  the frozen basis B (`persistent=False` buffer) is **neither optimised nor checkpointed**; grad-clip 1.0,
+  patience-10 early stop, atomic best+last checkpoints to `data/checkpoints/`, per-epoch logs to `data/logs/`.
+- **run_train.py**: Stage A orchestrator on real marts (`--lr/--epochs/--batch-size/--seed/--n-max/--expr-only`);
+  pins `torch.set_num_threads(1)`. `RationaleLoss` (Module 4) **not** reimplemented.
+- **config:** `LR/WEIGHT_DECAY/MAX_EPOCHS/EARLY_STOP_PATIENCE/BATCH_SIZE/GRAD_CLIP/HUBER_DELTA/FOCAL_GAMMA/
+  LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/CHECKPOINTS_ROOT/LOGS_ROOT`.
+- **Verification:** `./init.sh` green — **87 tests** (79 prior + 8 new `test_training.py`, all synthetic:
+  Stage A shapes+gradient flow, graph-gate penalty, Stage B NLL+grad, DE probs∈[0,1], learnable λ mixture,
+  dataset keys+q_post fence+dz source, 2-epoch checkpointed run, param-update), **zero warnings**. Real-data
+  Stage A smoke PASSED both ways: expr-only (256×3, best_val 3.48) and full-graph M1→M2→M3 (n_max 4×1,
+  `L_graph` active on real `edge_gates`) — both train, back-prop, write atomic checkpoints.
+- **Post-review (adversarial workflow, 3 dims → verify; loss-math clean, 1 refuted, 1 confirmed):**
+  `L_invariance` is **inert on the real marts** — Module 0 averages donor PCs to condition level
+  (`control_profiles`), so there are no per-donor rows and the donor-pair objective is *vacuously
+  satisfied*. The `(target,condition)` key is correct; the sole artefact is an upstream id_mapping paralog
+  collision (GPR89A/GPR89B→`GPHRA`, 6/33,983 rows, negligible) — a feat-002 concern, not a loss defect.
+  **Documented as a `ponytail:` ceiling, not silently patched**; activates when a per-donor axis returns
+  upstream. Refuted: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
+- **Remaining for feat-008 done:** the Stage-B calibration + rationale **fit loops** (both loss modules
+  exist, no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines) still not-started.
+- Design + as-built: `docs/specs/2026-07-16-module5-training.md`.
 
 ## Module 4 (Sparse Predictive-Rationale Head) — this session (2026-07-16)
 
