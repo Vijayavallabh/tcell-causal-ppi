@@ -50,9 +50,14 @@ commit go-ahead. All fully synthetic (no marts). `./init.sh` green at **145 test
   (non-finite `true` collapse, `1e-12` norm-floor, FP-fragile `std==0` → both gate on `max==min`,
   product-form underflow), the `topk`/`sign` degeneracy guard, the baseline `X=None`/`conditions=None`
   contract, the `**kwargs` control hook, + 3 cleanups. New file `evaluation/_arrays.py`.
-- **Round-2 fixes to commit** (when asked): `evaluation/{metrics,metrics_ref,metric_qualification,
-  control_reference}.py` + the new `evaluation/_arrays.py` + `baselines/simple_baselines.py` + the two test
-  files + `docs/specs/…module6…` + `docs/reviews/…module6…` + feature_list/progress/handoff — one commit.
+- **Round-2 fixes committed** as `fe3a724` (`evaluation/*` incl. new `_arrays.py`, `baselines`, tests, docs,
+  state triad).
+- **Full real-data run incl. Module 6** (2026-07-16, see progress.md): M1/M2/M3 encoders + M5 Stage-A train
+  + M6 model-forward on **A100**, M4 rationale on CPU. New `src/tcell_pipeline/run_module6_smoke.py` scores
+  the trained model + 6 baselines on the real val fold (ridge is the strongest baseline, edging the 2-epoch
+  model — near-null-signal regime), G2-MQ systema gate PASSED, §10.5 null-control → 0, schema roundtrip.
+  Real-data gap fixed: `nan_to_num` the baseline feature matrix (`control_baseline_expr` NaN for ~1.5k rows).
+  A fully-trained model (more epochs; graph variant) is the real H1-vs-baseline test.
 
 ## Completed Prior Session (Module 5 — Loss + Training; feat-008)
 

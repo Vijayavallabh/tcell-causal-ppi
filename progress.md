@@ -47,6 +47,24 @@ not yet committed.**
   `topk`/`sign`, `rng.permuted` shuffle, shared `_arrays.to_numpy`). +14 regression tests.
 - Design+as-built: `docs/specs/2026-07-16-module6-evaluation.md`.
 
+## Full real-data run incl. Module 6 (2026-07-16)
+
+Re-ran every non-destructive real-data entrypoint end-to-end, GPU where it helps (M0 excluded — destructive).
+- **M1** encoder: 33,983 rows on **A100** in 2.15 s (15.8k rows/s); all `h_do` finite; q_post fence held.
+- **M2** typed graph on **A100**: `h_graph` finite; condition-varying gates; attention sums to 1.
+- **M3** M1→M2→M3 on **A100**: finite; λ∈[0.46,0.55]; σ>0; expr-only λ=0.
+- **M4** rationale (CPU, thread-pinned): sufficiency < matched-random; necessity > matched-random; `predictive_rationale`.
+- **M5** Stage-A on **A100**: full 21,262-row train fold, expr-only, 2 epochs, best_val 3.4711 → checkpoint.
+- **M6** (NEW `run_module6_smoke.py`): scored the trained model + all 6 baselines on the real 4,400-row val fold
+  (model forward on **A100**). **Ridge is the strongest baseline** (systema 0.081) and edges the 2-epoch model
+  (0.078) — the baseline-vs-model comparison Module 6 exists for, matching the near-null-signal caveat.
+  **G2-MQ systema gate PASSED** (negs ≤0.026 < guide-split-half 0.938 < oracle 1.0, range 0.911); §10.5
+  null-control predictor → 0.0 under independent controls; output-schema roundtrip on 4,400 preds.
+- **Real-data gap caught + fixed:** `control_baseline_expr` is NaN for ~1,558 rows (the encoder imputes; the
+  sklearn baselines don't) → `nan_to_num` on the baseline feature matrix in the smoke.
+- **GPU relevance (honest):** M1/M2/M3 encoders are genuinely GPU-accelerated; Stage-A training is
+  data-loading-bound; M4/M6 baselines+metrics are numpy/sklearn (CPU) — GPU doesn't apply there.
+
 ## Full real-data run on GPU incl. Module 5 (2026-07-16)
 
 Ran every non-destructive real-data entrypoint end-to-end (M0 excluded — destructive), GPU where it helps.
