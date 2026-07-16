@@ -28,6 +28,9 @@ from tcell_pipeline.graph.neighborhood_sampler import sample_subgraph
 _PP_RELATIONS = ("physical_ppi", "co_complex", "functional_assoc")
 _MEMBERSHIP = "complex_membership"
 _COND_INDEX = {c: i for i, c in enumerate(config.CONDITIONS)}
+# edge feature = source one-hot(len PPI_SOURCES) | score | is_direct | n_supporting; the score column
+# (clipped to [0,1]) is the per-edge SOURCE CONFIDENCE the graph regulariser's unsourced term reads.
+_SCORE_COL = len(config.PPI_SOURCES)
 
 
 def signed_message(h: torch.Tensor, w_sign: nn.Linear, w_mag: nn.Linear) -> torch.Tensor:
@@ -123,7 +126,7 @@ class TypedGraphEncoder(nn.Module):
         carries an identical gate (the gate reads only edge features + condition), so we don't double
         it into the Module-4-facing ``edge_gates``. ponytail: gate identity mapping (gate -> (u,v)) is
         recoverable from the sub-graph's edge_index; forward the full identity API with Module 4."""
-        edges, gates = {}, {}
+        edges, gates, confs = {}, {}, {}
         for rel in _PP_RELATIONS:
             ei = sub[PROTEIN, rel, PROTEIN].edge_index
             ea = sub[PROTEIN, rel, PROTEIN].edge_attr
@@ -132,12 +135,14 @@ class TypedGraphEncoder(nn.Module):
                           torch.cat([ea, ea], dim=0),
                           torch.cat([alpha, alpha], dim=0))
             gates[rel] = alpha.squeeze(-1)                            # length E, consistent across relations
+            confs[rel] = ea[:, _SCORE_COL]                            # per-edge source confidence, aligned to gates
         ei = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index
         ea = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_attr
         alpha = self._gate(_MEMBERSHIP, ea, h_cond)
         edges[_MEMBERSHIP] = (ei, ea, alpha)
         gates[_MEMBERSHIP] = alpha.squeeze(-1)
-        return edges, gates
+        confs[_MEMBERSHIP] = ea[:, _SCORE_COL]
+        return edges, gates, confs
 
     def _gate(self, rel: str, edge_attr: torch.Tensor, h_cond: torch.Tensor) -> torch.Tensor:
         if edge_attr.numel() == 0:
@@ -165,14 +170,15 @@ class TypedGraphEncoder(nn.Module):
         bool or float) scales that relation's condition gate, so the faithfulness deletion tests can
         re-run this frozen encoder with a rationale kept (weight on the selected edges) or removed
         (weight on the complement) — the gate multiplies every message, so a zero weight drops the
-        edge at all layers. Returns ``{h_graph (dim,), gates, node_states, attn (N,)}`` where
-        node_states is ``{protein: h_p, complex: h_c}``."""
+        edge at all layers. Returns ``{h_graph (dim,), gates, edge_confidences, node_states, attn (N,)}``
+        where node_states is ``{protein: h_p, complex: h_c}`` and edge_confidences is the per-edge source
+        confidence (the edge-feature score column, aligned to gates) the graph regulariser reads."""
         device = self.proj.weight.device
         h_do = h_do.to(device)  # public entry point: caller's h_do may be on a different device
         sub = sub.to(device)
         h_cond = self.condition(torch.tensor([self._condition_index(condition)], device=device))  # (1, 64)
 
-        edges, gates = self._edges_with_gates(sub, h_cond, device)
+        edges, gates, confs = self._edges_with_gates(sub, h_cond, device)
         if keep_mask is not None:
             edges = self._weight_edges(edges, keep_mask, device)
         h_p = self.proj(sub[PROTEIN].x)
@@ -182,7 +188,7 @@ class TypedGraphEncoder(nn.Module):
             h_p, h_c = layer(h_p, h_c, edges)
 
         h_graph, weights = self.readout(h_do.unsqueeze(0), torch.cat([h_p, h_c], dim=0))
-        return {"h_graph": h_graph.squeeze(0), "gates": gates,
+        return {"h_graph": h_graph.squeeze(0), "gates": gates, "edge_confidences": confs,
                 "node_states": {PROTEIN: h_p, COMPLEX: h_c}, "attn": weights.squeeze(0)}
 
     @staticmethod
@@ -208,25 +214,32 @@ class TypedGraphEncoder(nn.Module):
         return r["h_graph"], r["gates"], r["attn"]
 
     def forward(self, target_genes: list[str], conditions: list[str], h_do: torch.Tensor):
-        """(B targets, B conditions, h_do (B, dim)) -> (h_graph (B, dim), edge_gates dict-of-lists).
+        """(B targets, B conditions, h_do (B, dim)) -> (h_graph (B, dim), edge_gates, edge_confidences).
 
-        Each target has its own subgraph, so ``edge_gates[relation]`` is a list over the batch
-        (one gate tensor per sample) — the per-sample structure Module 4 needs. Unknown target genes
-        fall back to a zero h_graph; an out-of-vocab culture_condition is invalid input and raises.
+        Each target has its own subgraph, so ``edge_gates[relation]`` / ``edge_confidences[relation]`` are
+        lists over the batch (one per-edge tensor per sample) — the per-sample structure Module 4 and the
+        Stage-A graph regulariser need; the two are aligned per edge. Unknown target genes fall back to a
+        zero h_graph; an out-of-vocab culture_condition is invalid input and raises.
         ponytail: per-sample loop; swap for PyG mini-batching if graph-encode throughput becomes the
         bottleneck in Module 3.
         """
         device = self.proj.weight.device
         h_do = h_do.to(device)
-        h_graphs, edge_gates = [], {r: [] for r in (*_PP_RELATIONS, _MEMBERSHIP)}
+        rels = (*_PP_RELATIONS, _MEMBERSHIP)
+        h_graphs = []
+        edge_gates = {r: [] for r in rels}
+        edge_confidences = {r: [] for r in rels}
         for b, (gene, cond) in enumerate(zip(target_genes, conditions)):
             if gene not in self.gene_to_idx:
                 h_graphs.append(torch.zeros(config.GRAPH_HIDDEN_DIM, device=device))
-                for r in edge_gates:
+                for r in rels:
                     edge_gates[r].append(torch.zeros(0, device=device))
+                    edge_confidences[r].append(torch.zeros(0, device=device))
                 continue
-            h_graph, gates, _ = self.encode_one(gene, cond, h_do[b])
-            h_graphs.append(h_graph)
-            for r, g in gates.items():
-                edge_gates[r].append(g)
-        return torch.stack(h_graphs), edge_gates
+            sub = sample_subgraph(self.graph, gene, gene_to_idx=self.gene_to_idx)
+            enc = self.encode_subgraph(sub, cond, h_do[b])
+            h_graphs.append(enc["h_graph"])
+            for r in rels:
+                edge_gates[r].append(enc["gates"][r])
+                edge_confidences[r].append(enc["edge_confidences"][r])
+        return torch.stack(h_graphs), edge_gates, edge_confidences

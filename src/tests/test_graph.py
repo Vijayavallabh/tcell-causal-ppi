@@ -110,7 +110,7 @@ def test_forward_shape_no_nan():
     graph, gene_to_idx = _graph()
     enc = TypedGraphEncoder(graph, gene_to_idx).eval()
     h_do = torch.randn(4, config.GRAPH_HIDDEN_DIM)
-    h_graph, _ = enc(["A", "B", "C", "D"], ["Rest", "Stim8hr", "Stim48hr", "Rest"], h_do)
+    h_graph, _, _ = enc(["A", "B", "C", "D"], ["Rest", "Stim8hr", "Stim48hr", "Rest"], h_do)
     assert h_graph.shape == (4, config.GRAPH_HIDDEN_DIM)
     assert torch.isfinite(h_graph).all()
 
@@ -118,11 +118,15 @@ def test_forward_shape_no_nan():
 def test_edge_gates_returned_per_type():
     graph, gene_to_idx = _graph()
     enc = TypedGraphEncoder(graph, gene_to_idx).eval()
-    _, gates = enc(["A", "B"], ["Rest", "Stim8hr"], torch.randn(2, config.GRAPH_HIDDEN_DIM))
+    _, gates, confs = enc(["A", "B"], ["Rest", "Stim8hr"], torch.randn(2, config.GRAPH_HIDDEN_DIM))
     assert set(gates) == {"physical_ppi", "co_complex", "functional_assoc", _MEMBERSHIP}
+    assert set(confs) == set(gates)                       # per-edge source confidence, same relations
     for rel in gates:
-        assert len(gates[rel]) == 2  # one gate tensor per batch sample
+        assert len(gates[rel]) == 2 and len(confs[rel]) == 2  # one per-edge tensor per batch sample
         assert all(torch.isfinite(g).all() and (g >= 0).all() and (g <= 1).all() for g in gates[rel])
+        for g, c in zip(gates[rel], confs[rel]):
+            assert c.shape == g.shape                     # confidence aligned per edge to the gate
+            assert (c >= 0).all() and (c <= 1).all()      # score column is clipped to [0,1]
 
 
 def test_zero_degree_target_works():
@@ -130,7 +134,7 @@ def test_zero_degree_target_works():
     enc = TypedGraphEncoder(graph, gene_to_idx).eval()
     h_do = torch.randn(2, config.GRAPH_HIDDEN_DIM)
     # SOLO has no protein neighbours (self-loop only); NOTAGENE is absent from the PPI graph.
-    h_graph, gates = enc(["SOLO", "NOTAGENE"], ["Rest", "Rest"], h_do)
+    h_graph, gates, _ = enc(["SOLO", "NOTAGENE"], ["Rest", "Rest"], h_do)
     assert h_graph.shape == (2, config.GRAPH_HIDDEN_DIM)
     assert torch.isfinite(h_graph).all()
     assert torch.allclose(h_graph[1], torch.zeros(config.GRAPH_HIDDEN_DIM))  # absent target -> zero

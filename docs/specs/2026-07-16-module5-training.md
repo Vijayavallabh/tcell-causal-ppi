@@ -65,12 +65,14 @@ rationale objective and is **not** reimplemented here.
    of the validation metric so early-stopping stays deterministic). `lambda_inv = 0.1`; off / no donor
    pool → a clean no-op. (A shared/nuisance split keeping legitimate donor-specific signal would need a
    paired nuisance head — deferred.)
-4. **Graph regularisation.** From `edge_gates`: `graph_λ_sparse · Σ|ᾱ| + graph_λ_unsrc · Σ(1 − conf)·ᾱ²`.
-   The sparsity term drives sparse condition gates; the second penalises reliance on low-confidence
-   edges. The model output carries only the gates, so `conf` defaults to 0 (every edge treated as
-   unsourced → a plain L2 on the gates); an optional `edge_confidences` argument down-weights the
-   penalty for well-supported edges when a caller wires them in. `None` gates (expression-only) → 0.
-   `lambda_graph = 0.01`.
+4. **Graph regularisation.** From `edge_gates` + `edge_confidences`:
+   `(graph_λ_sparse · Σ|ᾱ| + graph_λ_unsrc · Σ(1 − conf)·ᾱ²) / batch`. The sparsity term drives sparse
+   condition gates; the second penalises reliance on low-confidence edges. `conf` is the **real per-edge
+   source confidence** (the edge-feature score column, clipped to [0,1]) now threaded from the graph
+   encoder through `EGIPGModel.forward` → the Trainer → the loss, so a well-sourced edge is penalised less
+   than an unsupported one (on real data L_graph drops ~21k → ~18k once confidences are wired). Averaged
+   over the batch so its strength doesn't scale with batch size. `None` gates (expression-only) → 0; no
+   `edge_confidences` supplied → `conf = 0` (plain L2). `lambda_graph = 0.01`.
 
 ## Stage B calibration — `StageBCalibrationLoss` (`losses.py`, §8.3)
 
@@ -86,10 +88,12 @@ Split-aware (`blocked_target_ood.csv` role filter). `__getitem__ → (batch_dict
 - **Features are q_pre only.** `build_encoder_batch` assembles the encoder contract from
   `perturbation_condition` + `de_obs`; the leakage fence is enforced downstream (`PerturbationEncoder`
   raises on any `q_post` column). `q_post` never enters features.
-- **`Δz_true`** — the precomputed program score `A` from `program_response` for train-fold rows (the
-  exact target `B` was fit to); for out-of-fold rows (val / calibration / challenge, which have no `A`)
-  it is the z-score projected onto the frozen loadings, `z @ B`. Keyed on availability in
-  `program_response`, so it is correct even though `program_response` holds only train rows.
+- **`Δz_true`** — the z-score projected onto the frozen loadings, `z @ B`, for **every** row. One
+  consistent definition across splits (fold-local — `B` is fit on train rows only). An earlier design used
+  the sparse-PCA score `A` from `program_response` for train rows but `z @ B` out of fold, so the model
+  trained against `A` yet the validation loss measured `z @ B` — the metric driving early-stopping wasn't
+  the trained objective; using `z @ B` everywhere removes that mismatch (`program_response` is no longer a
+  training-target dependency).
 - **`Δx_true`** — the per-gene z-score row from the sparse DE layer (`zscore.npz`), sliced by
   `row_index`.
 - `collate` merges per-sample encoder batches into one batched dict + parallel lists/tensors. All paths
@@ -128,19 +132,19 @@ expression-only nested variant (`graph_encoder=None`, `λ` pinned to 0). Pins `t
 
 ## Verification (synthetic tests + real-data smoke)
 
-- `src/tests/test_training.py` (11 synthetic tests, tiny fixture marts incl. a donor-profiles fixture +
-  zero embedding stores): Stage A component shapes + gradient flow (reaching `h_do`, the DE head, and
-  `f_shared` via the donor variants), the graph-gate penalty (confidence lowers the unsourced term),
-  Stage B Gaussian-NLL + gradient, `DEHead` probabilities in `[0,1]`, the learnable `λ` mixture, the
-  dataset contract (correct keys, the **q_post fence**, `program_response` vs out-of-fold `z@B`
-  projection), the **donor pool + resampler** (distinct real donors), a 2-epoch checkpointed run, a
-  parameter-update check, and the **real donor-invariance signal** (non-zero + trains `f_shared` when on,
-  a clean 0 when off). Pins `torch.set_num_threads(1)`.
-- Real-data orchestrator smoke: `run_train --expr-only --n-max 128 --epochs 2` trains, back-props, writes
-  atomic checkpoints, and the **real 4-donor invariance term falls 1.30 → 0.25 in one epoch**; the
-  full-graph `--n-max 4 --epochs 1 --no-donor-invariance` exercises `L_graph` on real `edge_gates`.
-- `./init.sh` green at **92 tests** (79 prior + 13 new — incl. the graph-penalty batch-normalization and
-  the empty-split guard added in the post-review round below).
+- `src/tests/test_training.py` (13 synthetic tests, tiny fixture marts incl. a donor-profiles fixture +
+  zero embedding stores): Stage A component shapes + gradient flow (reaching `h_do`, the DE head, and — via
+  the donor variants — the encoder), the graph-gate penalty (confidence lowers the unsourced term) + its
+  batch-size normalization, Stage B Gaussian-NLL + gradient, `DEHead` probabilities in `[0,1]`, the
+  learnable `λ` mixture, the dataset contract (correct keys, the **q_post fence**, `Δz_true = z@B`
+  consistent across splits), the **donor pool + resampler** (distinct real donors), a 2-epoch checkpointed
+  run, a parameter-update check, the **real donor-invariance signal** (train non-zero / val 0 / off 0), and
+  the empty-split guard. `test_graph.py` additionally checks per-edge `edge_confidences` are returned
+  aligned to `edge_gates` and clipped to [0,1]. Pins `torch.set_num_threads(1)`.
+- Real-data orchestrator smoke: `run_train --expr-only --n-max 256 --epochs 3` trains, back-props, writes
+  atomic checkpoints, and the **real 4-donor invariance term falls 2.15 → 0.19 (via the encoder)**; the
+  full-graph run threads real `edge_confidences` (L_graph ~21k → ~18k once source confidence is applied).
+- `./init.sh` green at **92 tests** (79 prior + 13 new).
 
 ## Post-review round 2 (xhigh `/code-review` of `6dcf196..HEAD`)
 
@@ -165,12 +169,14 @@ confirmed correctness ones were fixed:
 - **Empty split → opaque crash.** **Fixed:** a clear `ValueError` on a 0-example training set.
 - **DEHead sized from the global `H_DO_DIM`**, not the wrapped decoder. **Fixed:** `h_do_dim =
   model.decoder.h_do_dim`. Plus cheap guards (de_obs↔pc row-count check) and DRY (`DONOR_COLS` reused).
-- **Deferred / flagged:** the train (`program_response` sparse-PCA score `A`) vs out-of-fold (`z@B`
-  projection) `Δz_true` mismatch is a **feat-005 modeling decision** (persist the fitted sparse-coder to
-  give val rows a consistent sparse target, or switch to `z@B` everywhere) — not silently changed here.
-  `edge_confidences` are still unwired (the unsourced `L_graph` term stays a plain L2 until per-edge
-  source confidence is threaded from the graph output). Refuted: a claimed trainer device mismatch (the
-  encoders self-place their sub-outputs).
+- **Then-flagged, now fixed (round 3):** (a) the `Δz_true` train-vs-val mismatch — resolved by using
+  `z@B` for **every** row (one consistent, fold-local target; `program_response` is no longer a training
+  dependency). (b) `edge_confidences` — now **wired**: the per-edge source confidence (edge-feature score
+  column) is threaded `TypedGraphEncoder.forward` → `EGIPGModel.forward` → Trainer → `L_graph`, so the
+  unsourced-reliance term down-weights well-sourced edges (L_graph ~21k → ~18k on real data). (c) the
+  `Subset`-wrapper silent-disable — `Trainer` now resolves `donor_pool` through wrapper chains
+  (`_resolve_donor_pool`). Refuted: a claimed trainer device mismatch (the encoders self-place their
+  sub-outputs).
 
 ## Post-review finding + resolution (adversarial workflow review of this diff)
 

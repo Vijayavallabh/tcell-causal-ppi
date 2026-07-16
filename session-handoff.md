@@ -61,8 +61,11 @@ here by design. **Committed on main this session** (`git log -1`).
   `f_shared`; the stochastic donor term leaking into **val** → train-only; silent no-op when donor profiles
   absent → fail-fast + honest log; `L_graph` batch-size-dependent → mean-reduced; `manual_seed` global
   reseed → dedicated `Generator`s; empty-split crash → clear `ValueError`; DEHead sized from the decoder;
-  de_obs↔pc guard; `DONOR_COLS` reused. **Flagged, not silently changed:** train `A` vs val `z@B`
-  `Δz_true` mismatch (feat-005 modeling decision); `edge_confidences` unwired (unsourced term stays L2).
+  de_obs↔pc guard; `DONOR_COLS` reused.
+- **Round 3 — the 3 round-2-flagged items implemented:** `Δz_true = z@B` for every row (consistent target,
+  `program_response` dropped as a dependency); `edge_confidences` **wired** through the graph → model →
+  `L_graph` (unsourced term now source-aware, ~21k → ~18k); `Subset` silent-disable fixed via
+  `_resolve_donor_pool`.
 - **Verification** — `./init.sh` green, **92 tests** (79 prior + 13 new `test_training.py`, synthetic),
   zero warnings. Real-data Stage A smoke PASSED: expr-only (256×3, invariance 2.15→0.19, val invariance 0)
   and full-graph M1→M2→M3 — all train, back-prop, write atomic checkpoints.
@@ -303,6 +306,10 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
   `DE_CALL_ZSCORE`, `DONOR_INVARIANCE`, `DONOR_INVARIANCE_SAMPLES`, `CHECKPOINTS_ROOT`, `LOGS_ROOT`)
 - `src/tcell_pipeline/training/dataset.py` — `load_donor_pool` + `sample_donor_variants` (real per-donor
   `control_donor_profiles` resampling for the donor-invariance term)
+- Round-3 cross-module edits (edge_confidences wiring): `graph/typed_graph_encoder.py`
+  (`_edges_with_gates`/`encode_subgraph`/`forward` now also return per-edge source confidence),
+  `model.py` (`out["edge_confidences"]`), `graph/run_module2_smoke.py` + `src/tests/test_graph.py` (3-tuple
+  `forward` unpacking + a confidence-alignment assertion)
 - `README.md` (Train the H1 predictor / Stage A section), `docs/specs/2026-07-16-module4-rationale-head.md`
   (Stage A cross-ref), the two gitignored planning docs (§8 / §Loss as-built notes)
 - `feature_list.json` (feat-008 → Module-5 addendum, stays in-progress), `progress.md`, `session-handoff.md`
@@ -429,13 +436,15 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
   donors; penalty on `Var(Δz)` directly — see the Module 5 section). Efficiency upgrade for graph runs: cache
   the donor-independent graph node states so donor variants re-run only readout+decoder (`ponytail:` in
   `trainer._donor_variants`).
-- **Open items flagged by the xhigh review (not yet actioned):** (1) `Δz_true` is the sparse-PCA score `A`
-  for train rows but the `z@B` projection out of fold — a **feat-005** modeling decision (persist the fitted
-  sparse-coder for consistent val targets, or use `z@B` everywhere). (2) `edge_confidences` are never wired
-  into `L_graph`, so its unsourced-reliance term is a plain L2 (thread per-edge source confidence from the
-  graph output to make it source-aware). (3) `getattr(train_ds,'donor_pool',{})` silently disables donor
-  invariance if the dataset is wrapped (e.g. `Subset`). The paralogue HGNC collision (GPR89A/GPR89B→`GPHRA`)
-  surfaced earlier is an upstream **feat-002** id_mapping item.
+- **The 3 items the xhigh review flagged are now implemented (round 3):** (1) `Δz_true` mismatch fixed —
+  **`z@B` for every row** (one consistent fold-local target; `program_response` dropped as a training
+  dependency, and from run_train's required-gate). (2) `edge_confidences` **wired** — per-edge source
+  confidence (edge-feature score column, [0,1]) threaded `TypedGraphEncoder.forward` → `EGIPGModel.forward`
+  (`out["edge_confidences"]`) → Trainer → `L_graph`, so its unsourced term down-weights well-sourced edges
+  (real data ~21k → ~18k). (3) `Subset` silent-disable fixed — `Trainer._resolve_donor_pool` unwraps
+  wrapper `.dataset` chains. The paralogue HGNC collision (GPR89A/GPR89B→`GPHRA`) surfaced earlier is an
+  upstream **feat-002** id_mapping item. Still genuinely open: a shared/nuisance decomposition for donor
+  invariance (needs a nuisance head), and PyG mini-batching + a donor node-state cache for graph throughput.
 - To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity /
   stability + a shallow-VAE basis (the extraction machinery is done and the sparse_pca production loadings
   are frozen — only the study remains).

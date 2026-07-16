@@ -2,9 +2,12 @@
 
 Emits only q_pre features (the leakage fence is enforced downstream by PerturbationEncoder, which
 raises on any q_post column; ``build_encoder_batch`` never assembles one). Supervision:
-  - ``delta_z_true``: the precomputed program score A for train rows (from program_response, the exact
-    target the frozen basis was fit to); for rows outside the training fold (val/cal/challenge, which
-    have no A) it is the z-score projected onto the frozen loadings, ``z @ B``.
+  - ``delta_z_true``: the z-score projected onto the frozen loadings, ``z @ B``, for EVERY row. Using one
+    consistent definition across splits matters: the earlier design used the sparse-PCA score A from
+    program_response for train rows but ``z @ B`` for out-of-fold rows (val/cal/challenge, which have no
+    A), so the model was trained against A yet its validation loss measured a different quantity — the
+    metric driving early-stopping/best-checkpoint wasn't the trained objective. ``z @ B`` is fold-local
+    (B is fit on train rows only) and reproducible from B alone.
   - ``delta_x_true``: the per-gene z-score row from the sparse DE layer.
 """
 from __future__ import annotations
@@ -67,7 +70,6 @@ class PerturbationDataset(Dataset):
         obs_path: Path = config.DE_OBS_PATH,
         var_path: Path = config.DE_VAR_PATH,
         basis_path: Path = config.PROGRAM_LOADINGS_PATH,
-        response_path: Path = config.PROGRAM_RESPONSE_PATH,
         zscore_npz: Path | None = None,
         donor_profiles_path: Path = config.CONTROL_DONOR_PROFILES_PATH,
     ) -> None:
@@ -86,10 +88,7 @@ class PerturbationDataset(Dataset):
 
         gene_names = pd.read_parquet(var_path, columns=["gene_name"])["gene_name"].tolist()
         B, _ = load_program_basis(basis_path, gene_order=gene_names)
-        self.B = torch.from_numpy(B)  # (G, K), frozen loadings for out-of-fold projection
-        pr = pd.read_parquet(response_path)
-        prog_cols = [c for c in pr.columns if c.startswith(config.PROGRAM_COL_PREFIX)]
-        self._A = dict(zip(pr["row_index"].to_numpy(), pr[prog_cols].to_numpy(dtype="float32")))
+        self.B = torch.from_numpy(B)  # (G, K), frozen fold-local loadings; delta_z_true = z @ B for all rows
         self._zscore = sp.load_npz(zscore_npz or zscore_path()).tocsr()
         self.donor_pool, self.donor_mean = load_donor_pool(donor_profiles_path)
 
@@ -100,8 +99,7 @@ class PerturbationDataset(Dataset):
         ri = int(self.row_index[i])
         batch = build_encoder_batch(self.pc.iloc[[i]], self.obs.iloc[[i]])
         dx = torch.from_numpy(self._zscore[ri].toarray().reshape(-1).astype("float32"))  # (G,)
-        a = self._A.get(ri)
-        dz = torch.tensor(a) if a is not None else dx @ self.B                            # (K,)
+        dz = dx @ self.B                                                                  # (K,) z@B, consistent across splits
         target = str(self.pc["hgnc_symbol"].iloc[i])
         condition = str(self.pc["culture_condition"].iloc[i])
         return batch, target, condition, dz, dx, ri

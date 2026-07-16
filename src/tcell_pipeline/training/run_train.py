@@ -30,7 +30,7 @@ def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, se
         n_max=None, expr_only=False, donor_invariance=config.DONOR_INVARIANCE) -> dict | None:
     torch.set_num_threads(1)  # many-core box: tiny per-subgraph GNN ops thrash the default thread pool
     required = [config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_OBS_PATH,
-                config.DE_VAR_PATH, config.PROGRAM_LOADINGS_PATH, config.PROGRAM_RESPONSE_PATH, zscore_path()]
+                config.DE_VAR_PATH, config.PROGRAM_LOADINGS_PATH, zscore_path()]
     if donor_invariance:  # fail fast rather than silently disabling the donor term when profiles are absent
         required.append(config.CONTROL_DONOR_PROFILES_PATH)
     missing = [str(p) for p in required if not p.exists()]

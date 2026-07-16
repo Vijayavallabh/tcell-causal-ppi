@@ -53,10 +53,16 @@ loss modules (calibration + Module 4 rationale) are fitted *after* the H1 freeze
   degenerate `f_shared` (above); stochastic donor term leaking into **val** → now train-only; silent no-op
   when donor profiles absent → fail-fast + honest log; `L_graph` batch-size-dependent → mean-reduced;
   `torch.manual_seed` global reseed → dedicated `Generator`s; empty-split crash → clear `ValueError`;
-  DEHead sized from `model.decoder.h_do_dim`; de_obs↔pc row-count guard; `DONOR_COLS` reused. **Flagged
-  (not silently changed):** train `A` vs val `z@B` `Δz_true` mismatch is a feat-005 modeling decision;
-  `edge_confidences` still unwired (unsourced `L_graph` term stays a plain L2). Refuted: a false device
-  mismatch (encoders self-place).
+  DEHead sized from `model.decoder.h_do_dim`; de_obs↔pc row-count guard; `DONOR_COLS` reused.
+- **Round 3 — the 3 items round 2 flagged are now implemented:** (a) **`Δz_true` mismatch fixed** — `z@B`
+  for **every** row (one consistent fold-local target; `program_response` no longer a training dependency,
+  dropped from the dataset + the run_train required-gate). (b) **`edge_confidences` wired** — per-edge
+  source confidence (edge-feature score column, [0,1]) threaded `TypedGraphEncoder.forward` →
+  `EGIPGModel.forward` (`out["edge_confidences"]`) → Trainer → `L_graph`, so its unsourced term now
+  down-weights well-sourced edges (real data: L_graph ~21k → ~18k). (c) **`Subset` silent-disable fixed** —
+  `Trainer._resolve_donor_pool` walks wrapper `.dataset` chains. Verified: full-graph training back-props
+  through the confidence-weighted `L_graph` (exit 0); `test_graph` checks confidences aligned per-edge to
+  gates + clipped to [0,1]; `./init.sh` green at 92 tests. Refuted (round 2): a false device mismatch.
 - **Remaining for feat-008 done:** the Stage-B calibration + rationale **fit loops** (both loss modules
   exist, no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines) still not-started.
 - Design + as-built: `docs/specs/2026-07-16-module5-training.md`.

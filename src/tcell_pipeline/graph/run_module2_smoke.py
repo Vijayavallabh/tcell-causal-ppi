@@ -64,7 +64,7 @@ def run() -> bool:
 
     enc = TypedGraphEncoder(graph, gene_to_idx).eval().to(device)
     with torch.no_grad():
-        h_graph, edge_gates = enc(targets, conditions, h_do)
+        h_graph, edge_gates, _ = enc(targets, conditions, h_do)
     finite = bool(torch.isfinite(h_graph).all())
     print(f"\nh_graph {tuple(h_graph.shape)} on {device}: finite={finite}")
     for rel, gs in edge_gates.items():

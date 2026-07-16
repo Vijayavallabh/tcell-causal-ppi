@@ -52,9 +52,6 @@ def _write_fixtures(tmp_path) -> dict:
     B = rng.standard_normal((_G, _K)).astype(np.float32)
     loadings = pd.DataFrame(B, columns=[f"program_{k}" for k in range(_K)])
     loadings.insert(0, "gene_name", genes)
-    A = rng.standard_normal((3, _K)).astype(np.float32)
-    resp = pd.DataFrame(A, columns=[f"program_{k}" for k in range(_K)])
-    resp.insert(0, "row_index", [0, 1, 2])
     z = rng.standard_normal((n, _G)).astype(np.float32)
     split = pd.DataFrame({"hgnc_symbol": ["G0", "G1", "G3", "G4"],
                           "role": ["train", "train", "val", "challenge"]})
@@ -68,7 +65,7 @@ def _write_fixtures(tmp_path) -> dict:
     p = {
         "split_path": tmp_path / "split.csv", "pc_path": tmp_path / "pc.parquet",
         "obs_path": tmp_path / "obs.parquet", "var_path": tmp_path / "var.parquet",
-        "basis_path": tmp_path / "loadings.parquet", "response_path": tmp_path / "resp.parquet",
+        "basis_path": tmp_path / "loadings.parquet",
         "zscore_npz": tmp_path / "zscore.npz", "donor_profiles_path": tmp_path / "donor_profiles.parquet",
     }
     split.to_csv(p["split_path"], index=False)
@@ -76,7 +73,6 @@ def _write_fixtures(tmp_path) -> dict:
     obs.to_parquet(p["obs_path"], index=False)
     pd.DataFrame({"gene_name": genes}).to_parquet(p["var_path"], index=False)
     loadings.to_parquet(p["basis_path"], index=False)
-    resp.to_parquet(p["response_path"], index=False)
     sp.save_npz(p["zscore_npz"], sp.csr_matrix(z))
     donor_profiles.to_parquet(p["donor_profiles_path"], index=False)
     return p
@@ -174,7 +170,7 @@ def test_lambda_mixture_learnable():
     assert dec.gate.weight.grad is not None and torch.isfinite(dec.gate.weight.grad).all()
 
 
-def test_dataset_keys_no_qpost_and_dz_sources(tmp_path):
+def test_dataset_keys_no_qpost_and_consistent_dz(tmp_path):
     paths = _write_fixtures(tmp_path)
     ds = PerturbationDataset("train", **paths)
     assert len(ds) == 3                                  # rows 0,1,2 (targets G0,G1,G0)
@@ -182,9 +178,10 @@ def test_dataset_keys_no_qpost_and_dz_sources(tmp_path):
     assert dz.shape == (_K,) and dx.shape == (_G,)
     assert target == "G0" and cond == "Rest" and ri == 0
     assert set(batch) & set(config.Q_POST_COLS) == set()  # leakage fence: q_post never enters features
+    assert torch.allclose(dz, dx @ ds.B)                 # train dz = z@B ...
     val_ds = PerturbationDataset("val", **paths)
     _, _, _, dz_val, dx_val, _ = val_ds[0]
-    assert torch.allclose(dz_val, dx_val @ val_ds.B)     # out-of-fold role projects z onto frozen B
+    assert torch.allclose(dz_val, dx_val @ val_ds.B)     # ...same z@B definition out of fold (was A vs z@B)
 
 
 def test_trainer_runs_two_epochs_and_checkpoints(tmp_path):

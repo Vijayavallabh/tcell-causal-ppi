@@ -42,11 +42,12 @@ class EGIPGModel(nn.Module):
     def forward(self, batch: dict, target_genes: list[str], conditions: list[str]) -> dict:
         h_do = self.perturbation_encoder(batch)
         if self.graph_encoder is not None:
-            h_graph, edge_gates = self.graph_encoder(target_genes, conditions, h_do)
+            h_graph, edge_gates, edge_confidences = self.graph_encoder(target_genes, conditions, h_do)
         else:
-            h_graph, edge_gates = None, None
+            h_graph, edge_gates, edge_confidences = None, None, None
         out = self.decoder(h_do, h_graph)
         out["h_do"] = h_do
         out["h_graph"] = h_graph
         out["edge_gates"] = edge_gates
+        out["edge_confidences"] = edge_confidences  # per-edge source confidence for L_graph's unsourced term
         return out

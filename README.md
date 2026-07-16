@@ -561,8 +561,10 @@ Module 5 makes the four model modules trainable (README §Loss function; walkthr
 fits Module 1+2+3 with `StageALoss` — Huber response (program + gene) + a focal-BCE DE up/down head +
 **donor-invariance** + an edge-gate sparsity/unsourced regulariser — over AdamW with grad-clipping, early
 stopping, and atomic best/last checkpoints to `data/checkpoints/`. Supervision is q_pre-only
-(`PerturbationDataset` enforces the leakage fence); `Δz_true` is the fold-local `program_response` score
-for train rows and the `z@B` projection out of fold. The donor-invariance term is a **real signal**: the
+(`PerturbationDataset` enforces the leakage fence); `Δz_true = z@B` (the response projected onto the frozen
+fold-local loadings) consistently for every row, so train and validation measure the same quantity. The
+graph regulariser's unsourced-reliance term reads the **real per-edge source confidence** (threaded from
+the graph encoder), down-weighting well-sourced edges. The donor-invariance term is a **real signal**: the
 mart's `donor_pc` is only the per-condition mean, but the 4 real donors survive in
 `control_donor_profiles.parquet`, so the trainer (in the train step) resamples the encoder over distinct
 real donors and penalises the **variance of the prediction `Δz` across them directly** — forcing the

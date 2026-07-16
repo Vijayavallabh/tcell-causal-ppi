@@ -17,6 +17,20 @@ from tcell_pipeline.training.dataset import PerturbationDataset, sample_donor_va
 from tcell_pipeline.training.losses import StageALoss
 
 
+def _resolve_donor_pool(dataset):
+    """(donor_pool, donor_mean) for ``dataset``, unwrapping Subset/wrapper chains via ``.dataset`` so a
+    wrapped training set doesn't silently disable donor invariance. Empty pool if none is found."""
+    seen: set = set()
+    ds = dataset
+    while ds is not None and id(ds) not in seen:
+        seen.add(id(ds))
+        pool = getattr(ds, "donor_pool", None)
+        if pool is not None:
+            return pool, getattr(ds, "donor_mean", None)
+        ds = getattr(ds, "dataset", None)
+    return {}, None
+
+
 class Trainer:
     def __init__(
         self,
@@ -52,8 +66,7 @@ class Trainer:
         # Donor invariance re-runs the encoder under the real per-donor control profiles (train_ds owns
         # the pool; the vectors are split-independent). Off when the pool is empty or <2 samples.
         self.donor_samples = donor_samples
-        self.donor_pool = getattr(train_ds, "donor_pool", {}) or {}
-        self.donor_mean = getattr(train_ds, "donor_mean", None)
+        self.donor_pool, self.donor_mean = _resolve_donor_pool(train_ds)  # unwraps Subset/wrapper chains
         self._donor_on = bool(donor_invariance and donor_samples >= 2 and self.donor_pool)
         # dedicated generators (donor resampling + a seeded DataLoader shuffle) rather than a process-global
         # torch.manual_seed, so constructing a Trainer never reseeds the caller's global RNG
@@ -96,7 +109,8 @@ class Trainer:
                 # donor variants are a stochastic resample — TRAIN only, so the val total stays
                 # deterministic for frozen weights and early-stopping/best-checkpoint aren't RNG-driven
                 dz_variants = self._donor_variants(batch, targets, conditions) if (self._donor_on and train) else None
-                comps = self.loss(out, dz_true, dx_true, dz_variants=dz_variants)
+                comps = self.loss(out, dz_true, dx_true, dz_variants=dz_variants,
+                                  edge_confidences=out.get("edge_confidences"))
                 if train:
                     self.opt.zero_grad()
                     comps["total"].backward()
