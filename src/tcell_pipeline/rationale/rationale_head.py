@@ -83,14 +83,19 @@ class RationaleHead(nn.Module):
 
     def _select(self, importance: dict):
         """Top-k edges by importance across ALL relations -> (selection_mask, S sorted desc)."""
-        scored = []  # ranking values are detached; the differentiable importance stays in the dict
-        for rel, tensor in importance.items():
-            vals = tensor.detach()
-            scored.extend((float(vals[i]), rel, i) for i in range(vals.numel()))
-        scored.sort(key=lambda t: t[0], reverse=True)
         mask = {rel: torch.zeros(t.numel(), dtype=torch.bool) for rel, t in importance.items()}
+        rels = [rel for rel, t in importance.items() if t.numel()]
+        if not rels:
+            return mask, []
+        # torch.topk over the pooled edges; ranking uses detached values, the differentiable
+        # importance stays in the dict. rel_id/local map each pooled position back to (relation, edge).
+        flat = torch.cat([importance[rel].detach() for rel in rels])
+        rel_id = torch.cat([torch.full((importance[rel].numel(),), j, dtype=torch.long) for j, rel in enumerate(rels)])
+        local = torch.cat([torch.arange(importance[rel].numel()) for rel in rels])
+        vals, idx = torch.topk(flat, min(self.top_k, flat.numel()))  # sorted highest-first
         selected = []
-        for val, rel, i in scored[: self.top_k]:
+        for v, j, i in zip(vals.tolist(), rel_id[idx].tolist(), local[idx].tolist()):
+            rel = rels[j]
             mask[rel][i] = True
-            selected.append((rel, i, val))  # (relation, edge index, importance), highest first
+            selected.append((rel, i, v))  # (relation, edge index, importance), highest first
         return mask, selected

@@ -46,6 +46,14 @@ by design — modules + loss + faithfulness eval only). **Committed on main this
   sufficiency<matched-random, necessity>matched-random, labelled `predictive_rationale`).
 - **Perf** — this 64-core box (shared with CVAT workers) thrashes torch's thread pool on tiny per-subgraph
   GNN ops (2.5s→20ms/encode), so the CPU-only Module-4 tests + smoke pin `torch.set_num_threads(1)`.
+- **Post-review fixes (xhigh `/code-review` — 13 verified findings, 3 refuted; all confirmed resolved):**
+  (correctness) `FaithfulnessTester` forces encoder+decoder **eval** on every deletion re-run — `no_grad`
+  suppresses gradients but not DropEdge, so the fixed-model scores were stochastic on a train-mode encoder
+  (+ determinism regression test, caller state restored); `structural_ood_audit` sparsity **PP-scoped** to
+  match its connectivity metrics; tautological audit test replaced with an independent-count + component-
+  monotonicity check. (cleanup) optional cached `dz_full` via public `delta_z()`, `torch.topk` selection,
+  DRY `_PP_RELATIONS`, vectorised `_pp_edges`, smoke on the public API. Kept as spec-mandated: `edge_attrs`
+  param + `subgraph_edges` output. `./init.sh` **79 tests**; smoke re-run PASSED.
 - **Remaining (feat-008):** the training-loss OPTIMIZATION loop + train/calibration loops (loss module exists,
   no fit loop); feat-007 not-started. FaithfulnessTester + MatchedRandomSampler are also the machinery
   **feat-012** (predictive-rationale audit) will run on the trained model.
@@ -203,8 +211,8 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **78 passed** on torch cu126 (69 prior + 9 new Module-4 `test_rationale.py`); compileall clean |
-| Module 4 unit tests | `pytest src/tests/test_rationale.py` | Pass | 9 passed (synthetic): imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation match, structural_ood dict, loss components+gradients, expr-only→empty rationale, label predictive_rationale not causal |
+| Compile + tests | `./init.sh` | Pass | **79 passed** on torch cu126 (69 prior + 10 Module-4 `test_rationale.py`, incl. the post-review determinism test); compileall clean |
+| Module 4 unit tests | `pytest src/tests/test_rationale.py` | Pass | 10 passed (synthetic): imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation match, structural_ood (deleted-fraction vs independent count + component monotonicity), loss components+gradients, expr-only→empty rationale, label predictive_rationale not causal, faithfulness determinism under active DropEdge |
 | Module 4 real-data smoke | `python src/tcell_pipeline/rationale/run_module4_smoke.py` | Pass | real PPI graph, A1BG neighbourhood (33,754 edges, |S|=15): sufficiency<matched-random, necessity>matched-random, structural-OOD audit, labelled `predictive_rationale` (not causal) |
 | Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
 | Module 3 real-data smoke | `python src/tcell_pipeline/run_module3_smoke.py` | Pass | fold-local SVD basis on 21,262 real train rows (18s) → B(10282,128); M1→M2→M3 on 4 real perturbations finite, λ∈[0.46,0.55], σ>0; expr-only λ==0 |

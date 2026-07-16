@@ -30,7 +30,6 @@ from tcell_pipeline.rationale import (  # noqa: E402
     FaithfulnessTester,
     MatchedRandomSampler,
     RationaleHead,
-    complement,
 )
 
 
@@ -67,14 +66,12 @@ def run() -> bool:
     n_edges = sum(int(g.numel()) for g in r["gates"].values())
 
     tester = FaithfulnessTester(genc, model.decoder)
-    dz_full = tester._dz(sub, cond, h_do)
-    suff_dist = lambda m: float((tester._dz(sub, cond, h_do, m) - dz_full).norm())
-    nec_dist = lambda m: float((tester._dz(sub, cond, h_do, complement(m)) - dz_full).norm())
-
-    suff, nec = suff_dist(mask), nec_dist(mask)
+    dz_full = tester.delta_z(sub, cond, h_do)  # mask-invariant; compute once, reuse across all controls
+    suff = tester.sufficiency(sub, cond, h_do, mask, dz_full=dz_full)
+    nec = tester.necessity(sub, cond, h_do, mask, dz_full=dz_full)
     controls = MatchedRandomSampler(n_controls=min(config.N_MATCHED_CONTROLS, 30)).sample(mask)
-    rand_suff = sum(suff_dist(c) for c in controls) / len(controls)
-    rand_nec = sum(nec_dist(c) for c in controls) / len(controls)
+    rand_suff = sum(tester.sufficiency(sub, cond, h_do, c, dz_full=dz_full) for c in controls) / len(controls)
+    rand_nec = sum(tester.necessity(sub, cond, h_do, c, dz_full=dz_full) for c in controls) / len(controls)
     audit = tester.structural_ood_audit(sub, mask)
 
     label_ok = rat["label"] == RATIONALE_LABEL and "causal" not in rat["label"]

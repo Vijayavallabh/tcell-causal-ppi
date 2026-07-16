@@ -35,6 +35,16 @@ design — modules + loss + faithfulness eval only).
   sufficiency<matched-random, necessity>matched-random, labelled `predictive_rationale`).
 - **Perf note:** this 64-core box (shared with CVAT workers) thrashes torch's thread pool on the tiny
   per-subgraph GNN ops (2.5s→20ms per encode); the CPU-only Module-4 tests + smoke pin `torch.set_num_threads(1)`.
+- **Post-review fixes (xhigh `/code-review` — 13 verified findings, 3 refuted; all confirmed resolved):**
+  (correctness) `FaithfulnessTester` now forces the encoder+decoder into **eval** on every deletion re-run —
+  `@torch.no_grad` suppresses gradients but NOT DropEdge, so on a train-mode encoder the "fixed-model"
+  sufficiency/necessity scores were **stochastic** (+ a determinism regression test; caller's train/eval
+  state restored); `structural_ood_audit` sparsity is now **PP-scoped** to match its degree/component/hop
+  metrics; the tautological audit test now checks the deleted-fraction against an **independent count** +
+  component monotonicity. (cleanup) optional cached `dz_full` via a public `delta_z()`, `torch.topk` in
+  `_select` (was a per-edge `float()` sync + full sort on ~33k edges), DRY `_PP_RELATIONS`, vectorised
+  `_pp_edges`, smoke on the public API. Kept as spec-mandated: `edge_attrs` param + `subgraph_edges` output.
+  `./init.sh` green at **79 tests** (+1 determinism); Module 4 real-data smoke re-run **PASSED**.
 - **Remaining for feat-008 done:** the training-loss OPTIMIZATION loop + train/calibration loops (the loss
   module exists, no fit loop yet); feat-007 graph baselines still not-started. The FaithfulnessTester +
   MatchedRandomSampler are also the machinery feat-012 (predictive-rationale audit) will run on the trained model.

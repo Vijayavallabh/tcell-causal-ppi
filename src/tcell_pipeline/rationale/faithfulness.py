@@ -18,9 +18,7 @@ from collections import deque
 import torch
 
 from tcell_pipeline.graph.graph_builder import PROTEIN
-from tcell_pipeline.rationale.rationale_head import RELATIONS, complement, edge_index_of
-
-_PP_RELATIONS = ("physical_ppi", "co_complex", "functional_assoc")
+from tcell_pipeline.rationale.rationale_head import _PP_RELATIONS, complement, edge_index_of
 
 
 class FaithfulnessTester:
@@ -29,46 +27,56 @@ class FaithfulnessTester:
         self.decoder = decoder
 
     @torch.no_grad()
-    def _dz(self, sub, condition, h_do, keep_mask=None) -> torch.Tensor:
-        r = self.graph_encoder.encode_subgraph(sub, condition, h_do, keep_mask=keep_mask)
-        out = self.decoder(h_do.reshape(1, -1), r["h_graph"].reshape(1, -1))
-        return out["delta_z"].reshape(-1)
+    def delta_z(self, sub, condition, h_do, keep_mask=None) -> torch.Tensor:
+        """Program delta under an optional edge keep-mask. Forces the encoder/decoder into eval so the
+        'fixed-model' contract holds: ``@torch.no_grad`` suppresses gradients but NOT DropEdge, so
+        without eval each re-encode would randomly drop edges and make the deletion scores stochastic.
+        The prior train/eval state is restored, so this never mutates the caller's model."""
+        enc_train, dec_train = self.graph_encoder.training, self.decoder.training
+        self.graph_encoder.eval()
+        self.decoder.eval()
+        try:
+            r = self.graph_encoder.encode_subgraph(sub, condition, h_do, keep_mask=keep_mask)
+            return self.decoder(h_do.reshape(1, -1), r["h_graph"].reshape(1, -1))["delta_z"].reshape(-1)
+        finally:
+            self.graph_encoder.train(enc_train)
+            self.decoder.train(dec_train)
 
-    def sufficiency(self, sub, condition, h_do, mask: dict) -> float:
-        dz_full = self._dz(sub, condition, h_do)
-        dz_kept = self._dz(sub, condition, h_do, mask)               # keep only the rationale edges
+    def sufficiency(self, sub, condition, h_do, mask: dict, dz_full: torch.Tensor | None = None) -> float:
+        if dz_full is None:  # mask-invariant; pass it in to skip the recompute across matched-random controls
+            dz_full = self.delta_z(sub, condition, h_do)
+        dz_kept = self.delta_z(sub, condition, h_do, mask)               # keep only the rationale edges
         return float((dz_kept - dz_full).norm())
 
-    def necessity(self, sub, condition, h_do, mask: dict) -> float:
-        dz_full = self._dz(sub, condition, h_do)
-        dz_removed = self._dz(sub, condition, h_do, complement(mask))  # keep everything except S
+    def necessity(self, sub, condition, h_do, mask: dict, dz_full: torch.Tensor | None = None) -> float:
+        if dz_full is None:
+            dz_full = self.delta_z(sub, condition, h_do)
+        dz_removed = self.delta_z(sub, condition, h_do, complement(mask))  # keep everything except S
         return float((dz_removed - dz_full).norm())
 
     def structural_ood_audit(self, sub, mask: dict) -> dict:
-        """Graph-structure distortion from deleting S, before vs after (protein-protein connectivity)."""
+        """Graph-structure distortion from deleting S, before vs after. Everything reported here —
+        degree, components, hop-distance AND the deleted-fraction ``sparsity`` — is scoped to the
+        protein-protein edges, so the sparsity signal is consistent with the connectivity signals
+        (membership edges never enter the PP structure graph)."""
         n = int(sub[PROTEIN].x.shape[0])
-        total = sum(int(edge_index_of(sub, rel).shape[1]) for rel in RELATIONS)
-        removed_frac = (self._removed_count(mask) / total) if total else 0.0
+        total = sum(int(edge_index_of(sub, rel).shape[1]) for rel in _PP_RELATIONS)
+        removed = sum(int(mask[rel].sum()) for rel in _PP_RELATIONS if rel in mask) if mask else 0
+        removed_frac = (removed / total) if total else 0.0
         return {
             "before": _structure(n, self._pp_edges(sub, None), removed_frac=0.0),
             "after": _structure(n, self._pp_edges(sub, mask), removed_frac=removed_frac),
         }
 
     @staticmethod
-    def _removed_count(mask: dict) -> int:
-        return int(sum(int(m.sum()) for m in mask.values())) if mask else 0
-
-    @staticmethod
     def _pp_edges(sub, mask) -> list[tuple[int, int]]:
         """Undirected protein-protein edge list, optionally dropping the masked (rationale) edges."""
         edges = []
         for rel in _PP_RELATIONS:
-            ei = edge_index_of(sub, rel)
             drop = mask.get(rel) if mask else None
-            for i in range(ei.shape[1]):
-                if drop is not None and bool(drop[i]):
-                    continue
-                edges.append((int(ei[0, i]), int(ei[1, i])))
+            for i, (u, v) in enumerate(edge_index_of(sub, rel).t().tolist()):
+                if drop is None or not bool(drop[i]):
+                    edges.append((u, v))
         return edges
 
 

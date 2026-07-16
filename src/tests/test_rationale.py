@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 import torch
 
 torch.set_num_threads(1)  # many-core box: the tiny per-subgraph GNN ops thrash the thread pool otherwise
@@ -24,7 +25,10 @@ from tcell_pipeline.rationale import (
     RationaleHead,
     RationaleLoss,
     complement,
+    edge_index_of,
 )
+
+_PP = ("physical_ppi", "co_complex", "functional_assoc")
 
 _ZERO_PLM = PluggableEmbeddingStore(config.INTERMEDIATE_ROOT / "nope.parquet", config.PLM_EMBED_DIM)
 _ZERO_PIN = PluggableEmbeddingStore(config.INTERMEDIATE_ROOT / "nope.parquet", config.PINNACLE_EMBED_DIM)
@@ -142,11 +146,33 @@ def test_matched_random_matches_size_and_relations():
 def test_structural_ood_audit_returns_dict():
     s = _setup()
     tester = FaithfulnessTester(s["genc"], s["decoder"])
-    audit = tester.structural_ood_audit(s["sub"], s["rat"]["selection_mask"])
+    mask = s["rat"]["selection_mask"]
+    audit = tester.structural_ood_audit(s["sub"], mask)
     assert set(audit) == {"before", "after"}
     for side in ("before", "after"):
         assert {"degree_dist", "component_count", "sparsity", "hop_distance"} <= set(audit[side])
-    assert audit["after"]["sparsity"] >= audit["before"]["sparsity"]  # deletion only removes edges
+    # sparsity is PP-scoped and must equal the INDEPENDENTLY-counted removed-PP fraction (real coverage
+    # of the removed-fraction math — not the old `after >= 0` tautology)
+    total_pp = sum(int(edge_index_of(s["sub"], rel).shape[1]) for rel in _PP)
+    removed_pp = sum(int(mask[rel].sum()) for rel in _PP)
+    assert audit["before"]["sparsity"] == 0.0
+    assert audit["after"]["sparsity"] == pytest.approx(removed_pp / total_pp)
+    # deleting edges can only fragment, never merge, connected components
+    assert audit["after"]["component_count"] >= audit["before"]["component_count"]
+
+
+def test_faithfulness_is_deterministic_under_active_dropout():
+    # _setup leaves the encoder in train mode (DropEdge p=0.1 active). The fixed-model contract requires
+    # FaithfulnessTester to force eval, so two identical deletion re-runs must match EXACTLY; without the
+    # eval-forcing fix, DropEdge randomness makes them differ. Also checks the caller's mode is restored.
+    s = _setup()
+    assert s["genc"].training  # regression guard: _setup never eval()s the encoder
+    tester = FaithfulnessTester(s["genc"], s["decoder"])
+    mask = s["rat"]["selection_mask"]
+    a = tester.sufficiency(s["sub"], s["cond"], s["h_do"], mask)
+    b = tester.sufficiency(s["sub"], s["cond"], s["h_do"], mask)
+    assert a == b                    # exact: no DropEdge noise leaks into the frozen re-encode
+    assert s["genc"].training        # eval state restored — the tester didn't mutate the caller's encoder
 
 
 def test_loss_components_computable_with_gradients():
