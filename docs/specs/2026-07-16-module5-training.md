@@ -48,11 +48,18 @@ rationale objective and is **not** reimplemented here.
    layer is not part of the `__getitem__` contract. **Focal** BCE (`γ = 2`) so the abundant non-DE genes
    don't drown the rare affected ones. Numerically stable (`binary_cross_entropy_with_logits`,
    both-class modulation `(1 − p_t)^γ`). `lambda_DE = 0.1`.
-3. **Donor invariance.** `f_shared = Linear(K, K)`; pull the shared program component together across
-   rows sharing `(target, condition)` — the same perturbation under different donors (centroid form,
-   equivalent minimiser to the pairwise `Σ_{d≠d'}‖·‖²`). `lambda_inv = 0.1`. **KNOWN CEILING** — see
-   below: Module 0 averages donor PCs to condition level, so this term is *vacuously satisfied* (inert)
-   on the current marts.
+3. **Donor invariance (real per-donor resampling).** `f_shared = Linear(K, K)` extracts the
+   donor-invariant component of `Δz`. The training mart's `donor_pc` is only the *mean* of the real
+   per-donor control profiles, but the individual donor vectors survive in
+   `control_donor_profiles.parquet` (**4 real donors** × 3 conditions, verified). So each step the
+   Trainer re-runs the encoder under `DONOR_INVARIANCE_SAMPLES` distinct real donor PC vectors per row
+   (donor resampling), and `L_invariance` penalises the **variance of `f_shared(Δz)` across those
+   donors** — forcing the donor-invariant component constant while the rest of `Δz` stays free to carry
+   donor-specific nuisance (`Δz = Δz_shared + Δz_nuisance(d)`, §8.2 item 4). This is a **real, dense
+   signal** — non-zero on every example — and it *optimises*: on a real 128-example run the term falls
+   1.30 → 0.25 in one epoch. The donor forwards run with the encoder in eval so DropEdge doesn't
+   contaminate the donor signal (gradients still flow). `lambda_inv = 0.1`; off (or no donor pool) → a
+   clean no-op, never a spurious firing.
 4. **Graph regularisation.** From `edge_gates`: `graph_λ_sparse · Σ|ᾱ| + graph_λ_unsrc · Σ(1 − conf)·ᾱ²`.
    The sparsity term drives sparse condition gates; the second penalises reliance on low-confidence
    edges. The model output carries only the gates, so `conf` defaults to 0 (every edge treated as
@@ -105,7 +112,8 @@ expression-only nested variant (`graph_encoder=None`, `λ` pinned to 0). Pins `t
 
 `LR = 1e-3`, `WEIGHT_DECAY = 1e-5`, `MAX_EPOCHS = 100`, `EARLY_STOP_PATIENCE = 10`, `BATCH_SIZE = 64`,
 `GRAD_CLIP = 1.0`, `HUBER_DELTA = 1.0`, `FOCAL_GAMMA = 2.0`, `LAMBDA_DE = 0.1`, `LAMBDA_INV = 0.1`,
-`LAMBDA_GRAPH = 0.01`, `LAMBDA_GENE = 0.5`, `DE_CALL_ZSCORE = 1.645`, `CHECKPOINTS_ROOT`, `LOGS_ROOT`.
+`LAMBDA_GRAPH = 0.01`, `LAMBDA_GENE = 0.5`, `DE_CALL_ZSCORE = 1.645`, `DONOR_INVARIANCE = True`,
+`DONOR_INVARIANCE_SAMPLES = 2`, `CHECKPOINTS_ROOT`, `LOGS_ROOT`.
 
 ## Public interface
 
@@ -115,39 +123,47 @@ expression-only nested variant (`graph_encoder=None`, `λ` pinned to 0). Pins `t
 
 ## Verification (synthetic tests + real-data smoke)
 
-- `src/tests/test_training.py` (8 synthetic tests, tiny fixture marts + zero embedding stores):
-  Stage A component shapes + gradient flow (reaching `h_do`, the DE head, `f_shared`), the graph-gate
-  penalty (confidence lowers the unsourced term), Stage B Gaussian-NLL + gradient, `DEHead` probabilities
-  in `[0,1]`, the learnable `λ` mixture, the dataset contract (correct keys, the **q_post fence**,
-  `program_response` vs out-of-fold `z@B` projection), a 2-epoch checkpointed run, and a parameter-update
-  check. Pins `torch.set_num_threads(1)`.
-- Real-data orchestrator smoke: `run_train --expr-only --n-max 256 --epochs 3` and the full-graph
-  `--n-max 4 --epochs 1` (exercises `L_graph` on real `edge_gates`) both train, back-prop, and write
-  atomic checkpoints.
-- `./init.sh` green at **87 tests** (79 prior + 8 new).
+- `src/tests/test_training.py` (11 synthetic tests, tiny fixture marts incl. a donor-profiles fixture +
+  zero embedding stores): Stage A component shapes + gradient flow (reaching `h_do`, the DE head, and
+  `f_shared` via the donor variants), the graph-gate penalty (confidence lowers the unsourced term),
+  Stage B Gaussian-NLL + gradient, `DEHead` probabilities in `[0,1]`, the learnable `λ` mixture, the
+  dataset contract (correct keys, the **q_post fence**, `program_response` vs out-of-fold `z@B`
+  projection), the **donor pool + resampler** (distinct real donors), a 2-epoch checkpointed run, a
+  parameter-update check, and the **real donor-invariance signal** (non-zero + trains `f_shared` when on,
+  a clean 0 when off). Pins `torch.set_num_threads(1)`.
+- Real-data orchestrator smoke: `run_train --expr-only --n-max 128 --epochs 2` trains, back-props, writes
+  atomic checkpoints, and the **real 4-donor invariance term falls 1.30 → 0.25 in one epoch**; the
+  full-graph `--n-max 4 --epochs 1 --no-donor-invariance` exercises `L_graph` on real `edge_gates`.
+- `./init.sh` green at **90 tests** (79 prior + 11 new).
 
-## Post-review finding (adversarial workflow review of this diff)
+## Post-review finding + resolution (adversarial workflow review of this diff)
 
 A 3-dimension adversarial review (loss-math / data-leakage / training-loop) → per-finding verify
 produced **1 confirmed finding**, 1 refuted, loss-math clean:
 
-- **Confirmed (documented, not silently patched): `L_invariance` is inert on the real marts.** Module 0
-  aggregates donor PCs to condition-level means (`control_profiles`), so there are no per-donor rows and
-  the spec's donor-pair objective is *vacuously satisfied* — there is no donor variation left to be
-  invariant to. The `(target, condition)` key is the correct donor-invariance grouping; the sole artefact
-  is an upstream `id_mapping` quirk where two paralogues share an HGNC symbol (GPR89A/GPR89B → `GPHRA`),
-  the only groups that ever fire (6 of 33,983 rows, negligible at `lambda_inv`). That collision is a
-  feat-002 concern, **not** a loss defect — "fixing" it in the loss would paper over the wrong module.
-  Resolution: the machinery is kept (spec-required, forward-compatible, unit-tested on synthetic donor
-  groups) with a `ponytail:` ceiling marker; it activates correctly the moment a per-donor axis is
-  reintroduced upstream (Module 0 + group on `(target, condition, donor)`).
+- **Confirmed → fixed properly, not just documented: the original `L_invariance` (group rows by
+  `(target, condition)`) was inert.** The mart's `donor_pc` is the condition-level *mean* of the donors
+  (`control_profiles`), so grouping the mart rows found no donor pair and the term was ~always zero (the
+  only firings were paralogue HGNC collisions like GPR89A/GPR89B → `GPHRA`, an upstream feat-002 artefact).
+  **Intelligent fix (this diff):** the individual donor vectors *do* survive in
+  `control_donor_profiles.parquet` (4 real donors × 3 conditions — the mart just averaged them away). The
+  loss was reformulated to **donor resampling**: re-run the encoder under distinct real donor PC vectors
+  and penalise the variance of `f_shared(Δz)` across them (see §Objective item 3). This is a real, dense
+  donor-generalisation signal that trains (1.30 → 0.25 in one epoch on real data), not an inert term.
+  The paralogue HGNC collision is no longer relevant (grouping is gone). `ponytail:` each donor variant
+  re-runs the donor-independent graph message passing; cache node states + re-run only readout+decoder if
+  Stage A becomes graph-bound (the graph path is CPU-bound, so donor resampling ~triples its per-step cost
+  — opt out with `--no-donor-invariance`; expression-only is cheap).
 - **Refuted:** a claimed trainer device mismatch — moot CPU-only (spec), and the encoders self-place
   sub-outputs so a GPU run is correct too; `Δz_true/Δx_true` are moved to the model device explicitly.
 
 ## Non-goals / ceiling markers
 
 - **No Stage-B fit loop** (calibration or rationale) — loss modules only, by design (H1 freezes first).
-- **`L_invariance` inert until a per-donor axis exists** upstream (see above).
+- **Donor resampling ~triples the (CPU-bound) graph Stage-A cost** — each step re-runs the encoder under
+  the donor variants. Upgrade: cache the donor-independent graph node states and re-run only
+  readout+decoder per donor (`ponytail:` in `trainer._donor_variants`). Opt out: `--no-donor-invariance`.
+  Only **4 real donors** exist, so the invariance signal is bounded by that donor count.
 - **DE labels are a z-score proxy** for `adj_p < 0.1` (`DE_CALL_ZSCORE` is the tuning knob) — the raw
   `adj_p` layer is deliberately outside the dataset's `__getitem__` contract.
 - **`L_graph` unsourced term defaults to `conf = 0`** (full L2 on gates) — wire `edge_confidences`

@@ -57,12 +57,18 @@ def _write_fixtures(tmp_path) -> dict:
     z = rng.standard_normal((n, _G)).astype(np.float32)
     split = pd.DataFrame({"hgnc_symbol": ["G0", "G1", "G3", "G4"],
                           "role": ["train", "train", "val", "challenge"]})
+    # 3 distinct real "donors" per condition (control_donor_profiles); the mart's donor_pc is their mean
+    donor_cols = [f"{config.DONOR_PC_PREFIX}{i:02d}" for i in range(config.DONOR_PCA_DIMS)]
+    prof_rows = [dict(donor_id=f"CE{d}", culture_condition=cond,
+                      **{c: float(v) for c, v in zip(donor_cols, rng.random(config.DONOR_PCA_DIMS))})
+                 for cond in config.CONDITIONS for d in range(3)]
+    donor_profiles = pd.DataFrame(prof_rows)
 
     p = {
         "split_path": tmp_path / "split.csv", "pc_path": tmp_path / "pc.parquet",
         "obs_path": tmp_path / "obs.parquet", "var_path": tmp_path / "var.parquet",
         "basis_path": tmp_path / "loadings.parquet", "response_path": tmp_path / "resp.parquet",
-        "zscore_npz": tmp_path / "zscore.npz",
+        "zscore_npz": tmp_path / "zscore.npz", "donor_profiles_path": tmp_path / "donor_profiles.parquet",
     }
     split.to_csv(p["split_path"], index=False)
     pc.to_parquet(p["pc_path"], index=False)
@@ -71,6 +77,7 @@ def _write_fixtures(tmp_path) -> dict:
     loadings.to_parquet(p["basis_path"], index=False)
     resp.to_parquet(p["response_path"], index=False)
     sp.save_npz(p["zscore_npz"], sp.csr_matrix(z))
+    donor_profiles.to_parquet(p["donor_profiles_path"], index=False)
     return p
 
 
@@ -95,15 +102,36 @@ def test_stage_a_components_and_gradients():
     torch.manual_seed(0)
     out = _synthetic_out()
     loss = StageALoss(gene_dim=_G, program_dim=_K)
-    comps = loss(out, torch.randn(4, _K), out["delta_x"].detach(),
-                 ["G0", "G1", "G0", "G1"], ["Rest", "Rest", "Rest", "Rest"])
+    # two donor-variant Delta z (distinct real donors) drive a real, non-zero invariance signal
+    dz_variants = [torch.randn(4, _K, requires_grad=True), torch.randn(4, _K, requires_grad=True)]
+    comps = loss(out, torch.randn(4, _K), out["delta_x"].detach(), dz_variants=dz_variants)
     assert set(comps) == {"total", "response", "gene", "de", "invariance", "graph"}
     assert all(torch.isfinite(v).all() for v in comps.values())
-    assert comps["invariance"] > 0                       # G0/Rest (rows 0,2) & G1/Rest (rows 1,3) grouped
+    assert comps["invariance"] > 0                       # variance of f_shared across the two donors
     comps["total"].backward()
     assert out["h_do"].grad is not None                  # gradient reaches the encoder input
     assert loss.de_head.head.weight.grad is not None     # ...the DE head
-    assert loss.f_shared.weight.grad is not None         # ...the shared-component extractor
+    assert loss.f_shared.weight.grad is not None         # ...the shared extractor (via the donor variants)
+    assert dz_variants[0].grad is not None               # ...and back to the donor-variant predictions
+
+
+def test_invariance_zero_without_donor_variants():
+    loss = StageALoss(gene_dim=_G, program_dim=_K)
+    out = _synthetic_out()
+    comps = loss(out, torch.randn(4, _K), out["delta_x"].detach(), dz_variants=None)
+    assert float(comps["invariance"]) == 0.0             # resampling off / no pool -> no-op, not spurious
+
+
+def test_donor_pool_and_variants(tmp_path):
+    paths = _write_fixtures(tmp_path)
+    ds = PerturbationDataset("train", **paths)
+    assert set(ds.donor_pool) == set(config.CONDITIONS)          # real per-condition donor pool loaded
+    assert ds.donor_pool["Rest"].shape == (3, config.DONOR_PCA_DIMS)
+    from tcell_pipeline.training.dataset import sample_donor_variants
+    gen = torch.Generator().manual_seed(0)
+    variants = sample_donor_variants(ds.donor_pool, ds.donor_mean, ["Rest", "Rest", "Rest"], 2, gen)
+    assert len(variants) == 2 and all(v.shape == (3, config.DONOR_PCA_DIMS) for v in variants)
+    assert not torch.allclose(variants[0], variants[1])          # distinct real donors -> real variation
 
 
 def test_graph_loss_penalizes_gates_and_confidence_lowers_it():
@@ -180,3 +208,23 @@ def test_expr_only_training_updates_params(tmp_path):
                       batch_size=2, ckpt_dir=tmp_path / "ckpt", log_dir=tmp_path / "logs")
     trainer.run()
     assert not torch.allclose(before, model.perturbation_encoder.fusion.weight)  # optimisation moved params
+
+
+def test_donor_invariance_produces_real_training_signal(tmp_path):
+    paths = _write_fixtures(tmp_path)
+    train_ds = PerturbationDataset("train", **paths)
+    assert train_ds.donor_pool                                  # fixture donor profiles loaded
+    trainer = Trainer(_expr_model(paths), train_ds, max_epochs=2, patience=10, batch_size=2,
+                      ckpt_dir=tmp_path / "ckpt", log_dir=tmp_path / "logs", donor_invariance=True)
+    assert trainer._donor_on                                    # real per-donor resampling is active
+    before = trainer.loss.f_shared.weight.detach().clone()
+    res = trainer.run()
+    # the donor-variance term is non-zero on real donor draws (not the old inert group term) and trains f_shared
+    assert any(e["train"]["invariance"] > 0 for e in res["history"])
+    assert not torch.allclose(before, trainer.loss.f_shared.weight)
+
+    off = Trainer(_expr_model(paths), PerturbationDataset("train", **paths), max_epochs=1, patience=10,
+                  batch_size=2, ckpt_dir=tmp_path / "ckpt2", log_dir=tmp_path / "logs2",
+                  donor_invariance=False)
+    assert not off._donor_on
+    assert off.run()["history"][0]["train"]["invariance"] == 0.0  # cleanly off, not spuriously firing

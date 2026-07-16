@@ -161,6 +161,13 @@ LAMBDA_GENE: float = 0.5          # weight on gene-level (delta_x) reconstructio
 # DE up/down call from the per-gene z-score: |z| >~ 1.64 is the two-sided 10% tail, the proxy this
 # dataset carries for adj_p < 0.1 (the exact adj_p layer is not part of the __getitem__ contract).
 DE_CALL_ZSCORE: float = 1.645
+# Donor invariance (L_invariance, §8.2 item 4): the mart's donor_pc is the mean of the real per-donor
+# control profiles; DONOR_INVARIANCE re-runs the encoder under the actual per-donor vectors
+# (control_donor_profiles, 4 real donors) and penalises the variance of the shared program component
+# across them — a real, dense donor-generalisation signal. SAMPLES = distinct real donors drawn per step
+# (>=2 for a non-zero variance). Off -> the term is a no-op.
+DONOR_INVARIANCE: bool = True
+DONOR_INVARIANCE_SAMPLES: int = 2
 CHECKPOINTS_ROOT: Path = Path(os.environ.get("CHECKPOINTS_ROOT", DATA_DIR / "checkpoints"))
 LOGS_ROOT: Path = Path(os.environ.get("LOGS_ROOT", DATA_DIR / "logs"))
 

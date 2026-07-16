@@ -46,16 +46,21 @@ here by design. **Committed on main this session** (`git log -1`).
   --expr-only`); pins `set_num_threads(1)`. `RationaleLoss` (Module 4) **not** reimplemented.
 - **config** — `LR/WEIGHT_DECAY/MAX_EPOCHS/EARLY_STOP_PATIENCE/BATCH_SIZE/GRAD_CLIP/HUBER_DELTA/
   FOCAL_GAMMA/LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/CHECKPOINTS_ROOT/LOGS_ROOT`.
-- **Verification** — `./init.sh` green, **87 tests** (79 prior + 8 new `test_training.py`, synthetic),
-  zero warnings. Real-data Stage A smoke PASSED both ways: expr-only (256×3, best_val 3.48) and full-graph
-  M1→M2→M3 (n_max 4×1, `L_graph` active on real `edge_gates`) — train, back-prop, write atomic checkpoints.
-- **Post-review (adversarial workflow — 3 dims → per-finding verify; loss-math clean, 1 refuted, 1
-  confirmed):** `L_invariance` is **inert on the real marts** — Module 0 averages donor PCs to condition
-  level (`control_profiles`), so there are no per-donor rows and the donor-pair objective is *vacuously
-  satisfied*. The `(target,condition)` key is correct; the sole artefact is an upstream id_mapping paralog
-  collision (GPR89A/GPR89B→`GPHRA`, 6/33,983 rows, negligible) — a **feat-002** concern, not a loss defect.
-  **Documented as a `ponytail:` ceiling, not silently patched**; activates when a per-donor axis returns
-  upstream. Refuted: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
+- **Donor invariance — REAL (intelligent fix), not inert.** An adversarial review first found the naive
+  `_invariance` (group mart rows by `(target,condition)`) inert: the mart's `donor_pc` is the condition-level
+  *mean* of the donors, so no donor pair exists to group (only paralogue HGNC collisions fired). But the
+  real donors survive in `control_donor_profiles.parquet` (**4 real donors** × 3 conditions — the mart just
+  averaged them). Reformulated to **donor resampling**: the Trainer re-runs the encoder under distinct real
+  donor PC vectors (`f_shared` in eval so DropEdge doesn't contaminate the signal) and `L_invariance`
+  penalises the **variance of `f_shared(Δz)` across donors** — a dense, real donor-generalisation signal
+  that **trains (1.30 → 0.25 in one epoch on real data)**. `config.DONOR_INVARIANCE` /
+  `DONOR_INVARIANCE_SAMPLES`; `--no-donor-invariance` opts out. `ponytail:` donor resampling ~triples the
+  CPU-bound graph Stage-A cost (cache node states + re-run only readout+decoder to remove it). Refuted
+  review finding: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
+- **Verification** — `./init.sh` green, **90 tests** (79 prior + 11 new `test_training.py`, synthetic),
+  zero warnings. Real-data Stage A smoke PASSED: expr-only (128×2, invariance 1.30→0.25) and full-graph
+  M1→M2→M3 (donor invariance active + a `--no-donor-invariance` `L_graph`-on-real-`edge_gates` check) —
+  all train, back-prop, write atomic checkpoints.
 - **Remaining (feat-008):** the Stage-B calibration + rationale **fit loops** (both loss modules exist,
   no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines, still not-started).
 - Design + as-built: `docs/specs/2026-07-16-module5-training.md`.
@@ -262,9 +267,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **87 passed** on torch cu126 (79 prior + 8 Module-5 `test_training.py`); compileall clean; zero warnings |
-| Module 5 unit tests | `pytest src/tests/test_training.py` | Pass | 8 passed (synthetic, tiny fixture marts): Stage A shapes+gradient flow (h_do/DE head/f_shared), graph-gate penalty (confidence lowers unsourced term), Stage B Gaussian NLL+grad, DE probs∈[0,1], learnable λ mixture, dataset keys+q_post fence+program_response-vs-projection dz, 2-epoch checkpointed run, param-update |
-| Module 5 real-data Stage A smoke | `python -m tcell_pipeline.training.run_train --expr-only --n-max 256 --epochs 3` | Pass | 256 train/val; trains + back-props + atomic best/last checkpoint (best_val 3.48). Full-graph `--n-max 4 --epochs 1` also PASSED (L_graph active on real edge_gates) |
+| Compile + tests | `./init.sh` | Pass | **90 passed** on torch cu126 (79 prior + 11 Module-5 `test_training.py`); compileall clean; zero warnings |
+| Module 5 unit tests | `pytest src/tests/test_training.py` | Pass | 11 passed (synthetic, tiny fixture marts incl. donor profiles): Stage A shapes+gradient flow, graph-gate penalty, Stage B Gaussian NLL+grad, DE probs∈[0,1], learnable λ mixture, dataset keys+q_post fence+dz source, **donor pool+resampler (distinct real donors)**, 2-epoch checkpointed run, param-update, **real donor-invariance signal (non-zero+trains f_shared on; clean 0 off)** |
+| Module 5 real-data Stage A smoke | `python -m tcell_pipeline.training.run_train --expr-only --n-max 128 --epochs 2` | Pass | trains + back-props + atomic checkpoint; **real 4-donor invariance term falls 1.30→0.25 in one epoch**. Full-graph `--n-max 2 --epochs 1` (donor invariance active) + `--n-max 4 --no-donor-invariance` (L_graph on real edge_gates) both PASSED |
 | Module 4 unit tests | `pytest src/tests/test_rationale.py` | Pass | 10 passed (synthetic): imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation match, structural_ood (deleted-fraction vs independent count + component monotonicity), loss components+gradients, expr-only→empty rationale, label predictive_rationale not causal, faithfulness determinism under active DropEdge |
 | Module 4 real-data smoke | `python src/tcell_pipeline/rationale/run_module4_smoke.py` | Pass | real PPI graph, A1BG neighbourhood (33,754 edges, |S|=15): sufficiency<matched-random, necessity>matched-random, structural-OOD audit, labelled `predictive_rationale` (not causal) |
 | Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
@@ -286,11 +291,13 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 ## Files Added (this session, Module 5 — Loss + Training)
 
 - `src/tcell_pipeline/training/__init__.py`, `losses.py`, `dataset.py`, `trainer.py`, `run_train.py` (NEW package)
-- `src/tests/test_training.py` (NEW, 8 synthetic tests)
-- `docs/specs/2026-07-16-module5-training.md` (NEW — design + as-built + the reviewed `L_invariance` ceiling)
+- `src/tests/test_training.py` (NEW, 11 synthetic tests incl. donor pool + real donor-invariance)
+- `docs/specs/2026-07-16-module5-training.md` (NEW — design + as-built + the real donor-invariance fix)
 - `src/tcell_pipeline/config.py` — Module 5 constants (`LR`, `WEIGHT_DECAY`, `MAX_EPOCHS`,
   `EARLY_STOP_PATIENCE`, `BATCH_SIZE`, `GRAD_CLIP`, `HUBER_DELTA`, `FOCAL_GAMMA`, `LAMBDA_DE/INV/GRAPH/GENE`,
-  `DE_CALL_ZSCORE`, `CHECKPOINTS_ROOT`, `LOGS_ROOT`)
+  `DE_CALL_ZSCORE`, `DONOR_INVARIANCE`, `DONOR_INVARIANCE_SAMPLES`, `CHECKPOINTS_ROOT`, `LOGS_ROOT`)
+- `src/tcell_pipeline/training/dataset.py` — `load_donor_pool` + `sample_donor_variants` (real per-donor
+  `control_donor_profiles` resampling for the donor-invariance term)
 - `README.md` (Train the H1 predictor / Stage A section), `docs/specs/2026-07-16-module4-rationale-head.md`
   (Stage A cross-ref), the two gitignored planning docs (§8 / §Loss as-built notes)
 - `feature_list.json` (feat-008 → Module-5 addendum, stays in-progress), `progress.md`, `session-handoff.md`
@@ -400,19 +407,24 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
 ## Recommended Next Step
 
 - **Module 5 (Loss + Training) is committed on main** (`git log -1`); working tree clean, `./init.sh` green
-  (**87 tests**, zero warnings). The `training/` package, config, tests, the Module 5 spec, README, and
-  state-file syncs all landed in one commit. Stage A trains M1+M2+M3; Stage B calibration is a loss module.
+  (**90 tests**, zero warnings). The `training/` package, config, tests, the Module 5 spec, README, and
+  state-file syncs all landed in one commit. Stage A trains M1+M2+M3 (with **real donor-invariance**); Stage
+  B calibration is a loss module.
 - To **advance feat-008 (the last pieces)**:
   1. **Stage A production run** — fit `EGIPGModel` on the full **train** fold with `run_train.py` (fold-local:
      `PerturbationDataset("train")`), select on **val**, then **freeze** the H1 checkpoint. Before the freeze,
      run the **near-null-signal check** on development data (H1 superiority is not guaranteed on this CD4+
-     screen — a negative result is valid). The graph path is CPU-bound per subgraph, so a full multi-A100 run
-     wants **PyG mini-batching** of the subgraphs first (the `ponytail:` note in `typed_graph_encoder.forward`).
+     screen — a negative result is valid). The graph path is CPU-bound per subgraph AND donor resampling
+     ~triples it, so a full multi-A100 run wants **PyG mini-batching** of the subgraphs + the donor
+     node-state cache (the two `ponytail:` notes in `typed_graph_encoder.forward` / `trainer._donor_variants`),
+     or `--no-donor-invariance` for a fast pass.
   2. **Stage B fit loops** — on the frozen H1: fit `StageBCalibrationLoss` on the **calibration** partition,
      and fit `RationaleHead` with Module 4's `RationaleLoss` (both loss modules exist; the fit loops don't).
-- **Known ceiling carried forward:** `L_invariance` is inert on the donor-averaged marts (documented
-  `ponytail:` in `losses.py`); it activates only if Module 0 re-emits a per-donor axis. The paralog HGNC
-  collision it exposes (GPR89A/GPR89B→`GPHRA`) is an upstream **feat-002** id_mapping item, not Module 5's.
+- **Donor invariance is now a real trained signal** (donor resampling over the 4 real `control_donor_profiles`
+  donors — see the Module 5 section). Efficiency upgrade for graph runs: cache the donor-independent graph
+  node states so donor variants re-run only readout+decoder (`ponytail:` in `trainer._donor_variants`). The
+  paralogue HGNC collision (GPR89A/GPR89B→`GPHRA`) surfaced during the review is an upstream **feat-002**
+  id_mapping item, independent of Module 5.
 - To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity /
   stability + a shallow-VAE basis (the extraction machinery is done and the sparse_pca production loadings
   are frozen — only the study remains).

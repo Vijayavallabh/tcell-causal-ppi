@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from tcell_pipeline import config
-from tcell_pipeline.training.dataset import PerturbationDataset
+from tcell_pipeline.training.dataset import PerturbationDataset, sample_donor_variants
 from tcell_pipeline.training.losses import StageALoss
 
 
@@ -35,6 +35,8 @@ class Trainer:
         ckpt_dir: Path = config.CHECKPOINTS_ROOT,
         log_dir: Path = config.LOGS_ROOT,
         seed: int = 0,
+        donor_invariance: bool = config.DONOR_INVARIANCE,
+        donor_samples: int = config.DONOR_INVARIANCE_SAMPLES,
     ) -> None:
         torch.manual_seed(seed)
         self.device = device
@@ -44,11 +46,36 @@ class Trainer:
         self.opt = torch.optim.AdamW(self.params, lr=lr, weight_decay=weight_decay)
         self.max_epochs, self.patience, self.grad_clip = max_epochs, patience, grad_clip
         self.ckpt_dir, self.log_dir = Path(ckpt_dir), Path(log_dir)
+        # Donor invariance re-runs the encoder under the real per-donor control profiles (train_ds owns
+        # the pool; the vectors are split-independent). Off when the pool is empty or <2 samples.
+        self.donor_samples = donor_samples
+        self.donor_pool = getattr(train_ds, "donor_pool", {}) or {}
+        self.donor_mean = getattr(train_ds, "donor_mean", None)
+        self._donor_on = bool(donor_invariance and donor_samples >= 2 and self.donor_pool)
+        self._gen = torch.Generator().manual_seed(seed)
         collate = PerturbationDataset.collate
         self.train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate)
         self.val_loader = (
             DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate) if val_ds else None
         )
+
+    def _donor_variants(self, batch: dict, targets, conditions) -> list:
+        """Δz under `donor_samples` distinct REAL donor PC vectors for each row's condition, forwarded
+        with the encoder in eval so DropEdge doesn't contaminate the donor signal (grads still flow).
+        ponytail: each variant re-runs the (donor-independent) graph message passing; cache node states +
+        re-run only readout+decoder per donor if Stage A throughput becomes graph-bound."""
+        pcs = sample_donor_variants(self.donor_pool, self.donor_mean, conditions, self.donor_samples, self._gen)
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            variants = []
+            for pc in pcs:
+                vbatch = dict(batch)
+                vbatch["donor_pc"] = pc.to(self.device)
+                variants.append(self.model(vbatch, targets, conditions)["delta_z"])
+            return variants
+        finally:
+            self.model.train(was_training)
 
     def _epoch(self, loader, train: bool) -> dict:
         self.model.train(train)
@@ -59,7 +86,8 @@ class Trainer:
             for batch, targets, conditions, dz_true, dx_true, _ in loader:
                 dz_true, dx_true = dz_true.to(self.device), dx_true.to(self.device)
                 out = self.model(batch, targets, conditions)
-                comps = self.loss(out, dz_true, dx_true, targets, conditions)
+                dz_variants = self._donor_variants(batch, targets, conditions) if self._donor_on else None
+                comps = self.loss(out, dz_true, dx_true, dz_variants=dz_variants)
                 if train:
                     self.opt.zero_grad()
                     comps["total"].backward()

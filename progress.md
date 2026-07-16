@@ -28,19 +28,26 @@ loss modules (calibration + Module 4 rationale) are fitted *after* the H1 freeze
 - **run_train.py**: Stage A orchestrator on real marts (`--lr/--epochs/--batch-size/--seed/--n-max/--expr-only`);
   pins `torch.set_num_threads(1)`. `RationaleLoss` (Module 4) **not** reimplemented.
 - **config:** `LR/WEIGHT_DECAY/MAX_EPOCHS/EARLY_STOP_PATIENCE/BATCH_SIZE/GRAD_CLIP/HUBER_DELTA/FOCAL_GAMMA/
-  LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/CHECKPOINTS_ROOT/LOGS_ROOT`.
-- **Verification:** `./init.sh` green — **87 tests** (79 prior + 8 new `test_training.py`, all synthetic:
+  LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/DONOR_INVARIANCE/DONOR_INVARIANCE_SAMPLES/
+  CHECKPOINTS_ROOT/LOGS_ROOT`.
+- **Donor invariance is REAL, not inert (2026-07-16 intelligent fix).** An adversarial review first found
+  the naive `_invariance` (group mart rows by `(target,condition)`) inert — the mart's `donor_pc` is the
+  condition-level *mean* of the donors, so no donor pair exists to group. But the individual donors survive
+  in `control_donor_profiles.parquet` (**4 real donors** × 3 conditions). The term was **reformulated to
+  donor resampling**: the Trainer re-runs the encoder under distinct real donor PC vectors (`f_shared` in
+  eval so DropEdge doesn't contaminate the signal) and `L_invariance` penalises the **variance of
+  `f_shared(Δz)` across donors** — a dense, real donor-generalisation signal. Verified on real data: the
+  term is **non-zero and optimises (1.30 → 0.25 in one epoch)**. `config.DONOR_INVARIANCE`(=True) /
+  `DONOR_INVARIANCE_SAMPLES`(=2); `--no-donor-invariance` opts out. `ponytail:` donor resampling ~triples
+  the CPU-bound graph Stage-A cost (each variant re-runs the donor-independent message passing) — cache
+  node states + re-run only readout+decoder to remove it.
+- **Verification:** `./init.sh` green — **90 tests** (79 prior + 11 new `test_training.py`, all synthetic:
   Stage A shapes+gradient flow, graph-gate penalty, Stage B NLL+grad, DE probs∈[0,1], learnable λ mixture,
-  dataset keys+q_post fence+dz source, 2-epoch checkpointed run, param-update), **zero warnings**. Real-data
-  Stage A smoke PASSED both ways: expr-only (256×3, best_val 3.48) and full-graph M1→M2→M3 (n_max 4×1,
-  `L_graph` active on real `edge_gates`) — both train, back-prop, write atomic checkpoints.
-- **Post-review (adversarial workflow, 3 dims → verify; loss-math clean, 1 refuted, 1 confirmed):**
-  `L_invariance` is **inert on the real marts** — Module 0 averages donor PCs to condition level
-  (`control_profiles`), so there are no per-donor rows and the donor-pair objective is *vacuously
-  satisfied*. The `(target,condition)` key is correct; the sole artefact is an upstream id_mapping paralog
-  collision (GPR89A/GPR89B→`GPHRA`, 6/33,983 rows, negligible) — a feat-002 concern, not a loss defect.
-  **Documented as a `ponytail:` ceiling, not silently patched**; activates when a per-donor axis returns
-  upstream. Refuted: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
+  dataset keys+q_post fence+dz source, **donor pool+resampler**, 2-epoch checkpointed run, param-update,
+  **real donor-invariance signal** on/off), **zero warnings**. Real-data Stage A smoke PASSED: expr-only
+  (128×2, invariance 1.30→0.25) and full-graph M1→M2→M3 (both with donor invariance active, and
+  `--no-donor-invariance` for the fast `L_graph`-on-real-`edge_gates` check) — all train, back-prop, checkpoint.
+- Refuted review finding: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
 - **Remaining for feat-008 done:** the Stage-B calibration + rationale **fit loops** (both loss modules
   exist, no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines) still not-started.
 - Design + as-built: `docs/specs/2026-07-16-module5-training.md`.

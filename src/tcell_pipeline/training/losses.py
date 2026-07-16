@@ -70,30 +70,19 @@ class StageALoss(nn.Module):
         self.lambda_inv, self.lambda_graph = lambda_inv, lambda_graph
         self.graph_lambda_sparse, self.graph_lambda_unsrc = graph_lambda_sparse, graph_lambda_unsrc
 
-    def _invariance(self, dz_hat: torch.Tensor, target_genes, conditions) -> torch.Tensor:
-        """Donor-invariance penalty (§8.2 item 4): pull the shared program component together across
-        rows sharing the (target, condition) key — the same perturbation seen under different donors.
-        KNOWN CEILING (verified by review, 2026-07-16): Module 0 aggregates donor PCs to condition-level
-        means (control_profiles), so the marts carry NO per-donor rows. The donor-invariance objective is
-        therefore *vacuously satisfied* — there is no donor variation left to be invariant to — and this
-        term is correctly inert on real data, activating only if per-donor examples are reintroduced. The
-        (target, condition) key is the correct donor-invariance grouping; the one artefact is an upstream
-        id_mapping quirk where two paralogues share an HGNC symbol (GPR89A/GPR89B -> 'GPHRA'), the only
-        groups that fire today (6 of 33,983 rows, negligible at lambda_inv). That collision is a feat-002
-        id_mapping concern, not a loss defect — fixing it here would paper over the wrong module.
-        ponytail: term inert until the pipeline exposes a per-donor axis; upgrade = re-emit donor-resolved
-        rows in Module 0 + group on (target, condition, donor). Kept: spec-required, forward-compatible,
-        unit-tested on synthetic donor groups. Zero when every (target, condition) group is a singleton."""
-        groups: dict[tuple, list[int]] = {}
-        for i, key in enumerate(zip(target_genes, conditions)):
-            groups.setdefault(key, []).append(i)
-        shared = self.f_shared(dz_hat)
-        total = dz_hat.new_zeros(())
-        for idx in groups.values():
-            if len(idx) > 1:
-                g = shared[idx]
-                total = total + (g - g.mean(dim=0, keepdim=True)).pow(2).sum()
-        return total / dz_hat.shape[0]
+    def _invariance(self, dz_variants) -> torch.Tensor:
+        """Donor-invariance penalty (§8.2 item 4): the shared program component must not depend on WHICH
+        donor's control profile conditions the encoder. ``dz_variants`` are Δz predicted under distinct
+        REAL per-donor PC vectors (from control_donor_profiles — the mart's donor_pc is only their mean)
+        for the same (target, condition); this penalises the variance of ``f_shared`` across them, i.e.
+        forces the donor-invariant component to be constant across donors while the rest of Δz stays free
+        to carry donor-specific nuisance. A real, dense signal — non-zero on every example whenever ≥2
+        donor draws are supplied (Trainer resamples per step). Empty / <2 draws (donor resampling disabled
+        or no donor pool) → 0."""
+        if not dz_variants or len(dz_variants) < 2:
+            return dz_variants[0].new_zeros(()) if dz_variants else torch.zeros(())
+        reps = torch.stack([self.f_shared(v) for v in dz_variants])   # (S, B, K)
+        return (reps - reps.mean(dim=0, keepdim=True)).pow(2).sum(dim=-1).mean()
 
     def _graph(self, edge_gates, edge_confidences=None) -> torch.Tensor:
         """Sparsity on the condition gates plus an unsourced-reliance L2 that a per-edge source
@@ -113,7 +102,7 @@ class StageALoss(nn.Module):
                 unsrc = unsrc.to(alpha) + ((1.0 - conf) * alpha.pow(2)).sum()
         return self.graph_lambda_sparse * sparse + self.graph_lambda_unsrc * unsrc
 
-    def forward(self, out: dict, dz_true, dx_true, target_genes, conditions, edge_confidences=None) -> dict:
+    def forward(self, out: dict, dz_true, dx_true, dz_variants=None, edge_confidences=None) -> dict:
         response = F.huber_loss(out["delta_z"], dz_true, delta=self.huber_delta)
         gene = F.huber_loss(out["delta_x"], dx_true, delta=self.huber_delta)
 
@@ -122,7 +111,7 @@ class StageALoss(nn.Module):
         y_down = (dx_true <= -self.de_call_z).to(down_logits.dtype)
         de = _focal_bce(up_logits, y_up, self.focal_gamma) + _focal_bce(down_logits, y_down, self.focal_gamma)
 
-        invariance = self._invariance(out["delta_z"], target_genes, conditions)
+        invariance = self._invariance(dz_variants).to(response)
         graph = self._graph(out.get("edge_gates"), edge_confidences).to(response)
 
         total = (response + self.lambda_gene * gene + self.lambda_de * de

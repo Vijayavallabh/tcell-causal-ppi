@@ -27,7 +27,7 @@ from tcell_pipeline.training.trainer import Trainer  # noqa: E402
 
 
 def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, seed=config.SPLIT_SEED,
-        n_max=None, expr_only=False) -> dict | None:
+        n_max=None, expr_only=False, donor_invariance=config.DONOR_INVARIANCE) -> dict | None:
     torch.set_num_threads(1)  # many-core box: tiny per-subgraph GNN ops thrash the default thread pool
     required = (config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_OBS_PATH,
                 config.DE_VAR_PATH, config.PROGRAM_LOADINGS_PATH, config.PROGRAM_RESPONSE_PATH, zscore_path())
@@ -41,9 +41,12 @@ def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, se
 
     train_ds = PerturbationDataset("train", n_max=n_max)
     val_ds = PerturbationDataset("val", n_max=n_max)
-    print(f"[train] {len(train_ds)} train / {len(val_ds)} val examples; expr_only={expr_only}")
+    n_donors = len(train_ds.donor_pool.get("Rest", [])) if train_ds.donor_pool else 0
+    print(f"[train] {len(train_ds)} train / {len(val_ds)} val examples; expr_only={expr_only}; "
+          f"donor_invariance={donor_invariance} ({n_donors} real donors/condition)")
 
-    trainer = Trainer(model, train_ds, val_ds, lr=lr, max_epochs=epochs, batch_size=batch_size, seed=seed)
+    trainer = Trainer(model, train_ds, val_ds, lr=lr, max_epochs=epochs, batch_size=batch_size, seed=seed,
+                      donor_invariance=donor_invariance)
     result = trainer.run()
     print(f"[train] {result['epochs_run']} epochs, best_val={result['best_val']:.4f} -> {result['best_ckpt']}")
     return result
@@ -57,5 +60,8 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=config.SPLIT_SEED)
     ap.add_argument("--n-max", type=int, default=None, help="cap examples per split (quick runs)")
     ap.add_argument("--expr-only", action="store_true", help="expression-only nested variant (no graph)")
+    ap.add_argument("--no-donor-invariance", action="store_true",
+                    help="disable the real per-donor invariance term (skips the extra donor forwards)")
     a = ap.parse_args()
-    sys.exit(0 if run(a.lr, a.epochs, a.batch_size, a.seed, a.n_max, a.expr_only) else 1)
+    sys.exit(0 if run(a.lr, a.epochs, a.batch_size, a.seed, a.n_max, a.expr_only,
+                      donor_invariance=not a.no_donor_invariance) else 1)
