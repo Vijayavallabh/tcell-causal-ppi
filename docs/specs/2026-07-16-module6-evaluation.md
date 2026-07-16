@@ -123,3 +123,11 @@ cleanups (vectorised `topk`/`sign`, `rng.permuted` row-shuffle, a shared `_array
 `test_baselines.py` — 14 functions, three parametrized). Fully synthetic — no marts required. Both metric
 implementations verified to agree on non-degenerate, zero/constant, non-finite (`pred` and `true`),
 high-dimensional constant, tiny-norm, and extreme-scale rows under `-W error`.
+
+**Real-data smoke** — `src/tcell_pipeline/run_module6_smoke.py` (`--device cuda`) scores the trained
+Stage-A model + all six baselines on the real 4,400-row val fold with these metrics, then asserts the
+G2-MQ `systema` gate passes, the §10.5 null-control predictor returns ~0 under independent controls, and
+the output-schema roundtrips. As-built the model forward runs on A100 while the baselines + metrics stay
+numpy/sklearn (CPU); ridge is currently the strongest baseline, edging a lightly-trained model
+(near-null-signal regime). The feature matrix is `nan_to_num`'d — `control_baseline_expr` is NaN for ~1.5k
+real rows (the encoder imputes internally; the sklearn baselines do not).

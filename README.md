@@ -155,6 +155,14 @@ Policy: never compare only to weak deep-learning baselines. Include a simple lin
 headline table. Record each baseline's inputs, pretraining exposure, inductive/transductive status,
 checkpoint, and tuning budget.
 
+> **As-built (Module 6, feat-006):** the six mandatory simple baselines — no-effect, Systema perturbed
+> mean, per-condition mean, ridge, nearest-neighbor, low-rank — are built in
+> `src/tcell_pipeline/baselines/simple_baselines.py` behind a common `fit(X, z, conditions) → predict →
+> (Δz, Δx)` contract (gene space decoded through the frozen basis, `Δx = Δz @ Bᵀ`), writing the shared
+> prediction schema `predictions/<model>/<split>/<seed>.parquet`. Elastic-net and CatBoost remain
+> (feat-006 done-criterion); graph baselines are feat-007. Details:
+> `docs/specs/2026-07-16-module6-evaluation.md`.
+
 ### Evaluation metrics
 
 **Prediction**: MAE, RMSE, Pearson/Spearman, Systema perturbation-specific delta correlation, centroid
@@ -174,6 +182,15 @@ generalization cluster, not individual rows.
 subgraph preserves prediction), minimality (smallest sufficient subgraph), stability across seeds and
 bootstrap, structural-OOD audit, matched random controls (degree, relation type, connectivity, hop
 distance), source ablation.
+
+> **As-built (Module 6, feat-009):** the prediction metrics (MAE/RMSE, Pearson/Spearman, Systema
+> perturbation-specific delta, centroid accuracy, top-k recall, sign accuracy, signed-DE
+> macro-F1/per-class P·R/AUPRC, program cosine), the **G2-MQ model-blind qualification gate** (§10.1), and
+> the control-reference safeguards are built in `src/tcell_pipeline/evaluation/`, with a **second
+> independent implementation** (`metrics_ref.py`) that must agree with the primary one on a fixed fixture.
+> Metrics are per-row → macro-averaged; degenerate/non-finite rows contribute 0.0 for the higher-is-better
+> metrics (so a zero predictor scores worst). Uncertainty metrics (ECE/Brier/conformal) wait on the Stage-B
+> calibration fit. Details: `docs/specs/2026-07-16-module6-evaluation.md`.
 
 ## Data
 
@@ -589,6 +606,24 @@ PYTHONPATH=src python -m tcell_pipeline.training.run_train --n-max 4 --epochs 1
 ```
 
 The synthetic unit checks (`src/tests/test_training.py`) run under `./init.sh` with the rest of the suite.
+
+### Evaluate the model + baselines (Module 6)
+
+`run_module6_smoke.py` scores the trained Stage-A model and the six simple baselines on the real
+validation fold with the Module 6 metrics, then runs the **G2-MQ** metric-qualification gate, the §10.5
+control-reference safeguards, and the common prediction-schema roundtrip. The model forward runs on
+`--device cuda`; the baselines + metrics are numpy/sklearn (CPU). Needs the Stage-A checkpoint from the
+previous step. Design + as-built: `docs/specs/2026-07-16-module6-evaluation.md`.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.run_module6_smoke --device cuda
+```
+
+On the real val fold (4,400 rows) the G2-MQ `systema` gate passes (every negative below guide-split-half
+and oracle), the null-control predictor scores ~0 under independent controls, and **ridge is currently the
+strongest baseline, edging a lightly-trained model** — the near-null-signal regime the report anticipates
+until the H1 predictor is trained to convergence. The synthetic unit checks (`src/tests/test_metrics.py`,
+`src/tests/test_baselines.py`) run under `./init.sh`.
 
 ## Repository / data-mart layout
 
