@@ -50,6 +50,11 @@ def register_run(config_id: str, hypothesis: str, inputs, split: str, seed: int,
     if config_id not in seen and len(seen) >= cap:
         raise ValueError(f"{family} family trial cap reached ({len(seen)}/{cap} distinct configs); "
                          f"cannot register new config {config_id!r}")
+    if family != _EGIPG_FAMILY:  # "no more than two close trainable comparator families" (report §1291)
+        comp_families = {r["family"] for r in runs if r.get("family") != _EGIPG_FAMILY}
+        if family not in comp_families and len(comp_families) >= config.MAX_COMPARATOR_FAMILIES:
+            raise ValueError(f"comparator-family cap reached ({len(comp_families)}/"
+                             f"{config.MAX_COMPARATOR_FAMILIES}); cannot register new family {family!r}")
     run_id = f"run-{len(runs) + 1:04d}"
     runs.append({
         "run_id": run_id, "config_id": config_id, "family": family, "hypothesis": hypothesis,

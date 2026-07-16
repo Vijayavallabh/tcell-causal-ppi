@@ -15,13 +15,18 @@ reports the two key-secondary contrasts on the primary endpoint (``systema_pert_
   H2a — does typed static beat expression-only?      (member 2 vs 1)
   H2b — does condition gating beat typed static?     (member 3 vs 2)
 
-The untyped-graph diagnostic (``UntypedGraphEncoder``) is a separate graph baseline, not a nested-family
-member; the driver runs it in the same wave but it does not enter the H2a/H2b comparison.
+The untyped-graph diagnostic (``UntypedGraphEncoder``) is not a member of the H2a/H2b *confirmatory* nested
+family, so the driver runs it in the wave but excludes it from the H2a/H2b comparison. It IS still an
+internal EG-IPG ablation, so it registers under ``family='egipg'`` and counts against the 32-trial EG-IPG
+budget (report §1291: "32 across the entire EG-IPG family, not per ablation"). The separate 16-per-family
+comparator budget is for EXTERNAL trainable comparators (TxPert-public / Stable-Shift — feat-010), not for
+these in-family ablations.
 """
 from __future__ import annotations
 
 import json
 import math
+import time
 from pathlib import Path
 
 import numpy as np
@@ -138,7 +143,8 @@ def nested_family_configs(gene_names, graph, gene_to_idx, n_epochs: int, *, name
     """Build screening configs for the named members (default: the three nested-family members)."""
     factories = nested_family_factories(gene_names, graph, gene_to_idx, basis_path=basis_path,
                                         perturbation_encoder_factory=perturbation_encoder_factory)
-    names = names or [EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED]
+    if names is None:  # an explicit [] means "no configs", not "use the defaults"
+        names = [EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED]
     return [{"name": n, "model_factory": factories[n], "n_epochs": n_epochs, "lr": lr,
              "batch_size": batch_size, "seed": seed} for n in names]
 
@@ -157,8 +163,10 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
     name = cfg["name"]
     seed = int(cfg.get("seed", 0))
     bs = int(cfg.get("batch_size", config.BATCH_SIZE))
-    ckpt_dir = Path(ckpt_dir) if ckpt_dir else Path(screening_root) / name / "ckpt"
-    log_dir = Path(log_dir) if log_dir else Path(screening_root) / name / "logs"
+    # seed-namespaced so a multi-seed sweep of one config name doesn't overwrite stage_a_best.pt (the
+    # predictions + metrics parquet are already per-seed)
+    ckpt_dir = Path(ckpt_dir) if ckpt_dir else Path(screening_root) / name / str(seed) / "ckpt"
+    log_dir = Path(log_dir) if log_dir else Path(screening_root) / name / str(seed) / "logs"
     donor_invariance = cfg.get("donor_invariance", config.DONOR_INVARIANCE)
 
     run_id = None
@@ -166,6 +174,7 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
         run_id = register_run(name, cfg.get("hypothesis", "screening"), cfg.get("inputs", "q_pre"),
                               cfg.get("split", "blocked_target_ood"), seed, cfg.get("budget"),
                               family=cfg.get("family", "egipg"), path=registry_path)
+    start = time.perf_counter()  # wall time as a single-lane GPU-hour proxy for the registry audit field
     try:
         model = cfg["model_factory"]()
         trainer = Trainer(model, train_ds, val_ds, lr=cfg.get("lr", config.LR), max_epochs=cfg["n_epochs"],
@@ -180,16 +189,18 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
                                       train_mean)
         write_predictions(truth["row_index"], pred["delta_z"], pred["delta_x"], pred["sigma"],
                           model=name, split=split, seed=seed, root=predictions_root)
+        gpu_hours = (time.perf_counter() - start) / 3600.0
         results = {"name": name, "seed": seed, "n_epochs": cfg["n_epochs"], "status": "completed",
                    "best_val": result["best_val"], "epochs_run": result["epochs_run"],
-                   "primary": metrics[PRIMARY_METRIC], **metrics}
+                   "gpu_hours": gpu_hours, "primary": metrics[PRIMARY_METRIC], **metrics}
         _write_result_row(results, screening_root, name, seed)
         if run_id is not None:
-            log_run(run_id, "completed", metrics, result["best_ckpt"], path=registry_path)
+            log_run(run_id, "completed", metrics, result["best_ckpt"], gpu_hours=gpu_hours, path=registry_path)
         return results
-    except Exception as exc:  # log the failure, then re-raise — every run is accounted for
+    except Exception as exc:  # log the failure (with elapsed GPU time), then re-raise — every run is accounted for
         if run_id is not None:
-            log_run(run_id, "failed", {"error": str(exc)}, path=registry_path)
+            log_run(run_id, "failed", {"error": str(exc)},
+                    gpu_hours=(time.perf_counter() - start) / 3600.0, path=registry_path)
         raise
 
 

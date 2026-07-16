@@ -187,6 +187,7 @@ REGISTRY_PATH: Path = Path(os.environ.get("REGISTRY_PATH", DATA_DIR / "results" 
 # the ENTIRE EG-IPG family, at most 16 per close trainable comparator family.
 MAX_EGIPG_TRIALS: int = 32
 MAX_COMPARATOR_TRIALS: int = 16
+MAX_COMPARATOR_FAMILIES: int = 2  # "no more than two close trainable comparator families" (report §1291)
 N_SCREENING_SEEDS: int = 1        # one seed for architecture/hyperparameter screening (report §857)
 N_FINAL_SEEDS: int = 5            # paired development seeds for the promoted final configurations
 

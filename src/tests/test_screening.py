@@ -255,3 +255,39 @@ def test_screen_config_logs_failure_then_reraises(tmp_path):
                       screening_root=tmp_path / "scr", predictions_root=tmp_path / "pred")
     runs = load_registry(reg)
     assert runs[-1]["status"] == "failed" and "boom" in runs[-1]["metrics"]["error"]
+
+
+# --- Tier 2 fixes ---------------------------------------------------------------------------------
+def test_screen_config_seed_namespaced_ckpt_and_gpu_hours(tmp_path):
+    paths, cfgs = _configs(tmp_path, [EXPRESSION_ONLY])
+    train_ds, val_ds = PerturbationDataset("train", **paths), PerturbationDataset("val", **paths)
+    train_mean = collect_truth(train_ds)["delta_z"].mean(0)
+    reg, scr = tmp_path / "registry.yaml", tmp_path / "scr"
+    for seed in (0, 1):                                            # two seeds of the SAME config name
+        cfg = dict(cfgs[0], seed=seed)
+        res = screen_config(cfg, train_ds, val_ds, train_mean, screening_root=scr,
+                            predictions_root=tmp_path / "pred", registry_path=reg)
+        assert res["gpu_hours"] >= 0 and np.isfinite(res["gpu_hours"])
+    # both seeds' best checkpoints coexist — seed 1 did NOT overwrite seed 0
+    assert (scr / EXPRESSION_ONLY / "0" / "ckpt" / "stage_a_best.pt").exists()
+    assert (scr / EXPRESSION_ONLY / "1" / "ckpt" / "stage_a_best.pt").exists()
+    runs = load_registry(reg)
+    assert len(runs) == 2 and all(r["gpu_hours"] is not None for r in runs)  # gpu_hours audit field populated
+
+
+def test_nested_family_configs_empty_names_gives_no_configs(tmp_path):
+    paths, graph, g2i, gene_names = _fixture(tmp_path)
+    assert nested_family_configs(gene_names, graph, g2i, 1, names=[], basis_path=paths["basis_path"]) == []
+    assert len(nested_family_configs(gene_names, graph, g2i, 1, names=None,
+                                     basis_path=paths["basis_path"])) == 3  # None -> the three nested members
+
+
+def test_registry_caps_comparator_families(tmp_path):
+    reg = tmp_path / "registry.yaml"
+    register_run("c1", "H1", "q_pre", "blocked", 0, None, family="comparator_a", path=reg)
+    register_run("c2", "H1", "q_pre", "blocked", 0, None, family="comparator_b", path=reg)  # 2nd family OK
+    with pytest.raises(ValueError, match="comparator-family cap"):
+        register_run("c3", "H1", "q_pre", "blocked", 0, None, family="comparator_c", path=reg)  # 3rd rejected
+    # an EXISTING comparator family still accepts more configs, and egipg is unaffected by this cap
+    assert register_run("c1b", "H1", "q_pre", "blocked", 0, None, family="comparator_a", path=reg).startswith("run-")
+    assert register_run("e1", "H1", "q_pre", "blocked", 0, None, path=reg).startswith("run-")
