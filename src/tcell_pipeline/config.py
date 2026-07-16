@@ -172,6 +172,13 @@ CHECKPOINTS_ROOT: Path = Path(os.environ.get("CHECKPOINTS_ROOT", DATA_DIR / "che
 LOGS_ROOT: Path = Path(os.environ.get("LOGS_ROOT", DATA_DIR / "logs"))
 
 
+# --- Module 6 (Evaluation Metrics + Simple Baselines; feat-009 + feat-006) ---
+METRICS_TOP_K: int = 20           # top-k strongest up/down genes for recall (§10.4)
+METRICS_SIGN_TOP_N: int = 50      # strongest effects scored for sign accuracy (§10.4)
+# Common prediction store: predictions/<model>/<split>/<seed>.parquet (feat-006/009 output schema).
+PREDICTIONS_ROOT: Path = Path(os.environ.get("PREDICTIONS_ROOT", DATA_DIR / "results" / "predictions"))
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

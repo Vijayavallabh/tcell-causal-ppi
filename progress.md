@@ -2,8 +2,45 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 5 Loss + Training built + xhigh-reviewed twice + all fixes applied; full real-data run on the A100)
-**Active Feature:** Module 5 (Loss + Training) — feat-008 **in-progress** (M1+M2+M3 + Module 4 rationale head/faithfulness + **Module 5 Stage A training loop + Stage B calibration loss** built; the Stage-B calibration + rationale **fit loops** + the near-null-signal freeze gate remain, and feat-007 is not-started). feat-005 **in-progress** (fold-local basis + frozen sparse_pca production loadings done; method×K comparison + shallow-VAE remain). Next: feat-008 Stage-B fit loops, or feat-006 (baselines) / feat-007 (graph baselines)
+**Last Updated:** 2026-07-16 (Module 6 Evaluation Metrics + Simple Baselines built + adversarial-reviewed [8/8 findings fixed]; **NOT yet committed**)
+**Active Feature:** Module 6 (Evaluation Metrics + Simple Baselines) — **feat-009 done**, **feat-006 in-progress** (6 of 8 simple baselines; elastic-net + CatBoost deferred). Also still open: feat-008 **in-progress** (Stage-B calibration + rationale fit loops + near-null-signal freeze gate remain), feat-005 in-progress, feat-007 not-started. Next: feat-006 remainder (elastic-net + CatBoost), feat-007 (graph baselines — now unblocked by the shared baseline protocol + output schema), or feat-008 Stage-B fit loops.
+
+## Module 6 (Evaluation Metrics + Simple Baselines) — this session (2026-07-16)
+
+New packages `src/tcell_pipeline/evaluation/` (feat-009) + `src/tcell_pipeline/baselines/` (feat-006).
+Makes model output **scorable** and gives every headline table its mandatory simple references. Fully
+synthetic tests — no marts required. **Built + adversarial-reviewed but not yet committed** (awaiting the
+commit go-ahead).
+
+- **Metrics** (`evaluation/metrics.py`) — 10 fns / 8 groups, per-row then macro-averaged (a row = one
+  perturbation-target×condition response, so per-row *is* per-perturbation): mae, rmse, pearson_corr,
+  spearman_corr, **systema_pert_specific_delta** (primary H1 endpoint — `corr(pred−train_mean,
+  true−train_mean)`), centroid_accuracy, topk_recall, sign_accuracy, program_cosine, signed_de_metrics
+  (macro-F1 + per-class P/R + AUPRC; AUROC omitted). Zero/constant/**non-finite** rows → 0.0 (a zero
+  predictor scores worst).
+- **Second independent impl** (`evaluation/metrics_ref.py`) — loops + scipy/sklearn re-implementation of
+  mae/rmse/pearson/spearman/systema/centroid/program_cosine; agrees with `metrics.py` on a fixed fixture
+  **and** on zero/constant/non-finite rows.
+- **G2-MQ gate** (`evaluation/metric_qualification.py`) — `qualify_metric` (all-negatives < all-positives)
+  + control constructors zero / perturbed-mean / label-perm-N1 (a **derangement**) / row-shuffle-N2 +
+  oracle / guide-split-half.
+- **Control-reference safeguards** (`evaluation/control_reference.py`, §10.5) — independent vs shared
+  control estimators + `null_control_predictor` (~0 under the corrected estimator).
+- **Common output schema** (`evaluation/output_schema.py`) — `predictions/<model>/<split>/<seed>.parquet`
+  (row_index + delta_z_0..K-1 + delta_x_0..G-1 + sigma_0..K-1; atomic; baselines write sigma=0).
+- **Six baselines** (`baselines/simple_baselines.py`) — common `BaseBaseline`
+  (fit(X,z,conditions)→predict→(Δz (M,K), Δx (M,G)); Δx = Δz @ B.T via the frozen basis, basis=None → empty
+  gene block): Zero / PerturbedMean / ConditionMean / Ridge / NearestNeighbor / LowRank. **Deferred within
+  feat-006:** elastic-net + CatBoost.
+- **config:** METRICS_TOP_K=20, METRICS_SIGN_TOP_N=50, PREDICTIONS_ROOT.
+- **Verified:** `./init.sh` **131 passed** (92 prior + 39: 23 in `test_metrics.py`, 16 in
+  `test_baselines.py`), zero warnings; both metric impls agree on non-degenerate + zero/constant +
+  non-finite rows under warnings-as-errors.
+- **Adversarial review** (dynamic workflow, 6 dimensions × per-finding verify — 8/8 confirmed then fixed,
+  `docs/reviews/2026-07-16-code-review-module6.md`): centroid degenerate-predictor guard; full non-finite
+  agreement (was 0.0 vs NaN/crash); N1 derangement; single-program `(M,1)` baseline shape; and 3 too-weak
+  tests upgraded (magnitude selection, degenerate/non-finite agreement, imperfect-probs signed-DE).
+- Design+as-built: `docs/specs/2026-07-16-module6-evaluation.md`.
 
 ## Full real-data run on GPU incl. Module 5 (2026-07-16)
 

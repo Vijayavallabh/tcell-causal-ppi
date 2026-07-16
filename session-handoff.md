@@ -11,8 +11,11 @@
   remain), feat-008 (EG-IPG model) **in-progress** (M1+M2+M3 decoder/EGIPGModel + Module 4 rationale head /
   faithfulness + **Module 5 Stage A training loop + Stage B calibration loss** built; the **Stage-B
   calibration + rationale FIT loops + the near-null-signal freeze gate remain**, and feat-007 is
-  not-started). Done: feat-001/002/003/004/014/015/016. Next: feat-008 Stage-B fit loops, or feat-006
-  (baselines) / feat-007 (graph baselines).
+  not-started). Done: feat-001/002/003/004/014/015/016. **NEW — Module 6 (Evaluation Metrics + Simple
+  Baselines) built this session:** **feat-009 (metrics) done**, **feat-006 (simple baselines) in-progress**
+  (6 of 8 baselines — elastic-net + CatBoost deferred). Next: feat-006 remainder (elastic-net + CatBoost),
+  feat-007 (graph baselines — now unblocked by Module 6's shared baseline protocol + output schema), or
+  feat-008 Stage-B fit loops.
 - Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
   state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
   `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,
@@ -23,7 +26,32 @@
   feat-003 `35e3999`. The two planning docs (report + walkthrough) carry as-built notes but are gitignored
   (local-only). **Latest committed is always `git log -1` on main.**
 
-## Completed This Session (Module 5 — Loss + Training; feat-008)
+## Completed This Session (Module 6 — Evaluation Metrics + Simple Baselines; feat-009 + feat-006)
+
+**Built + adversarial-reviewed (8/8 findings fixed) but NOT yet committed** — awaiting the commit
+go-ahead. All fully synthetic (no marts). `./init.sh` green at **131 tests** (92 prior + 39).
+
+- **feat-009 (metrics) — done.** New package `src/tcell_pipeline/evaluation/`: `metrics.py` (10 fns / 8
+  groups, per-row → macro; primary H1 endpoint `systema_pert_specific_delta`; zero/constant/non-finite →
+  0.0), `metrics_ref.py` (independent 2nd impl agreeing on a fixture + degenerate + non-finite rows),
+  `metric_qualification.py` (G2-MQ `qualify_metric` + control constructors incl. N1 **derangement**),
+  `control_reference.py` (§10.5 independent vs shared control + `null_control_predictor`),
+  `output_schema.py` (`predictions/<model>/<split>/<seed>.parquet`, atomic, sigma=0 default).
+- **feat-006 (simple baselines) — in-progress.** New package `src/tcell_pipeline/baselines/`:
+  `simple_baselines.py` — common `BaseBaseline` (fit(X,z,conditions)→predict→(Δz (M,K), Δx (M,G)); Δx = Δz
+  @ B.T; basis=None → empty gene block); Zero / PerturbedMean / ConditionMean / Ridge / NearestNeighbor /
+  LowRank. **Deferred:** elastic-net + CatBoost (named in the feature description, out of this goal's scope).
+- **config:** METRICS_TOP_K, METRICS_SIGN_TOP_N, PREDICTIONS_ROOT.
+- **Tests:** `src/tests/test_metrics.py` (23), `src/tests/test_baselines.py` (16 cases / 11 functions).
+- **Review:** dynamic adversarial workflow, 6 dimensions × per-finding verify → 8/8 confirmed then fixed
+  (`docs/reviews/2026-07-16-code-review-module6.md`): centroid degenerate-predictor guard, full non-finite
+  two-impl agreement (was 0.0 vs NaN/crash), N1 derangement, single-program `(M,1)` baseline shape, 3
+  too-weak tests upgraded. Design+as-built: `docs/specs/2026-07-16-module6-evaluation.md`.
+- **To commit** (when asked): the two new packages + `config.py` + the two test files +
+  `docs/specs/2026-07-16-module6-evaluation.md` + `docs/reviews/2026-07-16-code-review-module6.md` +
+  feature_list/progress/handoff — one commit (the DoD triad + code + docs together).
+
+## Completed Prior Session (Module 5 — Loss + Training; feat-008)
 
 Built Module 5 (walkthrough §8) as a new package `src/tcell_pipeline/training/`, making the four model
 modules **trainable**. Two frozen stages (§8.1): **Stage A** fits the H1 predictor (Module 1+2+3); the
