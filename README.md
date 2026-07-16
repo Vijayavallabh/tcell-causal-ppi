@@ -539,6 +539,22 @@ that the expression-only nested variant (`graph_encoder=None`) pins `lambda` to 
 python src/tcell_pipeline/run_module3_smoke.py
 ```
 
+### Verify Module 4 (sparse predictive-rationale head) end to end
+
+`run_module4_smoke.py` builds the `EGIPGModel` on the real PPI graph, extracts a sparse rationale over a
+real perturbation's neighbourhood (`RationaleHead`), and runs the **fixed-model** faithfulness tests
+(`FaithfulnessTester`) against size- and relation-matched controls (`MatchedRandomSampler`) — checking
+sufficiency < matched-random, necessity > matched-random, a structural-OOD audit, and that the output is
+labelled `predictive_rationale`, never `causal`. This is a **predictive rationale, not a causal
+mechanism** — Stage B, fitted after the H1 predictor freeze; deletion scores are *fixed-model
+perturbation tests*, not interventions. Design + as-built: `docs/specs/2026-07-16-module4-rationale-head.md`.
+
+```bash
+python src/tcell_pipeline/rationale/run_module4_smoke.py
+```
+
+The synthetic unit checks (`src/tests/test_rationale.py`) run under `./init.sh` with the rest of the suite.
+
 ## Repository / data-mart layout
 
 Downloads stay immutable under `data/raw/`; everything else is derived and reproducible. `data/` is

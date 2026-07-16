@@ -140,4 +140,7 @@ every mart they read. Cleanups: overridable decoder dims, the shared `build_enco
   `ponytail:` in `program_basis.py`).
 - **§6.5 comparison + shallow VAE** (feat-005 done-criterion) are not run here — only the extraction
   machinery that a comparison harness would call.
-- **Module 4 / losses / training** (feat-008 remainder) are out of scope by design.
+- **Module 4 / losses / training** (feat-008 remainder) are out of scope by design. **Update
+  (2026-07-16):** the Module 4 sparse predictive-rationale head + faithfulness eval are now built — see
+  `docs/specs/2026-07-16-module4-rationale-head.md`. The training-loss optimization loop + train/calibration
+  loops remain feat-008's open work.
