@@ -1,9 +1,8 @@
 """Trainer: Stage A optimisation of the EG-IPG H1 predictor (Module 1 + 2 + 3) (§8.1-8.2).
 
-AdamW over the model AND the loss's own parameters (the DE head + shared-component extractor live on
-``StageALoss``); the frozen basis B is a decoder buffer, so it never enters the optimiser. Early
-stopping on validation total, gradient clipping, atomic best/last checkpoints, and per-epoch loss
-components written to the logs dir.
+AdamW over the model AND the loss's own parameters (the DE head lives on ``StageALoss``); the frozen
+basis B is a decoder buffer, so it never enters the optimiser. Early stopping on validation total,
+gradient clipping, atomic best/last checkpoints, and per-epoch loss components written to the logs dir.
 """
 from __future__ import annotations
 
@@ -38,10 +37,14 @@ class Trainer:
         donor_invariance: bool = config.DONOR_INVARIANCE,
         donor_samples: int = config.DONOR_INVARIANCE_SAMPLES,
     ) -> None:
-        torch.manual_seed(seed)
+        if len(train_ds) == 0:  # a clear message instead of an opaque RandomSampler / KeyError('total')
+            raise ValueError("training dataset is empty (0 examples) — check the split role / n_max")
         self.device = device
         self.model = model.to(device)
-        self.loss = (loss or StageALoss(model.decoder.gene_dim, model.decoder.program_dim)).to(device)
+        dec = model.decoder
+        # size the DE head to the WRAPPED encoder's real h_do width, not the global config default,
+        # so a reduced-width encoder ablation doesn't feed a mis-sized head
+        self.loss = (loss or StageALoss(dec.gene_dim, dec.program_dim, h_do_dim=dec.h_do_dim)).to(device)
         self.params = list(self.model.parameters()) + list(self.loss.parameters())
         self.opt = torch.optim.AdamW(self.params, lr=lr, weight_decay=weight_decay)
         self.max_epochs, self.patience, self.grad_clip = max_epochs, patience, grad_clip
@@ -52,9 +55,13 @@ class Trainer:
         self.donor_pool = getattr(train_ds, "donor_pool", {}) or {}
         self.donor_mean = getattr(train_ds, "donor_mean", None)
         self._donor_on = bool(donor_invariance and donor_samples >= 2 and self.donor_pool)
+        # dedicated generators (donor resampling + a seeded DataLoader shuffle) rather than a process-global
+        # torch.manual_seed, so constructing a Trainer never reseeds the caller's global RNG
         self._gen = torch.Generator().manual_seed(seed)
+        loader_gen = torch.Generator().manual_seed(seed)
         collate = PerturbationDataset.collate
-        self.train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate)
+        self.train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                                       collate_fn=collate, generator=loader_gen)
         self.val_loader = (
             DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate) if val_ds else None
         )
@@ -86,7 +93,9 @@ class Trainer:
             for batch, targets, conditions, dz_true, dx_true, _ in loader:
                 dz_true, dx_true = dz_true.to(self.device), dx_true.to(self.device)
                 out = self.model(batch, targets, conditions)
-                dz_variants = self._donor_variants(batch, targets, conditions) if self._donor_on else None
+                # donor variants are a stochastic resample — TRAIN only, so the val total stays
+                # deterministic for frozen weights and early-stopping/best-checkpoint aren't RNG-driven
+                dz_variants = self._donor_variants(batch, targets, conditions) if (self._donor_on and train) else None
                 comps = self.loss(out, dz_true, dx_true, dz_variants=dz_variants)
                 if train:
                     self.opt.zero_grad()

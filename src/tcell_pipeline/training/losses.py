@@ -64,32 +64,40 @@ class StageALoss(nn.Module):
     ) -> None:
         super().__init__()
         self.de_head = DEHead(gene_dim, h_do_dim)
-        self.f_shared = nn.Linear(program_dim, program_dim)  # donor-invariant component extractor
+        self.program_dim = program_dim
         self.huber_delta, self.focal_gamma, self.de_call_z = huber_delta, focal_gamma, de_call_z
         self.lambda_gene, self.lambda_de = lambda_gene, lambda_de
         self.lambda_inv, self.lambda_graph = lambda_inv, lambda_graph
         self.graph_lambda_sparse, self.graph_lambda_unsrc = graph_lambda_sparse, graph_lambda_unsrc
 
     def _invariance(self, dz_variants) -> torch.Tensor:
-        """Donor-invariance penalty (§8.2 item 4): the shared program component must not depend on WHICH
-        donor's control profile conditions the encoder. ``dz_variants`` are Δz predicted under distinct
-        REAL per-donor PC vectors (from control_donor_profiles — the mart's donor_pc is only their mean)
-        for the same (target, condition); this penalises the variance of ``f_shared`` across them, i.e.
-        forces the donor-invariant component to be constant across donors while the rest of Δz stays free
-        to carry donor-specific nuisance. A real, dense signal — non-zero on every example whenever ≥2
-        donor draws are supplied (Trainer resamples per step). Empty / <2 draws (donor resampling disabled
-        or no donor pool) → 0."""
+        """Donor-invariance penalty (§8.2 item 4): the model's program prediction Δz must not depend on
+        WHICH donor's control profile conditions the encoder. ``dz_variants`` are Δz predicted under
+        distinct REAL per-donor PC vectors (control_donor_profiles — the mart's donor_pc is only their
+        mean) for the same (target, condition); we penalise the per-example VARIANCE of Δz across those
+        donors DIRECTLY.
+
+        Penalising Δz itself, not a learnable projection f_shared(Δz), is deliberate: a free f_shared is
+        trivially minimised by collapsing its weights to 0 (weight decay + the variance objective both
+        drive W→0), so the term would decay back to inert without ever pressuring the encoder — the exact
+        degeneracy an earlier version had. Raw-Δz variance has no such trivial solution: driving it down
+        forces the encoder to emit donor-invariant predictions, consistent with the donor-averaged
+        response target. (A shared/nuisance split Δz = Δz_shared + Δz_nuisance(d) that preserves
+        legitimate donor-specific signal would need a paired nuisance head — deferred; for a single-output
+        predictor evaluated on donor-averaged data, full Δz invariance is the right target.) <2 draws → 0."""
         if not dz_variants or len(dz_variants) < 2:
             return dz_variants[0].new_zeros(()) if dz_variants else torch.zeros(())
-        reps = torch.stack([self.f_shared(v) for v in dz_variants])   # (S, B, K)
+        reps = torch.stack(dz_variants)                               # (S, B, K) — Δz directly
         return (reps - reps.mean(dim=0, keepdim=True)).pow(2).sum(dim=-1).mean()
 
     def _graph(self, edge_gates, edge_confidences=None) -> torch.Tensor:
-        """Sparsity on the condition gates plus an unsourced-reliance L2 that a per-edge source
-        confidence (in [0,1]) down-weights; with no confidence supplied every edge is treated as
-        unsupported (conf = 0), so the term is a plain L2 on the gates (§8.2 item 5)."""
+        """Per-sample edge-gate sparsity + an unsourced-reliance L2 that a per-edge source confidence
+        (in [0,1]) down-weights; with no confidence supplied every edge is treated as unsupported
+        (conf = 0), so the term is a plain L2 on the gates (§8.2 item 5). Averaged over the batch so its
+        strength doesn't scale with batch size (the other loss terms are all mean-reduced)."""
         if not edge_gates:
             return torch.zeros(())
+        n = max(len(next(iter(edge_gates.values()))), 1)  # batch size (one gate tensor per sample)
         sparse = torch.zeros(())
         unsrc = torch.zeros(())
         for rel, per_sample in edge_gates.items():
@@ -100,7 +108,7 @@ class StageALoss(nn.Module):
                 sparse = sparse.to(alpha) + alpha.abs().sum()
                 conf = confs[b].to(alpha) if confs is not None else torch.zeros_like(alpha)
                 unsrc = unsrc.to(alpha) + ((1.0 - conf) * alpha.pow(2)).sum()
-        return self.graph_lambda_sparse * sparse + self.graph_lambda_unsrc * unsrc
+        return (self.graph_lambda_sparse * sparse + self.graph_lambda_unsrc * unsrc) / n
 
     def forward(self, out: dict, dz_true, dx_true, dz_variants=None, edge_confidences=None) -> dict:
         response = F.huber_loss(out["delta_z"], dz_true, delta=self.huber_delta)

@@ -46,21 +46,26 @@ here by design. **Committed on main this session** (`git log -1`).
   --expr-only`); pins `set_num_threads(1)`. `RationaleLoss` (Module 4) **not** reimplemented.
 - **config** — `LR/WEIGHT_DECAY/MAX_EPOCHS/EARLY_STOP_PATIENCE/BATCH_SIZE/GRAD_CLIP/HUBER_DELTA/
   FOCAL_GAMMA/LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/CHECKPOINTS_ROOT/LOGS_ROOT`.
-- **Donor invariance — REAL (intelligent fix), not inert.** An adversarial review first found the naive
-  `_invariance` (group mart rows by `(target,condition)`) inert: the mart's `donor_pc` is the condition-level
-  *mean* of the donors, so no donor pair exists to group (only paralogue HGNC collisions fired). But the
-  real donors survive in `control_donor_profiles.parquet` (**4 real donors** × 3 conditions — the mart just
-  averaged them). Reformulated to **donor resampling**: the Trainer re-runs the encoder under distinct real
-  donor PC vectors (`f_shared` in eval so DropEdge doesn't contaminate the signal) and `L_invariance`
-  penalises the **variance of `f_shared(Δz)` across donors** — a dense, real donor-generalisation signal
-  that **trains (1.30 → 0.25 in one epoch on real data)**. `config.DONOR_INVARIANCE` /
-  `DONOR_INVARIANCE_SAMPLES`; `--no-donor-invariance` opts out. `ponytail:` donor resampling ~triples the
-  CPU-bound graph Stage-A cost (cache node states + re-run only readout+decoder to remove it). Refuted
-  review finding: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
-- **Verification** — `./init.sh` green, **90 tests** (79 prior + 11 new `test_training.py`, synthetic),
-  zero warnings. Real-data Stage A smoke PASSED: expr-only (128×2, invariance 1.30→0.25) and full-graph
-  M1→M2→M3 (donor invariance active + a `--no-donor-invariance` `L_graph`-on-real-`edge_gates` check) —
-  all train, back-prop, write atomic checkpoints.
+- **Donor invariance — REAL (intelligent fix + post-review hardening), not inert.** A review first found
+  the naive `_invariance` (group mart rows by `(target,condition)`) inert: the mart's `donor_pc` is the
+  condition-level *mean* of the donors. The real donors survive in `control_donor_profiles.parquet` (**4
+  real donors** × 3 conditions), so it was reformulated to **donor resampling** — the Trainer re-runs the
+  encoder under distinct real donor PC vectors and `L_invariance` penalises the **variance of `Δz` across
+  donors, directly**. (A *second* xhigh review caught that penalising `Var(f_shared(Δz))` with a free
+  `f_shared` is degenerate — it collapses to `W=0` under weight decay, re-inert — so `f_shared` was dropped;
+  raw-`Δz` variance has no trivial solution and forces the encoder itself.) Verified: **optimises via the
+  encoder, 2.15 → 0.19 over 3 epochs**, computed **train-only** so the val metric stays deterministic.
+  `config.DONOR_INVARIANCE` / `DONOR_INVARIANCE_SAMPLES`; `--no-donor-invariance` opts out. `ponytail:`
+  donor resampling ~triples the CPU-bound graph Stage-A cost (cache node states to remove it).
+- **Post-review round 2 (xhigh `/code-review`, 15 verified defects; correctness fixed):** the degenerate
+  `f_shared`; the stochastic donor term leaking into **val** → train-only; silent no-op when donor profiles
+  absent → fail-fast + honest log; `L_graph` batch-size-dependent → mean-reduced; `manual_seed` global
+  reseed → dedicated `Generator`s; empty-split crash → clear `ValueError`; DEHead sized from the decoder;
+  de_obs↔pc guard; `DONOR_COLS` reused. **Flagged, not silently changed:** train `A` vs val `z@B`
+  `Δz_true` mismatch (feat-005 modeling decision); `edge_confidences` unwired (unsourced term stays L2).
+- **Verification** — `./init.sh` green, **92 tests** (79 prior + 13 new `test_training.py`, synthetic),
+  zero warnings. Real-data Stage A smoke PASSED: expr-only (256×3, invariance 2.15→0.19, val invariance 0)
+  and full-graph M1→M2→M3 — all train, back-prop, write atomic checkpoints.
 - **Remaining (feat-008):** the Stage-B calibration + rationale **fit loops** (both loss modules exist,
   no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines, still not-started).
 - Design + as-built: `docs/specs/2026-07-16-module5-training.md`.
@@ -267,9 +272,9 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Compile + tests | `./init.sh` | Pass | **90 passed** on torch cu126 (79 prior + 11 Module-5 `test_training.py`); compileall clean; zero warnings |
-| Module 5 unit tests | `pytest src/tests/test_training.py` | Pass | 11 passed (synthetic, tiny fixture marts incl. donor profiles): Stage A shapes+gradient flow, graph-gate penalty, Stage B Gaussian NLL+grad, DE probs∈[0,1], learnable λ mixture, dataset keys+q_post fence+dz source, **donor pool+resampler (distinct real donors)**, 2-epoch checkpointed run, param-update, **real donor-invariance signal (non-zero+trains f_shared on; clean 0 off)** |
-| Module 5 real-data Stage A smoke | `python -m tcell_pipeline.training.run_train --expr-only --n-max 128 --epochs 2` | Pass | trains + back-props + atomic checkpoint; **real 4-donor invariance term falls 1.30→0.25 in one epoch**. Full-graph `--n-max 2 --epochs 1` (donor invariance active) + `--n-max 4 --no-donor-invariance` (L_graph on real edge_gates) both PASSED |
+| Compile + tests | `./init.sh` | Pass | **92 passed** on torch cu126 (79 prior + 13 Module-5 `test_training.py`); compileall clean; zero warnings |
+| Module 5 unit tests | `pytest src/tests/test_training.py` | Pass | 13 passed (synthetic, tiny fixture marts incl. donor profiles): Stage A shapes+gradient flow, graph-gate penalty + **batch-normalization**, Stage B Gaussian NLL+grad, DE probs∈[0,1], learnable λ mixture, dataset keys+q_post fence+dz source, **donor pool+resampler (distinct real donors)**, 2-epoch checkpointed run, param-update, **real donor-invariance signal (train non-zero / val 0 / off 0)**, **empty-split guard** |
+| Module 5 real-data Stage A smoke | `python -m tcell_pipeline.training.run_train --expr-only --n-max 256 --epochs 3` | Pass | trains + back-props + atomic checkpoint; **real 4-donor invariance term falls 2.15→0.19 over 3 epochs via the encoder; val invariance 0 (deterministic)**. Full-graph M1→M2→M3 (donor invariance active) + `--no-donor-invariance` (L_graph on real edge_gates) both PASSED |
 | Module 4 unit tests | `pytest src/tests/test_rationale.py` | Pass | 10 passed (synthetic): imp∈[0,1], top-k sorted, sufficiency<matched-random, necessity>matched-random, matched-random size+relation match, structural_ood (deleted-fraction vs independent count + component monotonicity), loss components+gradients, expr-only→empty rationale, label predictive_rationale not causal, faithfulness determinism under active DropEdge |
 | Module 4 real-data smoke | `python src/tcell_pipeline/rationale/run_module4_smoke.py` | Pass | real PPI graph, A1BG neighbourhood (33,754 edges, |S|=15): sufficiency<matched-random, necessity>matched-random, structural-OOD audit, labelled `predictive_rationale` (not causal) |
 | Module 3 unit tests | `pytest src/tests/test_programs.py` | Pass | 12 passed (synthetic): basis shapes ×4 methods, fold-local rows, decoder shapes, λ∈[0,1], σ>0, B-is-buffer, Δx=B·Δzᵀ+r, expr-only variant, full EGIPGModel forward |
@@ -291,7 +296,7 @@ NaN guard. Earlier: ~100 GB download, `examples/`, README, Module 0 + code-revie
 ## Files Added (this session, Module 5 — Loss + Training)
 
 - `src/tcell_pipeline/training/__init__.py`, `losses.py`, `dataset.py`, `trainer.py`, `run_train.py` (NEW package)
-- `src/tests/test_training.py` (NEW, 11 synthetic tests incl. donor pool + real donor-invariance)
+- `src/tests/test_training.py` (NEW, 13 synthetic tests incl. donor pool + real donor-invariance + post-review guards)
 - `docs/specs/2026-07-16-module5-training.md` (NEW — design + as-built + the real donor-invariance fix)
 - `src/tcell_pipeline/config.py` — Module 5 constants (`LR`, `WEIGHT_DECAY`, `MAX_EPOCHS`,
   `EARLY_STOP_PATIENCE`, `BATCH_SIZE`, `GRAD_CLIP`, `HUBER_DELTA`, `FOCAL_GAMMA`, `LAMBDA_DE/INV/GRAPH/GENE`,
@@ -407,7 +412,7 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
 ## Recommended Next Step
 
 - **Module 5 (Loss + Training) is committed on main** (`git log -1`); working tree clean, `./init.sh` green
-  (**90 tests**, zero warnings). The `training/` package, config, tests, the Module 5 spec, README, and
+  (**92 tests**, zero warnings). The `training/` package, config, tests, the Module 5 spec, README, and
   state-file syncs all landed in one commit. Stage A trains M1+M2+M3 (with **real donor-invariance**); Stage
   B calibration is a loss module.
 - To **advance feat-008 (the last pieces)**:
@@ -421,10 +426,16 @@ An xhigh workflow review of the Module 3 diff surfaced 13 verified defects; all 
   2. **Stage B fit loops** — on the frozen H1: fit `StageBCalibrationLoss` on the **calibration** partition,
      and fit `RationaleHead` with Module 4's `RationaleLoss` (both loss modules exist; the fit loops don't).
 - **Donor invariance is now a real trained signal** (donor resampling over the 4 real `control_donor_profiles`
-  donors — see the Module 5 section). Efficiency upgrade for graph runs: cache the donor-independent graph
-  node states so donor variants re-run only readout+decoder (`ponytail:` in `trainer._donor_variants`). The
-  paralogue HGNC collision (GPR89A/GPR89B→`GPHRA`) surfaced during the review is an upstream **feat-002**
-  id_mapping item, independent of Module 5.
+  donors; penalty on `Var(Δz)` directly — see the Module 5 section). Efficiency upgrade for graph runs: cache
+  the donor-independent graph node states so donor variants re-run only readout+decoder (`ponytail:` in
+  `trainer._donor_variants`).
+- **Open items flagged by the xhigh review (not yet actioned):** (1) `Δz_true` is the sparse-PCA score `A`
+  for train rows but the `z@B` projection out of fold — a **feat-005** modeling decision (persist the fitted
+  sparse-coder for consistent val targets, or use `z@B` everywhere). (2) `edge_confidences` are never wired
+  into `L_graph`, so its unsourced-reliance term is a plain L2 (thread per-edge source confidence from the
+  graph output to make it source-aware). (3) `getattr(train_ds,'donor_pool',{})` silently disables donor
+  invariance if the dataset is wrapped (e.g. `Subset`). The paralogue HGNC collision (GPR89A/GPR89B→`GPHRA`)
+  surfaced earlier is an upstream **feat-002** id_mapping item.
 - To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity /
   stability + a shallow-VAE basis (the extraction machinery is done and the sparse_pca production loadings
   are frozen — only the study remains).

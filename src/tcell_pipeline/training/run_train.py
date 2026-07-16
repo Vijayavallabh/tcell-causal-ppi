@@ -29,10 +29,13 @@ from tcell_pipeline.training.trainer import Trainer  # noqa: E402
 def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, seed=config.SPLIT_SEED,
         n_max=None, expr_only=False, donor_invariance=config.DONOR_INVARIANCE) -> dict | None:
     torch.set_num_threads(1)  # many-core box: tiny per-subgraph GNN ops thrash the default thread pool
-    required = (config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_OBS_PATH,
-                config.DE_VAR_PATH, config.PROGRAM_LOADINGS_PATH, config.PROGRAM_RESPONSE_PATH, zscore_path())
-    if not all(p.exists() for p in required):
-        print("[train] marts/splits/basis absent — run run_module0.py, splits, run_program_basis first")
+    required = [config.BLOCKED_SPLIT_PATH, config.PERTURBATION_CONDITION_PATH, config.DE_OBS_PATH,
+                config.DE_VAR_PATH, config.PROGRAM_LOADINGS_PATH, config.PROGRAM_RESPONSE_PATH, zscore_path()]
+    if donor_invariance:  # fail fast rather than silently disabling the donor term when profiles are absent
+        required.append(config.CONTROL_DONOR_PROFILES_PATH)
+    missing = [str(p) for p in required if not p.exists()]
+    if missing:
+        print(f"[train] required artifacts absent: {missing} — run run_module0.py, splits, run_program_basis first")
         return None
 
     gene_names = pd.read_parquet(config.DE_VAR_PATH, columns=["gene_name"])["gene_name"].tolist()
@@ -42,8 +45,11 @@ def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, se
     train_ds = PerturbationDataset("train", n_max=n_max)
     val_ds = PerturbationDataset("val", n_max=n_max)
     n_donors = len(train_ds.donor_pool.get("Rest", [])) if train_ds.donor_pool else 0
+    donor_active = donor_invariance and n_donors >= 2  # what the Trainer will actually do
     print(f"[train] {len(train_ds)} train / {len(val_ds)} val examples; expr_only={expr_only}; "
-          f"donor_invariance={donor_invariance} ({n_donors} real donors/condition)")
+          f"donor_invariance={'on' if donor_active else 'off'} ({n_donors} real donors/condition)")
+    if donor_invariance and not donor_active:
+        print("[train] WARNING donor_invariance requested but <2 donors available — the term is inactive")
 
     trainer = Trainer(model, train_ds, val_ds, lr=lr, max_epochs=epochs, batch_size=batch_size, seed=seed,
                       donor_invariance=donor_invariance)

@@ -30,24 +30,33 @@ loss modules (calibration + Module 4 rationale) are fitted *after* the H1 freeze
 - **config:** `LR/WEIGHT_DECAY/MAX_EPOCHS/EARLY_STOP_PATIENCE/BATCH_SIZE/GRAD_CLIP/HUBER_DELTA/FOCAL_GAMMA/
   LAMBDA_DE/LAMBDA_INV/LAMBDA_GRAPH/LAMBDA_GENE/DE_CALL_ZSCORE/DONOR_INVARIANCE/DONOR_INVARIANCE_SAMPLES/
   CHECKPOINTS_ROOT/LOGS_ROOT`.
-- **Donor invariance is REAL, not inert (2026-07-16 intelligent fix).** An adversarial review first found
-  the naive `_invariance` (group mart rows by `(target,condition)`) inert — the mart's `donor_pc` is the
-  condition-level *mean* of the donors, so no donor pair exists to group. But the individual donors survive
-  in `control_donor_profiles.parquet` (**4 real donors** × 3 conditions). The term was **reformulated to
-  donor resampling**: the Trainer re-runs the encoder under distinct real donor PC vectors (`f_shared` in
-  eval so DropEdge doesn't contaminate the signal) and `L_invariance` penalises the **variance of
-  `f_shared(Δz)` across donors** — a dense, real donor-generalisation signal. Verified on real data: the
-  term is **non-zero and optimises (1.30 → 0.25 in one epoch)**. `config.DONOR_INVARIANCE`(=True) /
-  `DONOR_INVARIANCE_SAMPLES`(=2); `--no-donor-invariance` opts out. `ponytail:` donor resampling ~triples
-  the CPU-bound graph Stage-A cost (each variant re-runs the donor-independent message passing) — cache
-  node states + re-run only readout+decoder to remove it.
-- **Verification:** `./init.sh` green — **90 tests** (79 prior + 11 new `test_training.py`, all synthetic:
-  Stage A shapes+gradient flow, graph-gate penalty, Stage B NLL+grad, DE probs∈[0,1], learnable λ mixture,
-  dataset keys+q_post fence+dz source, **donor pool+resampler**, 2-epoch checkpointed run, param-update,
-  **real donor-invariance signal** on/off), **zero warnings**. Real-data Stage A smoke PASSED: expr-only
-  (128×2, invariance 1.30→0.25) and full-graph M1→M2→M3 (both with donor invariance active, and
-  `--no-donor-invariance` for the fast `L_graph`-on-real-`edge_gates` check) — all train, back-prop, checkpoint.
-- Refuted review finding: a false trainer device-mismatch (moot CPU-only; encoders self-place on GPU).
+- **Donor invariance is REAL, not inert (2026-07-16 intelligent fix + post-review hardening).** An
+  adversarial review first found the naive `_invariance` (group mart rows by `(target,condition)`) inert —
+  the mart's `donor_pc` is the condition-level *mean* of the donors, so no donor pair exists to group. The
+  individual donors survive in `control_donor_profiles.parquet` (**4 real donors** × 3 conditions), so the
+  term was reformulated to **donor resampling**: the Trainer re-runs the encoder under distinct real donor
+  PC vectors (in eval so DropEdge doesn't contaminate the signal) and `L_invariance` penalises the
+  **variance of `Δz` across donors, directly**. (A *second* xhigh review caught that penalising
+  `Var(f_shared(Δz))` with a free `f_shared` is degenerate — collapses to `W=0` under weight decay,
+  re-inert — so `f_shared` was dropped and we penalise raw `Δz`, which has no trivial solution and forces
+  the encoder itself.) Verified on real data: the term **optimises via the encoder, 2.15 → 0.19 over 3
+  epochs**, and is computed in **train only** so the val metric stays deterministic.
+  `config.DONOR_INVARIANCE`(=True) / `DONOR_INVARIANCE_SAMPLES`(=2); `--no-donor-invariance` opts out.
+  `ponytail:` donor resampling ~triples the CPU-bound graph Stage-A cost — cache node states to remove it.
+- **Verification:** `./init.sh` green — **92 tests** (79 prior + 13 new `test_training.py`, all synthetic:
+  Stage A shapes+gradient flow, graph-gate penalty + **batch-normalization**, Stage B NLL+grad, DE
+  probs∈[0,1], learnable λ mixture, dataset keys+q_post fence+dz source, **donor pool+resampler**, 2-epoch
+  checkpointed run, param-update, **real donor-invariance signal (train nonzero / val 0 / off 0)**,
+  **empty-split guard**), **zero warnings**. Real-data Stage A smoke PASSED: expr-only (256×3, invariance
+  2.15→0.19, val invariance 0) and full-graph M1→M2→M3 — all train, back-prop, checkpoint.
+- **Post-review round 2 (xhigh `/code-review`, 15 verified defects; correctness ones fixed):** the
+  degenerate `f_shared` (above); stochastic donor term leaking into **val** → now train-only; silent no-op
+  when donor profiles absent → fail-fast + honest log; `L_graph` batch-size-dependent → mean-reduced;
+  `torch.manual_seed` global reseed → dedicated `Generator`s; empty-split crash → clear `ValueError`;
+  DEHead sized from `model.decoder.h_do_dim`; de_obs↔pc row-count guard; `DONOR_COLS` reused. **Flagged
+  (not silently changed):** train `A` vs val `z@B` `Δz_true` mismatch is a feat-005 modeling decision;
+  `edge_confidences` still unwired (unsourced `L_graph` term stays a plain L2). Refuted: a false device
+  mismatch (encoders self-place).
 - **Remaining for feat-008 done:** the Stage-B calibration + rationale **fit loops** (both loss modules
   exist, no fit loop), the near-null-signal freeze gate, and feat-007 (graph baselines) still not-started.
 - Design + as-built: `docs/specs/2026-07-16-module5-training.md`.

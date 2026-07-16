@@ -48,18 +48,23 @@ rationale objective and is **not** reimplemented here.
    layer is not part of the `__getitem__` contract. **Focal** BCE (`γ = 2`) so the abundant non-DE genes
    don't drown the rare affected ones. Numerically stable (`binary_cross_entropy_with_logits`,
    both-class modulation `(1 − p_t)^γ`). `lambda_DE = 0.1`.
-3. **Donor invariance (real per-donor resampling).** `f_shared = Linear(K, K)` extracts the
-   donor-invariant component of `Δz`. The training mart's `donor_pc` is only the *mean* of the real
-   per-donor control profiles, but the individual donor vectors survive in
-   `control_donor_profiles.parquet` (**4 real donors** × 3 conditions, verified). So each step the
-   Trainer re-runs the encoder under `DONOR_INVARIANCE_SAMPLES` distinct real donor PC vectors per row
-   (donor resampling), and `L_invariance` penalises the **variance of `f_shared(Δz)` across those
-   donors** — forcing the donor-invariant component constant while the rest of `Δz` stays free to carry
-   donor-specific nuisance (`Δz = Δz_shared + Δz_nuisance(d)`, §8.2 item 4). This is a **real, dense
-   signal** — non-zero on every example — and it *optimises*: on a real 128-example run the term falls
-   1.30 → 0.25 in one epoch. The donor forwards run with the encoder in eval so DropEdge doesn't
-   contaminate the donor signal (gradients still flow). `lambda_inv = 0.1`; off (or no donor pool) → a
-   clean no-op, never a spurious firing.
+3. **Donor invariance (real per-donor resampling).** The model's program prediction `Δz` must not
+   depend on WHICH donor conditions the encoder. The training mart's `donor_pc` is only the *mean* of
+   the real per-donor control profiles, but the individual donor vectors survive in
+   `control_donor_profiles.parquet` (**4 real donors** × 3 conditions, verified). So each **train** step
+   the Trainer re-runs the encoder under `DONOR_INVARIANCE_SAMPLES` distinct real donor PC vectors per
+   row (donor resampling), and `L_invariance` penalises the **per-example variance of `Δz` across those
+   donors, directly**. Penalising `Δz` itself — not a learnable projection `f_shared(Δz)` — is
+   deliberate: a free `f_shared` is trivially minimised by collapsing its weights to 0 (weight decay +
+   the variance objective both drive `W→0`), so it would decay back to inert without ever pressuring the
+   encoder. Raw-`Δz` variance has no such degenerate solution — driving it down forces the encoder to
+   emit donor-invariant predictions, consistent with the donor-averaged response target. **Verified on
+   real data:** train invariance falls **2.15 → 0.19** over 3 epochs (via the encoder, since there is no
+   free projection to collapse). Donor forwards run with the encoder in eval so DropEdge doesn't
+   contaminate the signal (gradients still flow), and only in **train** (a stochastic resample kept out
+   of the validation metric so early-stopping stays deterministic). `lambda_inv = 0.1`; off / no donor
+   pool → a clean no-op. (A shared/nuisance split keeping legitimate donor-specific signal would need a
+   paired nuisance head — deferred.)
 4. **Graph regularisation.** From `edge_gates`: `graph_λ_sparse · Σ|ᾱ| + graph_λ_unsrc · Σ(1 − conf)·ᾱ²`.
    The sparsity term drives sparse condition gates; the second penalises reliance on low-confidence
    edges. The model output carries only the gates, so `conf` defaults to 0 (every edge treated as
@@ -134,7 +139,38 @@ expression-only nested variant (`graph_encoder=None`, `λ` pinned to 0). Pins `t
 - Real-data orchestrator smoke: `run_train --expr-only --n-max 128 --epochs 2` trains, back-props, writes
   atomic checkpoints, and the **real 4-donor invariance term falls 1.30 → 0.25 in one epoch**; the
   full-graph `--n-max 4 --epochs 1 --no-donor-invariance` exercises `L_graph` on real `edge_gates`.
-- `./init.sh` green at **90 tests** (79 prior + 11 new).
+- `./init.sh` green at **92 tests** (79 prior + 13 new — incl. the graph-penalty batch-normalization and
+  the empty-split guard added in the post-review round below).
+
+## Post-review round 2 (xhigh `/code-review` of `6dcf196..HEAD`)
+
+An xhigh workflow review (6 finder angles → per-(file,line) verify) surfaced 15 verified defects; the
+confirmed correctness ones were fixed:
+
+- **`L_invariance` was degenerate (critical).** Penalising `Var(f_shared(Δz))` with a free `f_shared`
+  is trivially minimised at `W=0` (weight decay + the objective both drive it there), so the donor term
+  decayed back to inert without pressuring the encoder — the same inertness, in a new guise. **Fixed:**
+  dropped `f_shared`, penalise `Var(Δz)` directly (no collapsible projection; the encoder is forced to
+  emit donor-invariant `Δz`). Verified it now trains via the encoder (2.15 → 0.19).
+- **Stochastic donor term leaked into validation** → `val_total` non-deterministic → early-stopping /
+  best-checkpoint partly RNG. **Fixed:** donor variants are computed in **train only**; `val` invariance
+  is 0 and the val metric is deterministic.
+- **Silent no-op when `control_donor_profiles.parquet` absent** (not in the `required` gate) while the
+  log printed `True`. **Fixed:** the profile parquet is in `required` when donor invariance is on
+  (fail-fast), and the log reports the actual on/off state + warns if requested-but-unavailable.
+- **`L_graph` summed over batch×edges** while other terms are means → batch-size/density-dependent
+  weight. **Fixed:** averaged over the batch.
+- **`torch.manual_seed()` global reseed** in `Trainer.__init__`. **Fixed:** dedicated `torch.Generator`s
+  (donor resample + a seeded DataLoader shuffle); no global-RNG side effect.
+- **Empty split → opaque crash.** **Fixed:** a clear `ValueError` on a 0-example training set.
+- **DEHead sized from the global `H_DO_DIM`**, not the wrapped decoder. **Fixed:** `h_do_dim =
+  model.decoder.h_do_dim`. Plus cheap guards (de_obs↔pc row-count check) and DRY (`DONOR_COLS` reused).
+- **Deferred / flagged:** the train (`program_response` sparse-PCA score `A`) vs out-of-fold (`z@B`
+  projection) `Δz_true` mismatch is a **feat-005 modeling decision** (persist the fitted sparse-coder to
+  give val rows a consistent sparse target, or switch to `z@B` everywhere) — not silently changed here.
+  `edge_confidences` are still unwired (the unsourced `L_graph` term stays a plain L2 until per-edge
+  source confidence is threaded from the graph output). Refuted: a claimed trainer device mismatch (the
+  encoders self-place their sub-outputs).
 
 ## Post-review finding + resolution (adversarial workflow review of this diff)
 

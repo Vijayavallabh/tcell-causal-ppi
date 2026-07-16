@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 import scipy.sparse as sp
 import torch
 
@@ -107,12 +108,12 @@ def test_stage_a_components_and_gradients():
     comps = loss(out, torch.randn(4, _K), out["delta_x"].detach(), dz_variants=dz_variants)
     assert set(comps) == {"total", "response", "gene", "de", "invariance", "graph"}
     assert all(torch.isfinite(v).all() for v in comps.values())
-    assert comps["invariance"] > 0                       # variance of f_shared across the two donors
+    assert comps["invariance"] > 0                       # variance of Δz across the two donors
     comps["total"].backward()
     assert out["h_do"].grad is not None                  # gradient reaches the encoder input
     assert loss.de_head.head.weight.grad is not None     # ...the DE head
-    assert loss.f_shared.weight.grad is not None         # ...the shared extractor (via the donor variants)
-    assert dz_variants[0].grad is not None               # ...and back to the donor-variant predictions
+    assert dz_variants[0].grad is not None               # invariance flows to the donor-variant Δz (the encoder)
+    assert not hasattr(loss, "f_shared")                 # no collapsible free projection to zero out
 
 
 def test_invariance_zero_without_donor_variants():
@@ -213,18 +214,35 @@ def test_expr_only_training_updates_params(tmp_path):
 def test_donor_invariance_produces_real_training_signal(tmp_path):
     paths = _write_fixtures(tmp_path)
     train_ds = PerturbationDataset("train", **paths)
+    val_ds = PerturbationDataset("val", **paths)
     assert train_ds.donor_pool                                  # fixture donor profiles loaded
-    trainer = Trainer(_expr_model(paths), train_ds, max_epochs=2, patience=10, batch_size=2,
+    trainer = Trainer(_expr_model(paths), train_ds, val_ds, max_epochs=2, patience=10, batch_size=2,
                       ckpt_dir=tmp_path / "ckpt", log_dir=tmp_path / "logs", donor_invariance=True)
     assert trainer._donor_on                                    # real per-donor resampling is active
-    before = trainer.loss.f_shared.weight.detach().clone()
     res = trainer.run()
-    # the donor-variance term is non-zero on real donor draws (not the old inert group term) and trains f_shared
+    # the donor-variance term (variance of Δz across real donors) is non-zero in TRAIN...
     assert any(e["train"]["invariance"] > 0 for e in res["history"])
-    assert not torch.allclose(before, trainer.loss.f_shared.weight)
+    # ...but zero in VAL: the stochastic resample is train-only, so val_total stays deterministic
+    assert all(e["val"]["invariance"] == 0.0 for e in res["history"])
 
     off = Trainer(_expr_model(paths), PerturbationDataset("train", **paths), max_epochs=1, patience=10,
                   batch_size=2, ckpt_dir=tmp_path / "ckpt2", log_dir=tmp_path / "logs2",
                   donor_invariance=False)
     assert not off._donor_on
     assert off.run()["history"][0]["train"]["invariance"] == 0.0  # cleanly off, not spuriously firing
+
+
+def test_graph_penalty_is_batch_size_normalized():
+    loss = StageALoss(gene_dim=_G, program_dim=_K)
+    one = loss._graph({"physical_ppi": [torch.full((4,), 0.5)]})
+    two = loss._graph({"physical_ppi": [torch.full((4,), 0.5), torch.full((4,), 0.5)]})
+    assert torch.allclose(one, two)                      # mean over the batch, so bs doesn't scale the penalty
+
+
+def test_empty_train_split_raises_clear_error(tmp_path):
+    paths = _write_fixtures(tmp_path)
+    empty = PerturbationDataset("train", n_max=0, **paths)
+    assert len(empty) == 0
+    with pytest.raises(ValueError, match="empty"):       # clear message, not an opaque RandomSampler error
+        Trainer(_expr_model(paths), empty, max_epochs=1, patience=10, batch_size=2,
+                ckpt_dir=tmp_path / "ckpt", log_dir=tmp_path / "logs")

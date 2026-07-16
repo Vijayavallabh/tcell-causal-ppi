@@ -564,8 +564,9 @@ stopping, and atomic best/last checkpoints to `data/checkpoints/`. Supervision i
 (`PerturbationDataset` enforces the leakage fence); `Δz_true` is the fold-local `program_response` score
 for train rows and the `z@B` projection out of fold. The donor-invariance term is a **real signal**: the
 mart's `donor_pc` is only the per-condition mean, but the 4 real donors survive in
-`control_donor_profiles.parquet`, so the trainer resamples the encoder over distinct real donors and
-penalises the variance of the shared program component across them (`--no-donor-invariance` opts out).
+`control_donor_profiles.parquet`, so the trainer (in the train step) resamples the encoder over distinct
+real donors and penalises the **variance of the prediction `Δz` across them directly** — forcing the
+encoder to emit donor-invariant predictions (`--no-donor-invariance` opts out).
 **Stage B** (Gaussian-NLL calibration + `RationaleLoss`) are loss modules only — fitted after the H1
 freeze; their fit loops are feat-008's last piece. Design + as-built:
 `docs/specs/2026-07-16-module5-training.md`.

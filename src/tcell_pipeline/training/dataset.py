@@ -17,11 +17,10 @@ import torch
 from torch.utils.data import Dataset
 
 from tcell_pipeline import config
-from tcell_pipeline.encoders import build_encoder_batch
+from tcell_pipeline.encoders.batch import DONOR_COLS, build_encoder_batch
 from tcell_pipeline.programs.program_basis import load_program_basis, zscore_path
 
 _OBS_COLS = ["n_guides", "single_guide_estimate"]
-_DONOR_PC_COLS = [f"{config.DONOR_PC_PREFIX}{i:02d}" for i in range(config.DONOR_PCA_DIMS)]
 
 
 def load_donor_pool(path: Path = config.CONTROL_DONOR_PROFILES_PATH) -> tuple[dict, "torch.Tensor"]:
@@ -34,9 +33,9 @@ def load_donor_pool(path: Path = config.CONTROL_DONOR_PROFILES_PATH) -> tuple[di
     if not Path(path).exists():
         return {}, torch.zeros(config.DONOR_PCA_DIMS)
     prof = pd.read_parquet(path)
-    pool = {str(cond): torch.tensor(g[_DONOR_PC_COLS].to_numpy("float32"))
+    pool = {str(cond): torch.tensor(g[DONOR_COLS].to_numpy("float32"))
             for cond, g in prof.groupby("culture_condition")}
-    return pool, torch.tensor(prof[_DONOR_PC_COLS].to_numpy("float32")).mean(0)
+    return pool, torch.tensor(prof[DONOR_COLS].to_numpy("float32")).mean(0)
 
 
 def sample_donor_variants(donor_pool: dict, fallback: "torch.Tensor", conditions: list[str],
@@ -76,6 +75,8 @@ class PerturbationDataset(Dataset):
         genes = set(split.loc[split["role"] == role, "hgnc_symbol"])
         pc = pd.read_parquet(pc_path)
         obs = pd.read_parquet(obs_path, columns=_OBS_COLS)
+        if len(obs) != len(pc):  # the positional mask below relies on de_obs being row-aligned to pc
+            raise ValueError(f"de_obs ({len(obs)}) and perturbation_condition ({len(pc)}) row counts differ")
         keep = pc["hgnc_symbol"].isin(genes).to_numpy()
         self.pc = pc.loc[keep].reset_index(drop=True)
         self.obs = obs.loc[keep].reset_index(drop=True)  # de_obs is row-aligned to perturbation_condition
