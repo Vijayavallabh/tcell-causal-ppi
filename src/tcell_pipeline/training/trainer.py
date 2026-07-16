@@ -6,6 +6,7 @@ gradient clipping, atomic best/last checkpoints, and per-epoch loss components w
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -15,6 +16,21 @@ from torch.utils.data import DataLoader
 from tcell_pipeline import config
 from tcell_pipeline.training.dataset import PerturbationDataset, sample_donor_variants
 from tcell_pipeline.training.losses import StageALoss
+
+
+@contextlib.contextmanager
+def seeded_init(seed: int):
+    """Seed the GLOBAL torch RNG for reproducible module weight initialisation (nn.Linear / nn.Embedding
+    draw their init from it), then restore the prior state on exit so nothing leaks to the caller. The
+    Trainer's own seeded generators cover only data shuffling + donor resampling — NOT the model
+    construction that happens before a Trainer exists — so a run is only fully reproducible from ``seed`` if
+    its model is *built inside* this context. Restores even if construction raises."""
+    state = torch.random.get_rng_state()
+    torch.manual_seed(int(seed))
+    try:
+        yield
+    finally:
+        torch.random.set_rng_state(state)
 
 
 def _resolve_donor_pool(dataset):

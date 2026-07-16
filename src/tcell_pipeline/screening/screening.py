@@ -41,7 +41,7 @@ from tcell_pipeline.graph.typed_graph_encoder import TypedGraphEncoder
 from tcell_pipeline.model import EGIPGModel
 from tcell_pipeline.screening.experiment_registry import log_run, register_run
 from tcell_pipeline.training.dataset import PerturbationDataset
-from tcell_pipeline.training.trainer import Trainer
+from tcell_pipeline.training.trainer import Trainer, seeded_init
 
 EXPRESSION_ONLY = "expression_only"
 TYPED_STATIC = "typed_static"
@@ -176,7 +176,8 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
                               family=cfg.get("family", "egipg"), path=registry_path)
     start = time.perf_counter()  # wall time as a single-lane GPU-hour proxy for the registry audit field
     try:
-        model = cfg["model_factory"]()
+        with seeded_init(seed):  # weight init from the config seed too, so the whole run is reproducible
+            model = cfg["model_factory"]()
         trainer = Trainer(model, train_ds, val_ds, lr=cfg.get("lr", config.LR), max_epochs=cfg["n_epochs"],
                           batch_size=bs, seed=seed, device=device, ckpt_dir=ckpt_dir, log_dir=log_dir,
                           donor_invariance=donor_invariance)

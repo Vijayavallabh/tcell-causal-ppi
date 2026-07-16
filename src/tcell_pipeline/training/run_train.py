@@ -23,7 +23,7 @@ from tcell_pipeline.graph.typed_graph_encoder import TypedGraphEncoder  # noqa: 
 from tcell_pipeline.model import EGIPGModel  # noqa: E402
 from tcell_pipeline.programs.program_basis import zscore_path  # noqa: E402
 from tcell_pipeline.training.dataset import PerturbationDataset  # noqa: E402
-from tcell_pipeline.training.trainer import Trainer  # noqa: E402
+from tcell_pipeline.training.trainer import Trainer, seeded_init  # noqa: E402
 
 
 def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, seed=config.SPLIT_SEED,
@@ -39,8 +39,9 @@ def run(lr=config.LR, epochs=config.MAX_EPOCHS, batch_size=config.BATCH_SIZE, se
         return None
 
     gene_names = pd.read_parquet(config.DE_VAR_PATH, columns=["gene_name"])["gene_name"].tolist()
-    graph_enc = None if expr_only else TypedGraphEncoder(*build_hetero_graph())
-    model = EGIPGModel.from_saved_basis(gene_names, graph_encoder=graph_enc)
+    with seeded_init(seed):  # reproducible weight init (Trainer's seeded gens cover only data shuffling)
+        graph_enc = None if expr_only else TypedGraphEncoder(*build_hetero_graph())
+        model = EGIPGModel.from_saved_basis(gene_names, graph_encoder=graph_enc)
 
     train_ds = PerturbationDataset("train", n_max=n_max)
     val_ds = PerturbationDataset("val", n_max=n_max)

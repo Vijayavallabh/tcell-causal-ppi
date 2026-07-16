@@ -26,6 +26,7 @@ from tcell_pipeline.training import (
     StageALoss,
     StageBCalibrationLoss,
     Trainer,
+    seeded_init,
 )
 
 _G, _K = 6, 3
@@ -234,6 +235,20 @@ def test_graph_penalty_is_batch_size_normalized():
     one = loss._graph({"physical_ppi": [torch.full((4,), 0.5)]})
     two = loss._graph({"physical_ppi": [torch.full((4,), 0.5), torch.full((4,), 0.5)]})
     assert torch.allclose(one, two)                      # mean over the batch, so bs doesn't scale the penalty
+
+
+def test_seeded_init_reproducible_and_restores_global_rng():
+    with seeded_init(123):
+        a = torch.randn(4)
+    with seeded_init(123):
+        b = torch.randn(4)
+    assert torch.allclose(a, b)                       # same seed -> identical weight-init draw
+    before = torch.random.get_rng_state()             # ...and the context leaks nothing to the caller's RNG
+    x = torch.randn(4)
+    torch.random.set_rng_state(before)
+    with seeded_init(999):
+        torch.randn(10)                               # consume RNG inside the context
+    assert torch.allclose(x, torch.randn(4))          # outer stream continues as if the context never ran
 
 
 def test_empty_train_split_raises_clear_error(tmp_path):

@@ -24,6 +24,7 @@ from tcell_pipeline.screening import (
     EXPRESSION_ONLY,
     NETWORK_PROP,
     TYPED_STATIC,
+    collect_predictions,
     collect_truth,
     load_registry,
     log_run,
@@ -291,3 +292,45 @@ def test_registry_caps_comparator_families(tmp_path):
     # an EXISTING comparator family still accepts more configs, and egipg is unaffected by this cap
     assert register_run("c1b", "H1", "q_pre", "blocked", 0, None, family="comparator_a", path=reg).startswith("run-")
     assert register_run("e1", "H1", "q_pre", "blocked", 0, None, path=reg).startswith("run-")
+
+
+# --- Tier 3 test-strength gaps --------------------------------------------------------------------
+def _forward_val_dz(factory, ckpt_path, val_ds):
+    m = factory()
+    m.load_state_dict(torch.load(ckpt_path, map_location="cpu")["model"])
+    return collect_predictions(m, val_ds, "cpu", 2)["delta_z"]
+
+
+def test_screen_config_scores_best_not_last_checkpoint(tmp_path):
+    # No external seeding: screen_config now seeds weight init from the config seed (via seeded_init), so the
+    # run is deterministic regardless of test order. Under seed 0, lr=0.5 / 5 epochs gives best-val at epoch
+    # 1 and last at epoch 4, so best != last and the "score the best checkpoint, not the last" contract is
+    # genuinely exercised — a regression scoring last-epoch weights fails here.
+    paths, cfgs = _configs(tmp_path, [EXPRESSION_ONLY], epochs=5)
+    cfg = dict(cfgs[0], lr=0.5)                                   # cfg["seed"] == 0 (from nested_family_configs)
+    train_ds, val_ds = PerturbationDataset("train", **paths), PerturbationDataset("val", **paths)
+    train_mean = collect_truth(train_ds)["delta_z"].mean(0)
+    ck = tmp_path / "ck"
+    screen_config(cfg, train_ds, val_ds, train_mean, ckpt_dir=ck, log_dir=tmp_path / "lg",
+                  predictions_root=tmp_path / "pred", screening_root=tmp_path / "scr")
+    written = read_predictions(prediction_path(EXPRESSION_ONLY, "val", 0, root=tmp_path / "pred"))["delta_z"]
+    factory = cfgs[0]["model_factory"]
+    dz_best = _forward_val_dz(factory, ck / "stage_a_best.pt", val_ds)
+    dz_last = _forward_val_dz(factory, ck / "stage_a_last.pt", val_ds)
+    assert not np.allclose(dz_best, dz_last)                              # non-vacuous: best epoch != last epoch
+    assert np.allclose(written, dz_best.astype("float32"), atol=1e-4)     # scored the BEST-val weights...
+    assert not np.allclose(written, dz_last.astype("float32"), atol=1e-4)  # ...not the last epoch's
+
+
+def test_screen_config_logs_completed_run(tmp_path):
+    paths, cfgs = _configs(tmp_path, [EXPRESSION_ONLY])
+    train_ds, val_ds = PerturbationDataset("train", **paths), PerturbationDataset("val", **paths)
+    train_mean = collect_truth(train_ds)["delta_z"].mean(0)
+    reg = tmp_path / "registry.yaml"
+    res = screen_config(cfgs[0], train_ds, val_ds, train_mean, registry_path=reg,
+                        screening_root=tmp_path / "scr", predictions_root=tmp_path / "pred")
+    r = load_registry(reg)[0]
+    assert r["status"] == "completed" and r["config_id"] == EXPRESSION_ONLY   # flipped from 'registered'
+    assert r["metrics"]["systema"] == pytest.approx(float(res["systema"]))     # metrics logged in the right arg slot
+    assert r["checkpoint"] and "stage_a_best.pt" in r["checkpoint"]            # checkpoint path (not metrics) logged
+    assert r["gpu_hours"] is not None and r["gpu_hours"] >= 0                  # completed-path gpu_hours recorded
