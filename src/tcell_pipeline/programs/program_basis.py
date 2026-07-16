@@ -10,6 +10,7 @@ with nmf/fastica/svd available for the method comparison. B is frozen downstream
 """
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -43,33 +44,41 @@ def load_zscore_rows(rows: np.ndarray) -> np.ndarray:
 
 def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int):
     """Return (components (K,G), scores (N,K)) for the requested factorisation."""
-    if method == "sparse_pca":
-        from sklearn.decomposition import MiniBatchSparsePCA
+    from sklearn.exceptions import ConvergenceWarning
 
-        model = MiniBatchSparsePCA(n_components=K, random_state=seed, max_iter=max_iter, batch_size=256)
-        model.fit(Z)
-        return model.components_, model.transform(Z)
-    if method == "svd":
-        from sklearn.decomposition import TruncatedSVD
+    with warnings.catch_warnings():
+        # Iterative decompositions emit ConvergenceWarning by design here: MiniBatchSparsePCA's LARS
+        # path early-stops once residues are small, and capped-iter NMF/FastICA may not hit tol. We
+        # verify finiteness + fold-locality + reconstruction downstream, so tol-convergence is not the
+        # invariant — silence the expected noise (not real errors).
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        if method == "sparse_pca":
+            from sklearn.decomposition import MiniBatchSparsePCA
 
-        model = TruncatedSVD(n_components=K, random_state=seed).fit(Z)
-        return model.components_, model.transform(Z)
-    if method == "fastica":
-        from sklearn.decomposition import FastICA
+            model = MiniBatchSparsePCA(n_components=K, random_state=seed, max_iter=max_iter, batch_size=256)
+            model.fit(Z)
+            return model.components_, model.transform(Z)
+        if method == "svd":
+            from sklearn.decomposition import TruncatedSVD
 
-        model = FastICA(n_components=K, random_state=seed, max_iter=max_iter, whiten="unit-variance")
-        scores = model.fit_transform(Z)
-        # ICA loadings are mixing_ (X ~= S @ mixing_.T), NOT components_ (the unmixing matrix); return
-        # mixing_.T so B = components.T = mixing_ matches the X ~= A @ B.T contract the other methods use.
-        return model.mixing_.T, scores
-    if method == "nmf":
-        from sklearn.decomposition import NMF
+            model = TruncatedSVD(n_components=K, random_state=seed).fit(Z)
+            return model.components_, model.transform(Z)
+        if method == "fastica":
+            from sklearn.decomposition import FastICA
 
-        # NMF needs non-negative input; z-scores are signed, so it sees only the up-regulation part.
-        # ponytail: positive-part NMF; split into signed +/- channels if down-regulation programs matter.
-        model = NMF(n_components=K, random_state=seed, max_iter=max_iter, init="nndsvda")
-        scores = model.fit_transform(np.maximum(Z, 0.0))
-        return model.components_, scores
+            model = FastICA(n_components=K, random_state=seed, max_iter=max_iter, whiten="unit-variance")
+            scores = model.fit_transform(Z)
+            # ICA loadings are mixing_ (X ~= S @ mixing_.T), NOT components_ (the unmixing matrix); return
+            # mixing_.T so B = components.T = mixing_ matches the X ~= A @ B.T contract the other methods use.
+            return model.mixing_.T, scores
+        if method == "nmf":
+            from sklearn.decomposition import NMF
+
+            # NMF needs non-negative input; z-scores are signed, so it sees only the up-regulation part.
+            # ponytail: positive-part NMF; split into signed +/- channels if down-regulation programs matter.
+            model = NMF(n_components=K, random_state=seed, max_iter=max_iter, init="nndsvda")
+            scores = model.fit_transform(np.maximum(Z, 0.0))
+            return model.components_, scores
     raise ValueError(f"unknown program method {method!r}; valid: sparse_pca, nmf, fastica, svd")
 
 
