@@ -38,14 +38,18 @@ def _save(runs: list[dict], path: Path) -> None:
 
 def register_run(config_id: str, hypothesis: str, inputs, split: str, seed: int, budget,
                  family: str = _EGIPG_FAMILY, path: Path = config.REGISTRY_PATH) -> str:
-    """Reserve an immutable run ID for ``config_id``. Raises ``ValueError`` once the family's registered
-    trial count would exceed its cap (32 EG-IPG / 16 per comparator family) — the budget is a hard ceiling,
-    not advisory, so screening cannot silently expand its search surface."""
+    """Reserve an immutable run ID for ``config_id``. The cap counts DISTINCT ``config_id``s per family (the
+    report's "32 one-seed configurations", not executions): re-registering an already-seen config — a dev
+    re-run or a retry after failure — always succeeds and never consumes a fresh slot, so repeatedly running
+    the driver can't silently exhaust the 32 EG-IPG / 16 per-comparator budget. Only a NEW config beyond the
+    cap raises ``ValueError`` — a hard ceiling on the frozen search surface. Every execution is still logged
+    (a new run ID appended), so the audit trail stays complete."""
     runs = load_registry(path)
     cap = _cap_for(family)
-    used = sum(1 for r in runs if r.get("family") == family)
-    if used >= cap:
-        raise ValueError(f"{family} family trial cap reached ({used}/{cap}); no further runs may register")
+    seen = {r["config_id"] for r in runs if r.get("family") == family}
+    if config_id not in seen and len(seen) >= cap:
+        raise ValueError(f"{family} family trial cap reached ({len(seen)}/{cap} distinct configs); "
+                         f"cannot register new config {config_id!r}")
     run_id = f"run-{len(runs) + 1:04d}"
     runs.append({
         "run_id": run_id, "config_id": config_id, "family": family, "hypothesis": hypothesis,

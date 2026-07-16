@@ -6,15 +6,18 @@ from tcell_pipeline.screening.experiment_registry import (
 from tcell_pipeline.screening.screening import (
     CONDITION_GATED,
     EXPRESSION_ONLY,
+    NETWORK_PROP,
     PRIMARY_METRIC,
     TYPED_STATIC,
     UNTYPED_GNN,
     collect_predictions,
+    collect_targets_truth,
     collect_truth,
     compute_all_metrics,
     nested_family_configs,
     nested_family_factories,
     run_screening,
+    score_network_propagation,
     screen_config,
 )
 
@@ -24,8 +27,10 @@ __all__ = [
     "load_registry",
     "screen_config",
     "run_screening",
+    "score_network_propagation",
     "collect_predictions",
     "collect_truth",
+    "collect_targets_truth",
     "compute_all_metrics",
     "nested_family_factories",
     "nested_family_configs",
@@ -33,5 +38,6 @@ __all__ = [
     "TYPED_STATIC",
     "CONDITION_GATED",
     "UNTYPED_GNN",
+    "NETWORK_PROP",
     "PRIMARY_METRIC",
 ]

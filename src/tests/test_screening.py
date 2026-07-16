@@ -22,6 +22,7 @@ from tcell_pipeline.evaluation.output_schema import prediction_path, read_predic
 from tcell_pipeline.graph import build_hetero_graph
 from tcell_pipeline.screening import (
     EXPRESSION_ONLY,
+    NETWORK_PROP,
     TYPED_STATIC,
     collect_truth,
     load_registry,
@@ -29,8 +30,10 @@ from tcell_pipeline.screening import (
     nested_family_configs,
     register_run,
     run_screening,
+    score_network_propagation,
     screen_config,
 )
+from tcell_pipeline.screening.screening import _finite_or_none
 from tcell_pipeline.training import PerturbationDataset
 
 _G, _K = 6, 3
@@ -160,6 +163,43 @@ def test_run_screening_isolates_failed_config(tmp_path):
     assert "h2a" not in summary                                  # failed member -> contrast omitted, not a crash
 
 
+def test_run_screening_scores_network_propagation(tmp_path):
+    paths, graph, g2i, gene_names = _fixture(tmp_path)
+    cfgs = nested_family_configs(gene_names, graph, g2i, 1, names=[EXPRESSION_ONLY],
+                                 basis_path=paths["basis_path"], perturbation_encoder_factory=_ENC, batch_size=2)
+    for c in cfgs:
+        c["donor_invariance"] = False
+    train_ds, val_ds = PerturbationDataset("train", **paths), PerturbationDataset("val", **paths)
+    B = train_ds.B.numpy()
+
+    def netprop(tr, va, tm, *, predictions_root, screening_root, split):
+        return score_network_propagation(tr, va, tm, graph=graph, gene_to_idx=g2i, basis=B, seed=0,
+                                         batch_size=2, predictions_root=predictions_root,
+                                         screening_root=screening_root, split=split)
+    netprop.screen_name = NETWORK_PROP
+
+    summary = run_screening(cfgs, train_ds, val_ds, predictions_root=tmp_path / "pred",
+                            screening_root=tmp_path / "scr", extra_scorers=[netprop])
+    by = {r["name"]: r for r in summary["results"]}
+    assert by[NETWORK_PROP]["status"] == "completed"                  # the topology-diffusion reference ran
+    assert np.isfinite(by[NETWORK_PROP]["systema"]) and "mae" in by[NETWORK_PROP]
+    back = read_predictions(prediction_path(NETWORK_PROP, "val", 0, root=tmp_path / "pred"))
+    assert back["delta_z"].shape == (len(val_ds), _K)                # emitted the common output schema
+    assert "h2a" not in summary or summary["h2a"]["better"] != NETWORK_PROP  # not in the nested comparison
+
+
+def test_summary_json_sanitizes_non_finite(tmp_path):
+    import json
+    dirty = {"results": [{"name": "x", "mae": float("nan"), "rmse": float("inf"),
+                          "best_val": float("-inf"), "systema": 0.5, "seed": 0, "status": "completed"}]}
+    clean = _finite_or_none(dirty)
+    row = clean["results"][0]
+    assert row["mae"] is None and row["rmse"] is None and row["best_val"] is None  # non-finite -> None
+    assert row["systema"] == 0.5 and row["seed"] == 0                              # finite values untouched
+    assert json.loads(json.dumps(clean, allow_nan=False))["results"][0]["mae"] is None  # valid RFC-8259 JSON
+    assert _finite_or_none(np.float32("nan")) is None and _finite_or_none(np.float64("inf")) is None
+
+
 def test_registry_registers_and_logs(tmp_path):
     reg = tmp_path / "registry.yaml"
     rid = register_run("expression_only", "H2a", "q_pre", "blocked_target_ood", 0, {"gpu_hours": 2}, path=reg)
@@ -188,6 +228,17 @@ def test_registry_enforces_egipg_cap(tmp_path):
     # a comparator family keeps its own separate (smaller) budget, unaffected by the EG-IPG count
     rid = register_run("comp", "H1", "q_pre", "blocked", 0, None, family="comparator_a", path=reg)
     assert rid.startswith("run-")
+
+
+def test_registry_cap_counts_distinct_configs(tmp_path):
+    reg = tmp_path / "registry.yaml"
+    # re-registering the SAME config_id (dev re-runs / retries) never grows the distinct count or trips the cap
+    for _ in range(config.MAX_EGIPG_TRIALS + 5):
+        register_run("same_cfg", "H1", "q_pre", "blocked", 0, None, path=reg)
+    runs = load_registry(reg)
+    assert len(runs) == config.MAX_EGIPG_TRIALS + 5          # every execution still logged (complete audit trail)
+    assert len({r["config_id"] for r in runs}) == 1          # ...but only one DISTINCT config counts toward the cap
+    assert register_run("other_cfg", "H1", "q_pre", "blocked", 0, None, path=reg).startswith("run-")  # new config OK
 
 
 def test_screen_config_logs_failure_then_reraises(tmp_path):

@@ -21,6 +21,7 @@ member; the driver runs it in the same wave but it does not enter the H2a/H2b co
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +42,7 @@ EXPRESSION_ONLY = "expression_only"
 TYPED_STATIC = "typed_static"
 CONDITION_GATED = "condition_gated"
 UNTYPED_GNN = "untyped_gnn"
+NETWORK_PROP = "network_propagation"
 PRIMARY_METRIC = "systema"  # systema_pert_specific_delta — the locked H1 primary endpoint
 
 
@@ -75,6 +77,19 @@ def collect_truth(dataset, batch_size: int = config.BATCH_SIZE) -> dict:
         dx.append(dx_true.numpy())
         ri.extend(rows)
     return {"row_index": np.asarray(ri), "delta_z": np.concatenate(dz), "delta_x": np.concatenate(dx)}
+
+
+def collect_targets_truth(dataset, batch_size: int = config.BATCH_SIZE) -> dict:
+    """Per-row target symbol + supervised Δz_true/Δx_true/row_index, in dataset order — what the non-neural
+    NetworkPropagationBaseline needs (it fits on target genes, not a forwarded model)."""
+    genes, dz, dx, ri = [], [], [], []
+    for _batch, targets, _conditions, dz_true, dx_true, rows in _loader(dataset, batch_size):
+        genes.extend(targets)
+        dz.append(dz_true.numpy())
+        dx.append(dx_true.numpy())
+        ri.extend(rows)
+    return {"genes": genes, "delta_z": np.concatenate(dz), "delta_x": np.concatenate(dx),
+            "row_index": np.asarray(ri)}
 
 
 def compute_all_metrics(dz_hat, dx_hat, dz_true, dx_true, train_mean) -> dict:
@@ -184,20 +199,64 @@ def _write_result_row(results: dict, screening_root: Path, name: str, seed: int)
     config.write_parquet_atomic(pd.DataFrame([results]), final)
 
 
+def score_network_propagation(train_ds, val_ds, train_mean, *, graph, gene_to_idx, basis,
+                              seed: int = 0, split: str = "val", batch_size: int = config.BATCH_SIZE,
+                              predictions_root: Path = config.PREDICTIONS_ROOT,
+                              screening_root: Path = config.SCREENING_ROOT) -> dict:
+    """Fit + score the non-neural ``NetworkPropagationBaseline`` on the same fold as the neural wave, so the
+    topology-diffusion reference (feat-007's third graph baseline) lands in the screening table + the common
+    output schema alongside the trained members. It diffuses train responses over the PPI graph on CPU, so it
+    needs no Trainer/device. Returns a results row shaped like ``screen_config``'s (name/seed/status/primary
+    + the metric suite)."""
+    from tcell_pipeline.baselines.graph_baselines import NetworkPropagationBaseline
+    tr = collect_targets_truth(train_ds, batch_size)
+    va = collect_targets_truth(val_ds, batch_size)
+    model = NetworkPropagationBaseline.from_hetero_graph(graph, gene_to_idx, basis=basis)
+    model.fit(tr["genes"], tr["delta_z"])
+    dz_hat, dx_hat = model.predict(va["genes"])
+    metrics = compute_all_metrics(dz_hat, dx_hat, va["delta_z"], va["delta_x"], train_mean)
+    write_predictions(va["row_index"], dz_hat, dx_hat, None, model=NETWORK_PROP, split=split, seed=seed,
+                      root=predictions_root)
+    results = {"name": NETWORK_PROP, "seed": seed, "status": "completed",
+               "primary": metrics[PRIMARY_METRIC], **metrics}
+    _write_result_row(results, screening_root, NETWORK_PROP, seed)
+    return results
+
+
+def _finite_or_none(obj):
+    """Recursively replace non-finite floats (NaN / ±Inf — e.g. a diverged metric, or ``best_val`` left at
+    +inf when val never improved) with None, so summary.json stays RFC-8259 valid: strict parsers (JS
+    JSON.parse, most non-Python libraries) reject bare NaN/Infinity tokens that json.dumps would otherwise
+    emit under its default ``allow_nan=True``."""
+    if isinstance(obj, dict):
+        return {k: _finite_or_none(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite_or_none(v) for v in obj]
+    if isinstance(obj, (float, np.floating)):  # np.float64 is a float subclass; np.float32 caught by np.floating
+        f = float(obj)
+        return f if math.isfinite(f) else None
+    return obj
+
+
 # --------------------------------------------------------------------------------------------------
 # Run several configs → nested-family comparison
 # --------------------------------------------------------------------------------------------------
 def run_screening(configs: list[dict], train_ds, val_ds, *, device: str = "cpu", split: str = "val",
                   predictions_root: Path = config.PREDICTIONS_ROOT,
                   screening_root: Path = config.SCREENING_ROOT,
-                  registry_path: Path | None = None, resilient: bool = True) -> dict:
+                  registry_path: Path | None = None, resilient: bool = True, extra_scorers=None) -> dict:
     """Screen every config on the same train/val split and report H2a / H2b on the primary endpoint.
     Writes ``<screening_root>/summary.json`` with the per-config table and the two contrasts.
 
     ``resilient`` (default) isolates a config's failure — an OOM / crash is caught, recorded as a failed
     result (and, if a registry is used, already logged failed by ``screen_config``), and the remaining
     configs still run, so one lane going down doesn't lose the others' results (report §screening: four
-    independent lanes for cleaner failure isolation). ``resilient=False`` re-raises the first failure."""
+    independent lanes for cleaner failure isolation). ``resilient=False`` re-raises the first failure.
+
+    ``extra_scorers`` are non-neural reference scorers (e.g. ``score_network_propagation``) run after the
+    trained configs on the same fold, each called as ``scorer(train_ds, val_ds, train_mean,
+    predictions_root=, screening_root=, split=)`` and returning a results row; they share the same failure
+    isolation but never enter the H2a/H2b nested comparison."""
     train_mean = collect_truth(train_ds)["delta_z"].mean(0)
     results = []
     for cfg in configs:
@@ -211,10 +270,22 @@ def run_screening(configs: list[dict], train_ds, val_ds, *, device: str = "cpu",
             print(f"[screen] config {cfg['name']!r} FAILED ({type(exc).__name__}: {exc}); continuing wave")
             results.append({"name": cfg["name"], "seed": int(cfg.get("seed", 0)),
                             "status": "failed", "error": f"{type(exc).__name__}: {exc}"})
+    for scorer in (extra_scorers or []):
+        try:
+            results.append(scorer(train_ds, val_ds, train_mean, predictions_root=predictions_root,
+                                  screening_root=screening_root, split=split))
+        except Exception as exc:
+            if not resilient:
+                raise
+            name = getattr(scorer, "screen_name", getattr(scorer, "__name__", "extra_baseline"))
+            print(f"[screen] extra baseline {name!r} FAILED ({type(exc).__name__}: {exc}); continuing wave")
+            results.append({"name": name, "status": "failed", "error": f"{type(exc).__name__}: {exc}"})
     by_name = {r["name"]: r for r in results}
     summary = {"results": results, **_nested_comparison(by_name)}
     summary_path = Path(screening_root) / "summary.json"
-    config.write_text_atomic(json.dumps(summary, indent=2, default=float), summary_path)
+    # sanitize non-finite -> None (and allow_nan=False as a loud backstop) so the deliverable is valid JSON
+    config.write_text_atomic(
+        json.dumps(_finite_or_none(summary), indent=2, default=float, allow_nan=False), summary_path)
     summary["summary_path"] = str(summary_path)
     return summary
 

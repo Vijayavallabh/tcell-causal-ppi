@@ -32,14 +32,17 @@ from tcell_pipeline.programs.program_basis import zscore_path  # noqa: E402
 from tcell_pipeline.screening.screening import (  # noqa: E402
     CONDITION_GATED,
     EXPRESSION_ONLY,
+    NETWORK_PROP,
     TYPED_STATIC,
     UNTYPED_GNN,
     nested_family_configs,
     run_screening,
+    score_network_propagation,
 )
 from tcell_pipeline.training.dataset import PerturbationDataset  # noqa: E402
 
 _WAVE = [EXPRESSION_ONLY, UNTYPED_GNN, TYPED_STATIC, CONDITION_GATED]  # report §screening first wave
+_TABLE = _WAVE + [NETWORK_PROP]  # + the non-neural topology-diffusion reference (feat-007)
 _COLS = ["name", "primary", "pearson", "systema", "centroid", "prog_cos", "mae", "rmse", "topk", "sign"]
 
 
@@ -67,11 +70,20 @@ def run(epochs: int = 2, batch_size: int = 8, seed: int = config.SPLIT_SEED,
 
     configs = nested_family_configs(gene_names, graph, gene_to_idx, epochs, names=_WAVE,
                                     batch_size=batch_size, seed=seed)
-    summary = run_screening(configs, train_ds, val_ds, device=device, registry_path=config.REGISTRY_PATH)
+
+    def netprop(train_ds, val_ds, train_mean, *, predictions_root, screening_root, split):
+        return score_network_propagation(train_ds, val_ds, train_mean, graph=graph, gene_to_idx=gene_to_idx,
+                                         basis=train_ds.B.numpy(), seed=seed, batch_size=batch_size,
+                                         predictions_root=predictions_root, screening_root=screening_root,
+                                         split=split)
+    netprop.screen_name = NETWORK_PROP
+
+    summary = run_screening(configs, train_ds, val_ds, device=device, registry_path=config.REGISTRY_PATH,
+                            extra_scorers=[netprop])
 
     by_name = {r["name"]: r for r in summary["results"]}
     print("\n" + " ".join(f"{c:>16}" if c == "name" else f"{c:>9}" for c in _COLS))
-    for n in _WAVE:
+    for n in _TABLE:
         r = by_name.get(n, {"name": n, "status": "missing"})
         if r.get("status") == "completed":
             print(" ".join(f"{r['name']:>16}" if c == "name" else f"{r[c]:>9.4f}" for c in _COLS))
@@ -84,7 +96,12 @@ def run(epochs: int = 2, batch_size: int = 8, seed: int = config.SPLIT_SEED,
             print(f"[screen] {hyp.upper()}: {c['better']} vs {c['worse']} Δsystema={c['delta']:+.4f} "
                   f"supported={c['supported']}")
     print(f"[screen] summary -> {summary['summary_path']}")
-    print("[screen] OK")
+
+    completed = [r for r in summary["results"] if r.get("status") == "completed"]
+    if not completed:  # non-zero exit so CI/cron doesn't read a wholly-failed wave as success
+        print("[screen] FAILED: no config completed — no predictions or H2a/H2b produced")
+        return 1
+    print(f"[screen] OK ({len(completed)}/{len(summary['results'])} completed)")
     return 0
 
 
