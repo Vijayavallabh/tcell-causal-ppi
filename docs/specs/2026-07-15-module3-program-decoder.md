@@ -142,5 +142,9 @@ every mart they read. Cleanups: overridable decoder dims, the shared `build_enco
   machinery that a comparison harness would call.
 - **Module 4 / losses / training** (feat-008 remainder) are out of scope by design. **Update
   (2026-07-16):** the Module 4 sparse predictive-rationale head + faithfulness eval are now built — see
-  `docs/specs/2026-07-16-module4-rationale-head.md`. The training-loss optimization loop + train/calibration
-  loops remain feat-008's open work.
+  `docs/specs/2026-07-16-module4-rationale-head.md`. **Module 5 (Loss + Training)** is also built — this
+  decoder is now **trained** by the Stage A loop (`docs/specs/2026-07-16-module5-training.md`). Note that
+  Stage A supervises `Δz` against the projection `z@B` (one consistent fold-local target across splits),
+  **not** the sparse-PCA score `A` this module saves to `program_response.parquet` — `A` remains the
+  feat-005 basis output, no longer the training target. The Stage-B calibration + rationale **fit loops**
+  and the near-null-signal freeze gate remain feat-008's open work.

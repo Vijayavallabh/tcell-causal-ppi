@@ -103,6 +103,13 @@ Two frozen stages:
   separately. Any joint fine-tuning that changes H1 predictions is exploratory and cannot replace the
   frozen predictor.
 
+> **As-built (Module 5, feat-008):** built in `src/tcell_pipeline/training/`. `L_response` is Huber at the
+> program (`Δz` vs `z@B`) and gene (`Δx` vs z-score) levels; `L_DE` is a focal-BCE up/down head over
+> `h_do`; `L_invariance` penalises the variance of `Δz` across the real per-donor control profiles (donor
+> resampling — see §Train the H1 predictor); `L_graph` weights its unsourced term by the real per-edge
+> source confidence. Stage B is a loss module only (no fit loop yet). Details:
+> `docs/specs/2026-07-16-module5-training.md`; review history: `docs/reviews/2026-07-16-code-review-module5.md`.
+
 A trainable target-ID embedding is **prohibited** in H1 (allowed only as a shortcut diagnostic in
 negative controls) because it cannot generalize to unseen genes.
 

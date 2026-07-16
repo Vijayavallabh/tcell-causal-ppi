@@ -101,8 +101,9 @@ Split-aware (`blocked_target_ood.csv` role filter). `__getitem__ → (batch_dict
 
 ## Trainer — `trainer.py`
 
-AdamW(`lr = 1e-3`, `wd = 1e-5`) over the model **and** the loss's own parameters (the DE head +
-`f_shared` live on `StageALoss`). The frozen basis `B` is a `persistent=False` decoder buffer, so it is
+AdamW(`lr = 1e-3`, `wd = 1e-5`) over the model **and** the loss's own parameters (the DE head lives on
+`StageALoss`; the donor-invariance term has no free parameters — it penalises `Δz` directly). The frozen
+basis `B` is a `persistent=False` decoder buffer, so it is
 **neither optimised nor written to the checkpoint** (a stale checkpoint can't clobber the gene-aligned
 basis). Gradient clip `max_norm = 1`, early stopping on validation total (`patience = 10`), atomic
 best + last checkpoints to `data/checkpoints/`, per-epoch loss components to `data/logs/`. `run()`
@@ -190,8 +191,10 @@ produced **1 confirmed finding**, 1 refuted, loss-math clean:
   **Intelligent fix (this diff):** the individual donor vectors *do* survive in
   `control_donor_profiles.parquet` (4 real donors × 3 conditions — the mart just averaged them away). The
   loss was reformulated to **donor resampling**: re-run the encoder under distinct real donor PC vectors
-  and penalise the variance of `f_shared(Δz)` across them (see §Objective item 3). This is a real, dense
-  donor-generalisation signal that trains (1.30 → 0.25 in one epoch on real data), not an inert term.
+  and penalise the variance of `Δz` across them (see §Objective item 3; this initial form wrapped it in a
+  learnable `f_shared(Δz)`, which round 2 below proved degenerate and dropped). This is a real, dense
+  donor-generalisation signal that trains (1.30 → 0.25 in one epoch for the initial `f_shared` form; 2.15 →
+  0.19 for the final direct-`Δz` form), not an inert term.
   The paralogue HGNC collision is no longer relevant (grouping is gone). `ponytail:` each donor variant
   re-runs the donor-independent graph message passing; cache node states + re-run only readout+decoder if
   Stage A becomes graph-bound (the graph path is CPU-bound, so donor resampling ~triples its per-step cost
