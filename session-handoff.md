@@ -12,10 +12,12 @@
   faithfulness + **Module 5 Stage A training loop + Stage B calibration loss** built; the **Stage-B
   calibration + rationale FIT loops + the near-null-signal freeze gate remain**, and feat-007 is
   not-started). Done: feat-001/002/003/004/014/015/016. **NEW — Module 6 (Evaluation Metrics + Simple
-  Baselines) built this session:** **feat-009 (metrics) done**, **feat-006 (simple baselines) in-progress**
-  (6 of 8 baselines — elastic-net + CatBoost deferred). Next: feat-006 remainder (elastic-net + CatBoost),
-  feat-007 (graph baselines — now unblocked by Module 6's shared baseline protocol + output schema), or
-  feat-008 Stage-B fit loops.
+  Baselines) built earlier:** **feat-009 (metrics) done**, **feat-006 (simple baselines) in-progress**
+  (6 of 8 baselines — elastic-net + CatBoost deferred). **NEWEST — Module 7 (Graph Baselines + Screening
+  Harness) built this session:** **feat-007 (3 graph baselines) done**, **feat-011 (screening harness)
+  in-progress** (harness + registry done; the 32-trial campaign + 5-seed promotion remain). Next: the full
+  screening campaign with convergent training, feat-006 remainder (elastic-net + CatBoost), feat-010
+  external comparators, or feat-008 Stage-B fit loops. **Module 7 is NOT yet committed.**
 - Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
   state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
   `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,
@@ -26,7 +28,33 @@
   feat-003 `35e3999`. The two planning docs (report + walkthrough) carry as-built notes but are gitignored
   (local-only). **Latest committed is always `git log -1` on main.**
 
-## Completed This Session (Module 6 — Evaluation Metrics + Simple Baselines; feat-009 + feat-006)
+## Completed This Session (Module 7 — Graph Baselines + Screening Harness; feat-007 + feat-011)
+
+- **feat-007 (Graph Baselines) done** — `src/tcell_pipeline/baselines/graph_baselines.py`: three PPI-graph
+  references. `NetworkPropagationBaseline` (non-neural symmetric-normalised diffusion; predict =
+  proximity-weighted mean of training responses; isolated/absent → zero). `UntypedGraphEncoder` (homogeneous
+  GCNConv, all edges one type, no gates). `StaticTypedGraphEncoder` (`TypedGraphEncoder` + condition gate
+  pinned to 1.0 — overrides only `_gate`; §10.6 nested member #2). The two neural encoders honour the
+  `graph_encoder` forward contract, so they train through the existing Stage-A `Trainer`.
+- **feat-011 (Screening Harness) in-progress** — `src/tcell_pipeline/screening/`: `screen_config` (train →
+  reload best ckpt → score val → write predictions [output schema] + metrics row; primary = `systema`),
+  `run_screening` (H2a/H2b on `systema`, **failure-isolating**), `experiment_registry` (immutable ids, the
+  32 EG-IPG / 16-comparator trial caps, all runs logged incl failed), `run_screening.py` driver. Harness +
+  registry done; **the 32-trial campaign + 5-seed promotion is the remaining compute work.**
+- **config:** SCREENING_ROOT, REGISTRY_PATH, MAX_EGIPG_TRIALS=32, MAX_COMPARATOR_TRIALS=16,
+  N_SCREENING_SEEDS=1, N_FINAL_SEEDS=5.
+- **Adversarial review** (`docs/reviews/2026-07-16-code-review-module7.md`) — 11 agents, 3 findings
+  confirmed+fixed; correctness-critical dims (diffusion math, encoder wiring, eval alignment) clean. Plus a
+  pre-review fix: a shared perturbation-encoder that would have co-trained two configs' weights.
+- **Real-data smoke** (A100, blocked-target-OOD, bounded 40-row/1-epoch/batch-4) — all 4 wave members
+  trained+scored+registered `completed`. **Honest negative:** graph variants don't beat expression-only
+  (systema 0.377 expr-only / 0.362 typed-static / 0.348 condition-gated; H2a Δ=−0.015, H2b Δ=−0.015, neither
+  supported). **Memory ceiling found:** the typed encoder OOMs 80 GB on real dense subgraphs at batch 32
+  (first real training of the graph model); fits at batch 4 / `expandable_segments` — CPU is the report's
+  home for graph message passing. `./init.sh` green at **159 tests**. Spec
+  `docs/specs/2026-07-16-module7-screening.md`. **NOT yet committed** (awaiting the user's go-ahead).
+
+## Completed Earlier (Module 6 — Evaluation Metrics + Simple Baselines; feat-009 + feat-006)
 
 **Round 1 committed as `9f4f9d6`; the round-2 xhigh-review fixes are NOT yet committed** — awaiting the
 commit go-ahead. All fully synthetic (no marts). `./init.sh` green at **145 tests** (92 prior + 53).

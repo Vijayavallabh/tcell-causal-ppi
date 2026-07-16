@@ -2,8 +2,40 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 6 committed as `9f4f9d6`; xhigh workflow-backed /code-review round 2 → 12 findings all fixed [**round-2 fixes NOT yet committed**])
-**Active Feature:** Module 6 (Evaluation Metrics + Simple Baselines) — **feat-009 done**, **feat-006 in-progress** (6 of 8 simple baselines; elastic-net + CatBoost deferred). Also still open: feat-008 **in-progress** (Stage-B calibration + rationale fit loops + near-null-signal freeze gate remain), feat-005 in-progress, feat-007 not-started. Next: feat-006 remainder (elastic-net + CatBoost), feat-007 (graph baselines — now unblocked by the shared baseline protocol + output schema), or feat-008 Stage-B fit loops.
+**Last Updated:** 2026-07-16 (Module 7 — Graph Baselines + Screening Harness built, reviewed, real-data-smoked; **NOT yet committed**. Module 6 landed earlier as `9f4f9d6`→`fe3a724`→`4043250`→`7ac113b`.)
+**Active Feature:** Module 7 (Graph Baselines + Screening Harness) — **feat-007 done** (3 graph baselines), **feat-011 in-progress** (harness done; the 32-trial campaign + 5-seed promotion remain). Also open: feat-006 in-progress (elastic-net + CatBoost deferred), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress, feat-010 not-started. Next: the full screening campaign with convergent training, feat-006 remainder, feat-010 external comparators, or feat-008 Stage-B fit loops.
+
+## Module 7 (Graph Baselines + Screening Harness) — this session (2026-07-16)
+
+New `src/tcell_pipeline/baselines/graph_baselines.py` (feat-007) + `src/tcell_pipeline/screening/` package
+(feat-011). Gives the H1 predictor its graph references and the machinery to screen the §10.6 nested family
+under the report's frozen trial budget. **Not yet committed.**
+
+- **Graph baselines** (`baselines/graph_baselines.py`) — `NetworkPropagationBaseline` (non-neural symmetric-
+  normalised PPI diffusion; predict = proximity-weighted mean of training responses; isolated/absent → zero),
+  `UntypedGraphEncoder` (homogeneous GCNConv, all edges one type, no gates → `(h_graph,None,None)`),
+  `StaticTypedGraphEncoder` (`TypedGraphEncoder` with the condition gate pinned to 1.0 — overrides only
+  `_gate`, §10.6 member #2). The two neural encoders drop into `EGIPGModel(graph_encoder=…)` and train
+  through the existing Stage-A `Trainer`.
+- **Screening** (`screening/screening.py`) — `screen_config` (train → reload best ckpt → score val in
+  dataset order → write predictions [output schema] + metrics row → return the suite; primary =
+  `systema_pert_specific_delta`), `run_screening` (H2a typed-static>expr-only, H2b condition-gated>typed-
+  static; **failure-isolating**), nested-family factories (fresh model per call — the weight-sharing fix).
+- **Experiment registry** (`screening/experiment_registry.py`) — immutable `run-NNNN` ids; enforces the
+  **32 EG-IPG / 16-per-comparator** trial caps; logs every run incl **failed**; null/empty-manifest tolerant.
+- **config:** SCREENING_ROOT, REGISTRY_PATH, MAX_EGIPG_TRIALS=32, MAX_COMPARATOR_TRIALS=16,
+  N_SCREENING_SEEDS=1, N_FINAL_SEEDS=5.
+- **Review** (`docs/reviews/2026-07-16-code-review-module7.md`) — adversarial workflow, 11 agents, 3 findings
+  confirmed+fixed (tautological H2a test, `load_registry` null-`runs` crash, driver `ID_MAPPING_PATH` guard);
+  a pre-review fix caught a shared perturbation-encoder that would co-train configs' weights.
+- **Real-data smoke** (A100, blocked-target-OOD, 40-row/1-epoch/batch-4) — all 4 wave members
+  trained+scored+registered `completed`. **Honest negative:** graph variants don't beat expression-only
+  (systema 0.377 / 0.362 / 0.348; H2a Δ=−0.015, H2b Δ=−0.015, neither supported) — the near-null-signal
+  regime on untrained-to-convergence models. **Memory ceiling:** the typed encoder OOMs 80 GB on real dense
+  subgraphs at batch 32 (first real training of the graph model — Module 5's real run was expr-only); fits at
+  batch 4 / `expandable_segments`; failure isolation keeps one OOM lane from aborting the wave.
+- **Verification:** `./init.sh` green at **159 tests** (145 prior + 14 Module 7). Spec
+  `docs/specs/2026-07-16-module7-screening.md`.
 
 ## Module 6 (Evaluation Metrics + Simple Baselines) — this session (2026-07-16)
 

@@ -1,3 +1,9 @@
+from tcell_pipeline.baselines.graph_baselines import (
+    GRAPH_BASELINES,
+    NetworkPropagationBaseline,
+    StaticTypedGraphEncoder,
+    UntypedGraphEncoder,
+)
 from tcell_pipeline.baselines.simple_baselines import (
     BASELINES,
     BaseBaseline,
@@ -18,4 +24,8 @@ __all__ = [
     "RidgeBaseline",
     "NearestNeighborBaseline",
     "LowRankBaseline",
+    "GRAPH_BASELINES",
+    "NetworkPropagationBaseline",
+    "UntypedGraphEncoder",
+    "StaticTypedGraphEncoder",
 ]

@@ -179,6 +179,18 @@ METRICS_SIGN_TOP_N: int = 50      # strongest effects scored for sign accuracy (
 PREDICTIONS_ROOT: Path = Path(os.environ.get("PREDICTIONS_ROOT", DATA_DIR / "results" / "predictions"))
 
 
+# --- Module 7 (Graph Baselines + Screening Harness; feat-007 + feat-011) ---
+# Per-config screening results (metrics table + summary) and the immutable run registry (report §protocol).
+SCREENING_ROOT: Path = Path(os.environ.get("SCREENING_ROOT", DATA_DIR / "results" / "screening"))
+REGISTRY_PATH: Path = Path(os.environ.get("REGISTRY_PATH", DATA_DIR / "results" / "experiment_registry.yaml"))
+# Trial caps enforced by the registry (report §protocol / line 1187): at most 32 one-seed configs across
+# the ENTIRE EG-IPG family, at most 16 per close trainable comparator family.
+MAX_EGIPG_TRIALS: int = 32
+MAX_COMPARATOR_TRIALS: int = 16
+N_SCREENING_SEEDS: int = 1        # one seed for architecture/hyperparameter screening (report §857)
+N_FINAL_SEEDS: int = 5            # paired development seeds for the promoted final configurations
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

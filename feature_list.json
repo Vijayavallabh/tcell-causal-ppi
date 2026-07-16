@@ -6,7 +6,7 @@
       "description": "Verify uv environment installs, data download script works, and basic AnnData reads succeed on the DE stats file",
       "dependencies": [],
       "status": "done",
-      "evidence": "Env imports OK (anndata 0.13.1, mudata 0.3.10, h5py 3.16.0). Aggregate layer downloaded and verified: data/raw ~101 GB \u2014 4 HDF5 (DE 16.8 / pseudobulk 44.6 / by_guide 29.4 / by_donors 16.9 GB), 15 suppl tables, 12 Croissant jsonld. README download steps extended: S3 sync for on-S3 suppl+metadata, GitHub fetch for the 12 analysis tables not on S3. init.sh passes (compileall clean). Backed AnnData reads confirmed via examples/inspect_de_stats.py. Cell-level files intentionally excluded (storage-blocked)."
+      "evidence": "Env imports OK (anndata 0.13.1, mudata 0.3.10, h5py 3.16.0). Aggregate layer downloaded and verified: data/raw ~101 GB — 4 HDF5 (DE 16.8 / pseudobulk 44.6 / by_guide 29.4 / by_donors 16.9 GB), 15 suppl tables, 12 Croissant jsonld. README download steps extended: S3 sync for on-S3 suppl+metadata, GitHub fetch for the 12 analysis tables not on S3. init.sh passes (compileall clean). Backed AnnData reads confirmed via examples/inspect_de_stats.py. Cell-level files intentionally excluded (storage-blocked)."
     },
     {
       "id": "feat-002",
@@ -66,8 +66,8 @@
         "feat-004",
         "feat-006"
       ],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "DONE (2026-07-16, Module 7 — Graph Baselines; walkthrough §10.6, report §Baselines). src/tcell_pipeline/baselines/graph_baselines.py: three PPI-graph references, each isolating one variable. (1) NetworkPropagationBaseline — non-neural symmetric-normalised diffusion (What=D^-1/2 A D^-1/2; F<-r*S0+(1-r)*What@F, n_iter power iterations); fit places each training target's mean dz + presence on its protein node, predict = F_signal/F_presence (graph-proximity-weighted mean of training responses; isolated/absent -> zero); subclasses BaseBaseline (reuses B-decode) but takes per-row target symbols. (2) UntypedGraphEncoder — homogeneous GCNConv over all PPI edges collapsed to one relation, no evidence types, no condition gate; returns (h_graph,None,None) so EGIPGModel + StageALoss._graph(None) don't crash. (3) StaticTypedGraphEncoder — full TypedGraphEncoder with the condition gate pinned to 1.0 (overrides only _gate -> new_ones), §10.6 nested member #2, condition-invariant by construction. Both neural encoders honour forward(target_genes,conditions,h_do)->(h_graph,edge_gates,edge_confidences) so they train through the existing Stage-A Trainer. Tests: src/tests/test_graph_baselines.py (7) — diffusion decay from multiple sources, disconnected/absent->zero, from_hetero_graph shapes, output-schema roundtrip; untyped GCN forward shapes + no gates + condition-invariance; typed-static gates==1.0 + condition-invariant + differs from dynamic; both neural encoders emit the output schema via EGIPGModel. Adversarial workflow review (11 agents): 3 findings confirmed+fixed, correctness-critical dims clean — docs/reviews/2026-07-16-code-review-module7.md. Real-data smoke (A100, blocked-target-OOD): untyped-GNN trained+scored (systema 0.375); typed encoder OOMs 80GB on real dense subgraphs at batch 32, fits at batch 4 / expandable_segments. ./init.sh green 159 tests. Spec docs/specs/2026-07-16-module7-screening.md."
     },
     {
       "id": "feat-008",
@@ -109,8 +109,8 @@
         "feat-008",
         "feat-009"
       ],
-      "status": "not-started",
-      "evidence": ""
+      "status": "in-progress",
+      "evidence": "IN-PROGRESS (2026-07-16, Module 7 — Screening Harness; walkthrough §10.6-10.7, report §screening lines 1109/1187/1274-1291). Harness CODE complete + tested; the full 32-trial campaign + 5-seed promotion is the remaining compute work. src/tcell_pipeline/screening/: screening.py — screen_config (train via existing Trainer -> reload best ckpt -> score val in dataset order -> write predictions [common output schema] + a 1-row metrics table -> return the metric suite; metric spaces mirror run_module6_smoke._score, primary = systema_pert_specific_delta), run_screening (screen each config on the shared split, report H2a [typed-static>expr-only] + H2b [condition-gated>typed-static] on systema, write summary.json; FAILURE-ISOLATING — an OOM/crash is logged + skipped, the rest of the wave still runs), nested_family_factories/configs (fresh model per call — fresh graph AND perturbation encoder; the review-caught weight-sharing fix). experiment_registry.py — register_run (immutable run-NNNN id; enforces the 32 EG-IPG / 16-per-comparator trial caps -> ValueError), log_run (records outcome incl FAILED — complete audit trail), YAML manifest, load_registry degrades missing/empty/null-runs to []. run_screening.py — real-data driver (nested family + untyped diagnostic wave). config: SCREENING_ROOT, REGISTRY_PATH, MAX_EGIPG_TRIALS=32, MAX_COMPARATOR_TRIALS=16, N_SCREENING_SEEDS=1, N_FINAL_SEEDS=5. Tests: src/tests/test_screening.py (7) — screen_config 1-epoch train+eval+write; run_screening 2-config H2a (delta+direction pinned to per-config systema); failure isolation; registry register/log; null/missing-manifest tolerance; 32-cap enforcement; screen_config failure logged then re-raised. Adversarial review 3 findings fixed (docs/reviews/2026-07-16-code-review-module7.md). Real-data smoke (A100, blocked-target-OOD, 40-row/1-epoch/batch-4): all 4 wave members trained+scored+registered [completed]; HONEST NEGATIVE — graph variants do NOT beat expression-only (systema 0.377 expr-only / 0.362 typed-static / 0.348 condition-gated; H2a delta=-0.015, H2b delta=-0.015, neither supported) — the near-null-signal regime, on untrained-to-convergence models. ./init.sh green 159 tests. Spec docs/specs/2026-07-16-module7-screening.md. REMAINING: the 32-trial screening campaign + neighborhood/graph-source waves + 5-seed promotion on the full split with convergent training."
     },
     {
       "id": "feat-012",
