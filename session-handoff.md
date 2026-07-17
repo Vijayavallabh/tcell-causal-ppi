@@ -63,6 +63,28 @@
   `response_metric_suite`. `./init.sh` green at **171 tests**; all four tiers re-validated on real data.
   Review record `docs/reviews/2026-07-16-code-review-module7.md`. **All committed on main.**
 
+## Full real-data pipeline run (2026-07-17)
+
+- **Modules 1-6 validated on full real data** (all smokes green): M1 encoder + leakage fence; M2
+  condition-varying gates; M3 basis on 21,262 train rows; M4 rationale on real OOD; **M5** Stage-A expr-only
+  5-epoch training (21,262 train / 4,400 val, **best_val 3.4690**, checkpoint written); **M6** — trained
+  egipg **systema 0.0810** just edges ridge 0.0806, G2-MQ gate PASSED (range 0.911), null-control ≈0.
+- **M7 graph screening is compute-bound on full data.** The per-target subgraph sampling + per-row message
+  passing is single-threaded CPU (`torch.set_num_threads(1)`), GPU ~0% util: `untyped_gnn` (the *fastest*
+  graph config) did not finish ONE epoch over 21,262 rows in ~11 h. **Full-data graph screening is not
+  practical as-is.**
+- **Workaround used:** ran the 4 nested configs + network_propagation on a **1,000-row fold in parallel,
+  one A100 each** (`scratchpad/screen_one.py` + `parallel_screen.sh`) → all 5 done in ~55 min (vs ~2.5 h
+  sequential). Same-fold H2a/H2b: systema expr-only 0.0402 / untyped 0.0404 / typed-static 0.0412 /
+  condition-gated 0.0350 / network-prop 0.0237. **H2a +0.0010 (nominally supported), H2b −0.0062 (not)** —
+  noise-dominated at 1 epoch / 1k rows; the near-null-signal regime. Results in `data/results/screening/`.
+- **DEFERRED — the real perf fix:** mini-batch the graph encoders (PyG `Batch` over sampled subgraphs) so
+  message passing runs on many at once → true single-GPU saturation + tractable full-data runs. The
+  `ponytail:` upgrade in `TypedGraphEncoder`/`UntypedGraphEncoder`; touches Module 2/7, must preserve the
+  Module-4 edge_gates contract + keep 171 tests green. **This is the top graph-throughput task.**
+- `run_full_pipeline.sh` (repo root) runs Modules 1-7 unattended under nohup (M1-M4 fanned across 4 GPUs,
+  M5→M6 in dep order, M7 last); Module 0 excluded (DESTRUCTIVE).
+
 ## Completed Earlier (Module 6 — Evaluation Metrics + Simple Baselines; feat-009 + feat-006)
 
 **Round 1 committed as `9f4f9d6`; the round-2 xhigh-review fixes are NOT yet committed** — awaiting the

@@ -42,6 +42,13 @@ under the report's frozen trial budget. **Not yet committed.**
   gpu_hours, comparator-family cap), Tier 3 (best-vs-last + completed-log tests, `seeded_init` weight-init
   reproducibility), Tier 4 (one-pass val scoring, CSR train_mean, shared `response_metric_suite`, dup-name
   guard). All four tiers re-validated on the real blocked-target-OOD fold.
+- **Full real-data pipeline run (2026-07-17):** M1-M6 all green on full data (M5 best_val 3.4690; M6 egipg
+  systema 0.0810 edges ridge 0.0806, G2-MQ PASSED). **M7 graph screening is compute-bound on full data** —
+  single-threaded per-subgraph sampling, GPU ~0%; untyped_gnn didn't finish 1 epoch over 21,262 rows in
+  ~11h. Workaround: 4 configs + network-prop on a **1,000-row fold, one A100 each in parallel** (~55 min) →
+  H2a +0.0010 (nominally supported), H2b −0.0062 (not) — noise at 1 epoch. **DEFERRED perf fix:** mini-batch
+  the graph encoders (PyG Batch) for true GPU saturation + full-data tractability (top throughput task).
+  `run_full_pipeline.sh` runs M1-7 unattended under nohup. See session-handoff for detail.
 
 ## Module 6 (Evaluation Metrics + Simple Baselines) — this session (2026-07-16)
 
