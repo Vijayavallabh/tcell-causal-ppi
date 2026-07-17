@@ -37,6 +37,11 @@ Key facts:
   program extraction + feat-008 decoder scaffold) — keep them to one session/commit and mark each
   `in-progress` until its own done-criteria are met. Don't open a second, unrelated module in parallel.
 - **Verification required**: Don't claim done without running `./init.sh`
+- **Defer the measurement, not the fix**: when deferring a perf/correctness task, record what you
+  MEASURED and how you measured it — never the fix you guessed. A handoff that said "mini-batch the
+  graph encoders" prescribed a cure for 5% of the real bottleneck (sampling was 95%); the measurement
+  would have routed the next session correctly, the prescription sent it the wrong way. Measure again
+  before acting on an inherited diagnosis.
 - **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
   `session-handoff.md` — all three must match committed reality (a structurally valid but stale
   state file silently misroutes the next session)
@@ -56,6 +61,13 @@ A feature is done only when ALL of the following are true:
 
 - [ ] Target behavior is implemented
 - [ ] `./init.sh` passes (compiles and tests run)
+- [ ] **Every test pinning a correctness claim has been watched FAILING** — break the thing it
+      guards, see red, restore, see green. A test you have not seen fail is not evidence, and
+      `./init.sh` green is not sufficient on its own: it has certified broken code here twice
+      (Module 8 pass-3 — "fixes that satisfied their own regression tests"; and the sampler's
+      `_grow` sort, deletable with all 237 tests green while the neighbourhood silently changed
+      for 35 of 60 targets). Mutate the ONE line the claim rests on, not just the ones you
+      thought of. Hand-picked probe cases are a way of choosing what the test cannot see.
 - [ ] Evidence recorded in `feature_list.json` or `progress.md`
 - [ ] Repository remains restartable from standard startup path
 
@@ -76,6 +88,11 @@ must change in the same commit. Structural validators pass on stale docs — con
   the docs-sync commit invalidates any exact hash you write (don't create a "fix commit hash" churn commit).
 - Per-feature `evidence` in `feature_list.json` is a point-in-time completion snapshot; do not retro-edit
   its test counts when later, unrelated work changes the live total.
+- Evidence is **append-only**, so a claim that later goes stale is superseded by a dated
+  `CORRECTION (YYYY-MM-DD): ...` append naming what changed — never by editing the original line.
+  (feat-008 carried "feat-007 still not-started" for two days after feat-007 shipped.) Check with:
+  every feature's HEAD evidence must remain a strict prefix of its new evidence —
+  `git show HEAD:feature_list.json` and compare.
 
 ## Verification Commands
 
