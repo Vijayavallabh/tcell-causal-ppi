@@ -74,11 +74,28 @@
   `verify_reproducibility` MUST get a `config_snapshot` (else CANNOT_VERIFY); the sealed seal is **per split,
   not per seed**; the H1 second clause is a structural tautology (ρ_perturbed_mean ≡ 0 under systema),
   documented in the sealed JSON.
-- **Verification:** `./init.sh` green at **215 tests** (171 prior + 44 Module 8), exit 0, incl. a real CUDA
-  audit run; +15 regression tests red-green verified. Spec
+- **Pass 3 — adversarial verification OF the pass-2 fixes (17 agents): 2 still exploitable + 9 partial, all
+  fixed at the CAUSE.** The seal is now keyed on a **`fold_fingerprint`** (not `seed`, not the `split` label —
+  both were caller-controlled and walkable) with a sanitized label + an atomic `O_EXCL` claim; the decision
+  check requires **real booleans** (`bool("false") is True` defeated the presence guard); and
+  `fallacy_scan._corr` **raises `Unevaluable`** instead of returning a `0.0` sentinel — the root cause behind
+  several false flags. Also: scale-invariant `regression_to_mean`, the reverse-causation floor on the
+  *stronger* direction, input validation across all 11 detectors, a **whitelist** verdict, a tolerance cap
+  (`MAX_DECISION_TOLERANCE=0.01`), malformed manifests → verdict not traceback, lexical path containment
+  (symlinked stores work), and the CUDA RNG leak in `_stability`.
+- **As-built contracts callers must know (updated):** manifest paths MUST be relative to the checkout;
+  `verify_reproducibility` MUST get a `config_snapshot` (else CANNOT_VERIFY) and always returns a verdict;
+  the sealed seal is **per FOLD** (a fresh `sealed_root` is the documented residual); split labels must be a
+  single path component; degenerate fallacy input **raises** (→ coverage <11/11 → PARTIALLY); the H1 second
+  clause is a structural tautology, reported conditionally in the sealed JSON.
+- **Verification:** `./init.sh` green at **224 tests** (171 prior + 53 Module 8), exit 0, incl. a real CUDA
+  audit run; every original reviewer attack replayed and confirmed closed; all fixes red-green verified. Spec
   `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`; review record
-  `docs/reviews/2026-07-17-code-review-module8.md` (both passes). Committed: `5ea8a4b` (module) + the
-  review-fix commit.
+  `docs/reviews/2026-07-17-code-review-module8.md` (all three passes). Committed: `5ea8a4b` (module) →
+  `2edb44f` (pass-2 fixes) → the pass-3 root-cause commit.
+- **Standing lesson:** a fix that only satisfies its own regression test is not a fix. Two of my own pass-3
+  bugs were caught only by red-green (a guard that rejected every input; a test that passed with the bug
+  reverted) — always revert the fix and watch the test fail.
 
 ## Completed This Session (Module 7 — Graph Baselines + Screening Harness; feat-007 + feat-011)
 

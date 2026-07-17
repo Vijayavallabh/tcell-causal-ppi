@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-17 (Module 8 committed `5ea8a4b`, then its **xhigh `/code-review` (63 agents) found 15 more confirmed defects — all fixed**, `./init.sh` green at 215. Prior: Module 7 `6b6021f` → xhigh Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync `3f946fe` → state-file archive `1f1f52e`.)
+**Last Updated:** 2026-07-17 (Module 8 `5ea8a4b` → xhigh `/code-review` 15 defects fixed `2edb44f` → **pass-3 adversarial verification OF those fixes found 2 still exploitable + 9 partial; root causes fixed**, `./init.sh` green at 224. Prior: Module 7 `6b6021f` → xhigh Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync `3f946fe` → archive `1f1f52e`.)
 **Active Feature:** Module 8 (feat-010 + feat-012 + feat-013) — all three **in-progress**: the comparator adapters + rationale-audit + sealed-eval + reproducibility **frameworks are built + reviewed + tested** (200 tests); the real-data campaigns (16-trial comparators, 50-case audit on the frozen H1, the sealed challenge opening, a clean-checkout reproduction) remain and depend on a converged graph model (blocked on the Module-7 mini-batch refactor). Also open: feat-011 in-progress (32-trial screening campaign + 5-seed promotion), feat-006 in-progress (elastic-net + CatBoost), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress. Next: **commit Module 8** (awaiting user), then the mini-batch refactor → convergent training → the deferred campaigns.
 
 ## Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) — this session (2026-07-17)
@@ -53,12 +53,28 @@ machinery, not a compute campaign. **Not yet committed.**
   with a CUDA `topk` index; the head had never run on GPU. All fixed; new `Unevaluable` makes "a check that
   didn't run never certifies" explicit. The H1 second clause is a proven tautology (ρ_perturbed_mean ≡ 0
   under systema) — **documented in the sealed JSON, not silently patched**.
-- **Verification:** `./init.sh` green at **215 tests** (171 prior + 44 Module 8), exit 0, incl. a real CUDA
-  audit run. +15 regression tests, red-green verified (reverting the `_resolve` fix demonstrably returns
-  REPRODUCIBLE on an empty checkout; one test I wrote this pass was itself caught by red-green as
-  non-discriminating and strengthened). Spec
-  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`; review record
-  `docs/reviews/2026-07-17-code-review-module8.md` (both passes).
+- **Pass 3 — adversarial verification OF the pass-2 fixes (17 agents)** — re-attacking each fix found **2
+  STILL EXPLOITABLE + 9 PARTIAL**. Verdict on pass 2, recorded plainly: *the fixes were point patches that
+  satisfied their own regression tests.* (a) The **seal** had only moved from `seed` to `split` — an equally
+  caller-supplied label never bound to the fold, so `"Challenge"` / `"challenge_rerun"` / `"calib/../challenge"`
+  / a swapped root / a TOCTOU race all re-sealed the same fold. Now keyed on a **`fold_fingerprint`** with a
+  sanitized label and an **atomic `O_EXCL` claim**. (b) The **decision check** added presence guards but never
+  touched the **`bool()` coercion that was the defect** (`bool("false") is True`). Now strict bools. (c) The
+  **root cause pass 2 missed**: `_corr` returned a `0.0` **sentinel** for three degeneracies, indistinguishable
+  from a real zero — it now **raises `Unevaluable`**, closing the false-flag path in berkson/collider/
+  ecological/simpson at once. Plus: scale-invariant `regression_to_mean`; the reverse-causation floor moved to
+  the **stronger** direction (the old one silently unflagged the archetypal trap); input validation across
+  **all 11** detectors; a **whitelist** verdict; a **tolerance cap**; malformed manifests → verdict not
+  traceback; lexical containment (symlinked stores work); the CUDA RNG leak; a **conditional** H1 note (it was
+  an unconditional literal that contradicted the value beside it).
+- **Two bugs in my own work caught by red-green:** `_safe_split_label` rejected *every* label
+  (`(os.altsep or "") in s` is `"" in s` on POSIX), and a test passed with the bool coercion reverted.
+- **Verification:** `./init.sh` green at **224 tests** (171 prior + 53 Module 8), exit 0, incl. a real CUDA
+  audit run. Every original reviewer attack replayed against the fixed code and confirmed closed; all fixes
+  red-green verified. Spec `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`; review record
+  `docs/reviews/2026-07-17-code-review-module8.md` (all three passes).
+- **Standing lesson for this module:** a fix that only satisfies its own regression test is not a fix — ask
+  what *class* the defect belongs to and where else that class lives.
 
 ## Module 7 (Graph Baselines + Screening Harness) — this session (2026-07-16)
 

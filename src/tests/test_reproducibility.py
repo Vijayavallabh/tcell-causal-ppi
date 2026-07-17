@@ -9,6 +9,7 @@ import hashlib
 import json
 
 import numpy as np
+import pytest
 
 from tcell_pipeline.evaluation.output_schema import predictions_to_frame
 from tcell_pipeline.reproducibility import FALLACIES, VERDICTS, run_fallacy_scan, verify_reproducibility
@@ -20,7 +21,9 @@ def _clean_fallacy_inputs() -> dict:
         "simpson": {"groups": [([1, 2, 3], [1, 2, 3]), ([10, 11, 12], [20, 21, 22])]},
         "ecological": {"x": [0, 1, 2, 3, 4, 5], "y": [0, 1, 2, 3, 4, 5], "group": [0, 0, 1, 1, 2, 2]},
         "berkson": {"x": [0, 1, 2, 3, 4], "y": [4, 3, 2, 1, 0], "selected": [True] * 5},
-        "collider": {"x": [0, 1, 2, 3], "y": [3, 2, 1, 0], "z": [1, 1, 1, 1]},
+        # z is a real (non-constant, non-collinear) covariate that is NOT a collider -> partial ~= marginal.
+        # A constant z would make every correlation with it undefined, not "no association".
+        "collider": {"x": [1, 2, 3, 4, 5, 6], "y": [2, 4, 6, 8, 10, 12], "z": [1, 0, 1, 0, 1, 0]},
         "base_rate": {"y_true": [1, 1, 0, 0], "y_pred": [1, 1, 0, 0]},
         "regression_to_mean": {"baseline": [0, 1, 2, 3, 4], "followup": [0, 1, 2, 3, 4]},
         "survivorship": {"values": [1, 2, 3, 4], "survived": [True, True, True, True]},
@@ -47,7 +50,7 @@ def test_fallacy_scan_flags_simpson_and_look_elsewhere():
 
 
 def test_fallacy_scan_incomplete_coverage():
-    scan = run_fallacy_scan({"simpson": {"groups": [([1, 2], [1, 2])]}})
+    scan = run_fallacy_scan({"simpson": {"groups": [([1, 2, 3], [1, 2, 3]), ([4, 5, 6], [4, 5, 6])]}})
     assert scan["n_evaluated"] == 1 and scan["complete"] is False
 
 
@@ -62,7 +65,9 @@ def _flagging_inputs() -> dict:
                     "selected": [False, True, True, False, True, False]},
         "collider": {"x": [0, 0, 3, 3], "y": [0, 3, 0, 3], "z": [0, 3, 3, 6]},             # partial -1 vs marg 0
         "base_rate": {"y_true": [0] * 9 + [1], "y_pred": [0] * 10},                        # acc .9, precision 0
-        "regression_to_mean": {"baseline": [0, 1, 2, 3, 100], "followup": [0, 1, 2, 3, 50]},
+        # genuine regression: the baseline extreme (100) is NOT extreme on retest. (An affine followup like
+        # [0,1,2,3,50] must NOT flag — it is a pure rescale — so it cannot serve as the positive case.)
+        "regression_to_mean": {"baseline": [0, 1, 2, 3, 100], "followup": [2, 3, 1, 0, 2]},
         "survivorship": {"values": [0, 0, 0, 0, 10, 10, 10, 10],
                          "survived": [False, False, False, False, True, True, True, True]},
         "look_elsewhere": {"pvalues": [0.04, 0.5, 0.6, 0.7, 0.8], "alpha": 0.05},          # raw hit, no Bonferroni
@@ -87,31 +92,94 @@ def test_ecological_needs_three_groups():
 
 
 # --- xhigh review: detectors must not fire on clean/degenerate data, nor pass on unevaluable input ---
-def test_regression_to_mean_ignores_a_uniform_shift():
-    # followup = baseline - 10 correlates 1.0 with baseline and regresses not at all; measuring both against
-    # a POOLED grand mean would misread the shift as regression
+def test_regression_to_mean_is_invariant_to_shift_and_scale():
+    # ANY affine change of the followup correlates 1.0 with baseline and regresses not at all. Measuring
+    # against a pooled grand mean misreads a SHIFT as regression; measuring in raw units against each
+    # series' own mean still misreads a RESCALE. Standardised deviations are blind to both.
     rng = np.random.default_rng(0)
-    b = rng.standard_normal(200)
-    from tcell_pipeline.reproducibility.fallacy_scan import regression_to_mean
-    assert regression_to_mean(b, b - 10.0)["flagged"] is False
-    assert regression_to_mean(b, b + 10.0)["flagged"] is False          # and symmetric in direction
+    b = rng.normal(100, 10, 500)
+    from tcell_pipeline.reproducibility.fallacy_scan import regression_to_mean as r2m
+    for name, f in [("identity", b), ("shift-", b - 10.0), ("shift+", b + 1000.0),
+                    ("scale-up", b * 2.0), ("scale-down", b * 0.5), ("unit change", b / 10.0),
+                    ("affine", b * 0.5 + 50.0)]:
+        assert r2m(b, f)["flagged"] is False, f"{name}: affine followup must not read as regression"
+    assert r2m(b, b * 2.0)["flagged"] is False and r2m(b * 2.0, b)["flagged"] is False   # symmetric
     # a genuine revert-to-the-mean (followup independent of baseline) still fires
-    assert regression_to_mean(b, rng.standard_normal(200))["flagged"] is True
+    assert r2m(b, rng.normal(100, 10, 500))["flagged"] is True
+    # ...and a partial one (followup half-driven by baseline, half noise)
+    assert r2m(b, 0.5 * b + rng.normal(50, 10, 500))["flagged"] is True
 
 
-def test_berkson_needs_enough_selected_rows():
-    inputs = {**_clean_fallacy_inputs()}
-    inputs["berkson"] = {"x": list(range(10)), "y": list(range(10)),
-                         "selected": [False] * 9 + [True]}              # 1 selected row -> corr undefined
-    scan = run_fallacy_scan(inputs)
-    assert "berkson" in scan["errored"] and "berkson" not in scan["flagged"]  # not a false NOT_REPRODUCIBLE
+def test_berkson_needs_a_defined_within_selection_correlation():
+    # a bare row-count guard is not enough: _corr's degenerate cases must not be readable as "the
+    # association vanished". A CONSTANT x among the selected rows is undefined, not zero.
+    from tcell_pipeline.reproducibility.fallacy_scan import Unevaluable, berkson
+    for name, spec in [
+        ("1 selected row", {"x": list(range(10)), "y": list(range(10)), "selected": [False] * 9 + [True]}),
+        ("constant x in selection", {"x": [1.0, 1.0, 1.0, 1.0, 2, 3, 4, 5, 6, 7],
+                                     "y": [1.1, 1.9, 0.8, 1.3, 2, 3.1, 3.9, 5.2, 5.8, 7.1],
+                                     "selected": [True] * 4 + [False] * 6}),
+        ("constant y in selection", {"x": [1.1, 1.9, 0.8, 1.3, 2, 3.1, 3.9, 5.2, 5.8, 7.1],
+                                     "y": [1.0, 1.0, 1.0, 1.0, 2, 3, 4, 5, 6, 7],
+                                     "selected": [True] * 4 + [False] * 6}),
+    ]:
+        with pytest.raises(Unevaluable):
+            berkson(**spec)                                    # never a false flag with no collider present
+        scan = run_fallacy_scan({**_clean_fallacy_inputs(), "berkson": spec})
+        assert "berkson" in scan["errored"] and "berkson" not in scan["flagged"], name
 
 
-def test_reverse_causation_needs_a_forward_association():
+def test_corr_raises_rather_than_returning_a_zero_sentinel():
+    # the root cause behind several false flags: a 0.0 return was indistinguishable from a real zero
+    from tcell_pipeline.reproducibility.fallacy_scan import Unevaluable, _corr
+    with pytest.raises(Unevaluable):
+        _corr([1.0], [2.0])                       # <2 pairs
+    with pytest.raises(Unevaluable):
+        _corr([1.0, 1.0, 1.0], [1.0, 2.0, 3.0])   # constant series
+    assert _corr([1.0, 2.0, 3.0], [2.0, 4.0, 6.0]) == pytest.approx(1.0)
+
+
+def test_every_detector_rejects_undefined_input_rather_than_passing_clean():
+    # the Unevaluable principle applied to the whole family, not just the three detectors first patched
+    from tcell_pipeline.reproducibility.fallacy_scan import FALLACIES
+    degenerate = {
+        "simpson": {"groups": [([1, 2, 3], [1, 2, 3])]},                       # 1 subgroup: no pooled-vs-within
+        "ecological": {"x": [0, 1, 2, 3], "y": [0, 1, 2, 3], "group": [0, 0, 1, 1]},   # 2 groups
+        "berkson": {"x": [1, 2, 3], "y": [1, 2, 3], "selected": [True, False, False]},  # 1 selected
+        "collider": {"x": [1.0], "y": [2.0], "z": [3.0]},                      # 1 row
+        "base_rate": {"y_true": [0, 0, 0, 0], "y_pred": [0, 0, 0, 0]},         # single-class: no base rate
+        "regression_to_mean": {"baseline": [1, 1, 1, 1], "followup": [1, 1, 1, 1]},    # constant
+        "survivorship": {"values": [1, 2, 3, 4], "survived": [False] * 4},     # zero survivors
+        "look_elsewhere": {"pvalues": []},                                     # no tests
+        "garden_of_forks": {"estimates": [0.5]},                               # 1 fork: no spread
+        "correlation_not_causation": {"corr": float("nan"), "has_interventional_support": False},
+        "reverse_causation": {"forward_corr": float("nan"), "reverse_corr": 0.9},
+    }
+    scan = run_fallacy_scan(degenerate)
+    assert set(scan["errored"]) == set(FALLACIES)   # every one refuses to certify on undefined input
+    assert scan["flagged"] == [] and scan["complete"] is False
+    assert scan["crashed"] == []                    # all Unevaluable (inadequate input), no detector BUGS
+
+
+def test_scan_separates_inadequate_input_from_a_detector_bug():
+    # a broad `except Exception` that conflated the two would hide a real defect behind "degenerate input"
+    scan = run_fallacy_scan({**_clean_fallacy_inputs(),
+                             "collider": {"x": [0, 1, 2, 3], "y": [3, 2, 1, 0], "z": [1, 2]}})  # length mismatch
+    assert "collider" in scan["errored"] and scan["complete"] is False
+    assert scan["crashed"] == []                    # a length mismatch is inadequate input, not a bug
+    assert scan["results"]["collider"]["unevaluable"] is True
+
+
+def test_reverse_causation_floor_is_on_the_stronger_direction():
     from tcell_pipeline.reproducibility.fallacy_scan import reverse_causation
-    assert reverse_causation(0.0, 0.0)["flagged"] is False      # no forward effect -> no claim to invalidate
-    assert reverse_causation(0.05, 0.05)["flagged"] is False    # both ~null
+    assert reverse_causation(0.0, 0.0)["flagged"] is False      # null endpoint -> no claim to invalidate
+    assert reverse_causation(0.02, 0.03)["flagged"] is False    # both ~null
     assert reverse_causation(0.3, 0.5)["flagged"] is True       # real forward claim, stronger reverse -> flag
+    # the archetypal trap: a WEAK claimed forward effect dominated by the reverse association. A floor on the
+    # FORWARD correlation would silently unflag exactly the case the detector most needs to catch.
+    assert reverse_causation(0.05, 0.95)["flagged"] is True
+    assert reverse_causation(0.09, 0.99)["flagged"] is True
+    assert reverse_causation(0.7, 0.5)["flagged"] is False      # forward dominates -> direction identified
 
 
 def test_survivorship_with_zero_survivors_is_unevaluable():
@@ -267,6 +335,55 @@ def test_verify_cannot_verify_vacuous_decision(tmp_path):
     assert report["verdict"] == "CANNOT_VERIFY"
     hit = [c for c in report["checks"] if c["check"] == "confirmatory_decision"][0]
     assert hit["status"] == "missing"
+
+
+def test_verify_rejects_non_boolean_h1_confirmed(tmp_path):
+    # presence is not comparison: bool(None)==bool(None) is True, and bool("false") is True. The frozen and
+    # observed calls must be REAL booleans or the critical check has compared nothing.
+    ck, hashes = _build_checkout(tmp_path)
+    for frozen_v, observed_v, why in [(None, None, "bool(None) == bool(None)"),
+                                      (True, "false", "bool('false') is True"),
+                                      (True, 1, "1 is not a bool"),
+                                      ("true", "true", "strings are not booleans")]:
+        manifest = _manifest(hashes)
+        manifest["decision"] = {"h1_confirmed": frozen_v, "lcb_95": 0.07}
+        manifest["observed"] = {"decision": {"h1_confirmed": observed_v, "lcb_95": 0.07}}
+        assert _verify(ck, manifest, tmp_path)["verdict"] == "CANNOT_VERIFY", why
+
+
+def test_verify_caps_a_self_declared_tolerance(tmp_path):
+    # the record under test must not be able to set its own bar: tolerance=1e9 would wave through any drift
+    ck, hashes = _build_checkout(tmp_path)
+    for tol in (1e9, float("inf"), 0.5):
+        manifest = _manifest(hashes)
+        manifest["decision"] = {"h1_confirmed": True, "lcb_95": 0.07, "tolerance": tol}
+        manifest["observed"] = {"decision": {"h1_confirmed": True, "lcb_95": 0.0001}}   # a real drift
+        assert _verify(ck, manifest, tmp_path)["verdict"] != "REPRODUCIBLE", f"tolerance {tol}"
+    # a tolerance within the credible ceiling still applies
+    manifest = _manifest(hashes)
+    manifest["decision"] = {"h1_confirmed": True, "lcb_95": 0.07, "tolerance": 0.001}
+    manifest["observed"] = {"decision": {"h1_confirmed": True, "lcb_95": 0.0701}}
+    assert _verify(ck, manifest, tmp_path)["verdict"] == "REPRODUCIBLE"
+
+
+def test_verify_malformed_manifest_yields_a_verdict_not_a_traceback(tmp_path):
+    # the module's contract is to RETURN one of VERDICTS; an unattended verification must always get a report
+    ck, hashes = _build_checkout(tmp_path)
+    for bad in [{"id_mapping": {"path": "id_mapping.txt"}},          # no sha256
+                {"id_mapping": "not-a-dict"},
+                {"id_mapping": {"path": ".", "sha256": "x"}},        # a directory, not a file
+                {"id_mapping": {"path": None, "sha256": "x"}}]:
+        manifest = _manifest({**hashes, **bad})
+        report = _verify(ck, manifest, tmp_path)
+        assert report["verdict"] in VERDICTS and report["verdict"] != "REPRODUCIBLE"
+
+
+def test_verdict_is_whitelist_shaped(tmp_path):
+    # a novel/unexpected status on a critical check must NOT certify (a blacklist let 'skip' through)
+    from tcell_pipeline.reproducibility.verify import _verdict
+    assert _verdict([{"category": "critical", "status": "pass"}]) == "REPRODUCIBLE"
+    for novel in ("skip", "n/a", "unknown", "warn", ""):
+        assert _verdict([{"category": "critical", "status": novel}]) == "CANNOT_VERIFY", novel
 
 
 def test_verify_cannot_verify_without_config_snapshot(tmp_path):

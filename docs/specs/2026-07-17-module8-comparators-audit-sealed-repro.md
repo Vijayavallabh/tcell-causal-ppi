@@ -107,17 +107,29 @@ comparators over frozen seeds" step is the sealed evaluator, whose decision the 
 
 ## Verification
 
-`./init.sh` green at **215 tests** (171 prior + 44 Module 8: 7 comparators, 5 rationale-audit, 8 sealed-eval,
-25 reproducibility). Fully synthetic — tiny marts + a small STRING-typed PPI graph; deterministic echo model
+`./init.sh` green at **224 tests** (171 prior + 53 Module 8: 7 comparators, 5 rationale-audit, 10 sealed-eval,
+32 reproducibility). Fully synthetic — tiny marts + a small STRING-typed PPI graph; deterministic echo model
 for the sealed H1 decision; crafted fallacy inputs + a synthetic checkout for the repro verdicts. One test
 runs a real CUDA audit (skipped when no GPU is present).
 
-## As-built consequences of the two review passes
+## As-built consequences of the three review passes
 
 Behaviours a caller must know, all forced by review findings:
 
-- **The sealed seal is per SPLIT, not per seed.** `seed` only redraws the bootstrap; keying the seal on it
-  would let the confirmatory decision be resampled until it confirms. The fold is opened once.
+- **The sealed seal is keyed on the FOLD (`fold_fingerprint`), not on the seed or the split label.** Both
+  weaker keys were shown to be walkable: `seed` only redraws the bootstrap, and a `split` label is
+  caller-supplied so any alias (`"Challenge"`, `"challenge_rerun"`, `"a/../challenge"`) re-opened the same
+  fold. The fingerprint is a sha256 of the fold's `row_index`; any prior sealed result anywhere under
+  `sealed_root` carrying it blocks a second evaluation, backed by an atomic `O_EXCL` claim. Split labels must
+  be a single path component. *Residual by construction:* pointing `sealed_root` at a fresh directory starts a
+  registry with no memory — a filesystem control cannot bind a determined operator; the protocol assigns the
+  test-steward role.
+- **Undefined statistics raise, they are never encoded as sentinels.** `fallacy_scan._corr` raises
+  `Unevaluable` rather than returning `0.0` for "too few pairs"/"constant series" — a caller cannot tell that
+  sentinel from a real zero, which is how detectors came to flag studies with no fallacy present.
+- **`verify._verdict` is whitelist-shaped**: a critical check certifies only on an explicit `pass`.
+- **A manifest cannot widen its own bar**: `decision.tolerance` is capped at `MAX_DECISION_TOLERANCE` (0.01).
+- **`verify_reproducibility` always returns a verdict**, never raises on a malformed manifest.
 - **The H1 rule's second clause is structurally weak.** `ρ_perturbed_mean` is exactly 0.0 under systema, so
   `ρ_EGIPG > ρ_perturbed_mean` reduces to `ρ_EGIPG > 0`. Kept (spec-mandated) and stated in the sealed JSON's
   `perturbed_mean_reference_note`; the binding constraint is the LCB clause.
@@ -169,3 +181,13 @@ undefined input; the rationale audit crashed on any non-CPU device and its `stab
 from the audit seed; and the TxPert provenance report asserted `wrapped_upstream` from mere importability.
 Fixing the device bug surfaced a **latent Module-4 bug** (`RationaleHead._select` indexes CPU tensors with a
 CUDA `topk` index — the head had never run on GPU), also fixed. +15 regression tests, red-green verified.
+
+**Third pass — adversarial verification OF those fixes (2026-07-17, 17 agents):** re-attacking each pass-2
+fix found **2 still exploitable and 9 partial** — the fixes were point patches that satisfied their own
+regression tests. The seal had merely moved from `seed` to the (equally caller-controlled) `split` label; the
+decision check never touched the `bool()` coercion that was the defect; and the real root cause — `_corr`
+returning a `0.0` sentinel for three distinct degeneracies — was untouched, so `berkson` still false-flagged
+on a constant series. Pass 3 fixed the causes: a fold-keyed atomic seal, strict bool/number comparison,
+`_corr` raising `Unevaluable`, scale-invariant `regression_to_mean`, a floor on the *stronger* cross-lagged
+direction, input validation across all 11 detectors, a whitelist verdict, a tolerance cap, and a conditional
+H1 note. See `docs/reviews/2026-07-17-code-review-module8.md`. +9 regression tests, red-green verified.

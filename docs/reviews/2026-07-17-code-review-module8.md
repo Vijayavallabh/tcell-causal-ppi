@@ -120,3 +120,83 @@ PARTIALLY), so it was strengthened to make every manifest path absolute — it n
 ## Verification (pass 2)
 
 `./init.sh` green at **215 tests** (200 + 15), exit 0, CUDA test executed (not skipped).
+
+---
+
+# Pass 3 — adversarial verification OF THE PASS-2 FIXES (17 agents)
+
+Pass 2's fixes were themselves re-attacked: one skeptic per finding, told to **still trigger** the defect
+against the fixed code and to look for partial fixes, plus a regression critic and a completeness critic.
+
+**Result: 4/15 RESOLVED, 2 STILL_VULNERABLE, 9 PARTIAL.** The verdict on pass 2 is blunt and worth recording:
+*the fixes were point patches that satisfied their own regression tests.* Where pass 2 fixed a **symptom**,
+pass 3 fixed the **cause**.
+
+## The two that were still exploitable
+
+| File | What pass 2 did | Why it failed | Pass 3 fix |
+|---|---|---|---|
+| `sealed_eval.py` | moved the seal key from `seed` → `split` | `split` is a **caller-supplied, unnormalised label never bound to the fold**. 5 of 6 attacks re-sealed the same fold with `force=False`: `"Challenge"` (casing), `"challenge_rerun"` (relabel), `"calib/../challenge"` (traversal, also escaping `sealed_root`), a swapped `sealed_root`, and a check-then-write **TOCTOU race**. | The seal is now keyed on a **`fold_fingerprint`** (sha256 of the fold's `row_index`), scanned across the whole `sealed_root`, plus a `_safe_split_label` guard and an **atomic `O_EXCL` fold claim** (released if the evaluation fails, so a bad call can't brick the fold). |
+| `verify.py` | added *presence* guards to `_check_decision` | It never touched **the `bool()` coercion that WAS the defect**. `bool(None)==bool(None)`; `bool("false") is True`. Presence is not comparison. | `h1_confirmed` must be a real `bool` in both records; numeric fields must be real numbers. |
+
+## The root cause pass 2 missed entirely
+
+`_corr` returned a **sentinel `0.0` for three distinct degeneracies** (fewer than 2 pairs, x constant, y
+constant). A caller cannot tell that sentinel from a genuine zero correlation — which is *exactly* how
+`berkson` came to flag studies with no collider. Pass 2 added a row-count guard to `berkson` alone; the
+reviewers immediately re-triggered it with a **constant x among ≥3 selected rows**.
+
+`_corr` now **raises `Unevaluable`** when undefined. That single change closes the false-flag path in
+`berkson`, `collider`, `ecological` and `simpson` at once.
+
+## Other partial fixes, corrected
+
+- **`regression_to_mean`** — pass 2 made it shift-invariant (own mean instead of pooled) but **not
+  scale-invariant**: `f = b*0.5` still flagged despite correlation 1.0. Deviations are now measured in each
+  series' **own standard-deviation units**, blind to any affine change. (The pass-2 flagging *fixture* was an
+  affine followup, so it had to be replaced with a genuine regression case.)
+- **`reverse_causation`** — pass 2's `min_forward=0.1` floor introduced a **new false negative on the
+  archetypal trap**: a weak claimed forward effect dominated by the reverse association (f=0.05, r=0.95) went
+  unflagged. The floor belongs on the **stronger** of the two (`max(f, r) >= min_association`): the only case
+  to exclude is the null endpoint where neither direction shows anything.
+- **Silent-clean-pass class** — pass 2 patched `survivorship` only. `base_rate` (empty / single-class),
+  `collider` (constant z, 1 row), `simpson` (single group), `look_elsewhere` (empty p-values),
+  `garden_of_forks` (single estimate), `correlation_not_causation` / `reverse_causation` (NaN) all still
+  certified clean on undefined input. **Every** detector now validates its input.
+- **NaN** — pass 2 stopped the *crash*; NaN still produced wrong flags (`collider` returned |partial| > 1 and
+  fired; `look_elsewhere`/`garden_of_forks` flagged on NaN). All inputs are finite-validated.
+- **`verify._verdict` was blacklist-shaped** (certify unless status ∈ {fail, missing, incomplete}) — a novel
+  status certified. Now **whitelist-shaped**: a critical check certifies only on an explicit `pass`.
+- **`_check_predictions` had no required-block guard** — fix #2's own class at the untouched sibling: a
+  manifest with no `predictions` emitted zero checks → REPRODUCIBLE.
+- **Self-declared tolerance** — the record under test could set its own bar (`tolerance: 1e9`, `inf`) and wave
+  through any drift including a sign flip. Capped at `MAX_DECISION_TOLERANCE = 0.01`.
+- **Malformed manifests raised** instead of returning a verdict (contract violation; no report written).
+  Every entry is now validated → `missing` → CANNOT_VERIFY.
+- **`_resolve` over-rejected**: `.resolve()` follows symlinks, so an in-checkout artifact symlinked to a
+  shared store (this project's documented, env-overridable data layout) was rejected as "escaping".
+  Containment is now **lexical** (`normpath`), which still blocks absolute paths and `..`.
+- **`_stability` leaked the CUDA RNG**: `torch.manual_seed` reseeds CPU *and every CUDA* generator, but
+  `torch.random.get/set_rng_state` are CPU-only — the docstring's "nothing leaks to the caller" was false.
+  CUDA states are now saved/restored too.
+- **The H1 note was an unconditional string literal** — emitted verbatim even when `rho_perturbed_mean` was
+  demonstrably **not** 0 (a caller passing a non-train-mean array), so the sealed JSON **contradicted itself
+  on its face**. The note is now derived from the computed value, with a WARNING variant plus a
+  `perturbed_mean_is_structural_zero` flag.
+
+## Two bugs found in my own work by red-green
+
+1. `_safe_split_label` rejected **every** label: `(os.altsep or "") in s` is `"" in s` on POSIX (`altsep` is
+   `None`) — always True. Caught immediately by the new seal tests.
+2. `test_verify_cannot_verify_vacuous_decision` passed **with the bool coercion reverted** — it only
+   exercised the presence guard, never the coercion. Replaced with
+   `test_verify_rejects_non_boolean_h1_confirmed`, which fails without the fix.
+
+## Verification (pass 3)
+
+`./init.sh` green at **224 tests**, exit 0. Every original reviewer attack replayed against the fixed code
+and confirmed closed. Red-green verified: reverting the fold-keyed seal, the bool check, the tolerance cap, or
+the whitelist verdict each makes the corresponding test fail.
+
+**Standing lesson for this module:** a fix that only satisfies its own regression test is not a fix. Ask what
+*class* the defect belongs to and where else that class lives.

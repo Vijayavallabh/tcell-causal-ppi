@@ -119,27 +119,68 @@ def test_sealed_result_is_write_once(tmp_path):
     assert res["h1_confirmed"] is True                        # force re-seals
 
 
-def test_seal_is_per_split_not_per_seed(tmp_path):
-    # `seed` only redraws the bootstrap RNG; if the seal were keyed on it, a steward who got lcb just under
-    # the margin could re-run at seed=1 and re-open the sequestered fold until the decision confirmed
+def test_seal_is_bound_to_the_fold_not_the_label(tmp_path):
+    # The seal must key on the sequestered FOLD. Keying it on `seed` let a steward resample the decision;
+    # keying it on the `split` LABEL merely moved the hole — a label is caller-supplied, so any alias
+    # ("Challenge", "challenge_rerun") re-opened the same fold. Every alias below must be refused.
+    ev, echo, truth, perturbed_mean = _setup(tmp_path)
+    B = {"perturbed_mean": perturbed_mean}
+    ev.evaluate(echo, B, split="challenge", seed=0)
+    for label, seed in [("challenge", 1), ("Challenge", 1), ("challenge_rerun", 7), ("CHALLENGE", 2)]:
+        with pytest.raises(FileExistsError, match="already"):
+            ev.evaluate(echo, B, split=label, seed=seed)
+        assert not (tmp_path / "sealed" / label / f"{seed}.json").exists()
+    # a path-traversal label must be rejected outright (it would escape sealed_root AND dodge the seal)
+    for bad in ["calib/../challenge", "a/b", "..", "."]:
+        with pytest.raises(ValueError, match="invalid split label"):
+            ev.evaluate(echo, B, split=bad, seed=9)
+    # only ONE sealed decision exists for this fold
+    assert len(list((tmp_path / "sealed").rglob("*.json"))) == 1
+
+
+def test_seal_permits_a_genuinely_different_fold(tmp_path):
+    # the fold-keyed seal must not become a global lock: a DIFFERENT sequestered fold is still sealable
     ev, echo, truth, perturbed_mean = _setup(tmp_path)
     ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=0)
-    with pytest.raises(FileExistsError, match="already sealed"):
-        ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=1)
-    assert not (tmp_path / "sealed" / "challenge" / "1.json").exists()   # no second sealed decision
-    # a DIFFERENT split is still sealable (the per-split seal is not a global lock)
-    ev2 = SealedEvaluator(ev.challenge_ds, ev.train_mean, sealed_root=tmp_path / "sealed",
+    m2 = tmp_path / "m2"
+    m2.mkdir()
+    other = PerturbationDataset("train", **_write_marts(m2))   # different rows -> a different fold
+    ev2 = SealedEvaluator(other, ev.train_mean, sealed_root=tmp_path / "sealed",
                           predictions_root=tmp_path / "pred")
-    assert ev2.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="calibration", seed=0)["n_rows"] == 4
+    truth2 = dataset_delta_z(other)
+    genes2 = other.pc["hgnc_symbol"].astype(str).tolist()
+    echo2 = _EchoModel({g: torch.tensor(truth2[i], dtype=torch.float32) for i, g in enumerate(genes2)}, _K, _G)
+    pm2 = np.broadcast_to(ev.train_mean, truth2.shape).copy()
+    assert ev2.evaluate(echo2, {"perturbed_mean": pm2}, split="train_fold", seed=0)["n_rows"] == len(truth2)
 
 
-def test_perturbed_mean_reference_is_structurally_zero(tmp_path):
+def test_failed_attempt_does_not_brick_the_fold(tmp_path):
+    # the atomic fold claim must be released when the evaluation itself fails, or a typo would permanently
+    # prevent the fold from ever being sealed
+    ev, echo, truth, perturbed_mean = _setup(tmp_path)
+    with pytest.raises(ValueError, match="perturbed_mean"):
+        ev.evaluate(echo, {"zero": np.zeros_like(truth)}, split="challenge", seed=0)   # bad call
+    res = ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=0)  # now succeeds
+    assert res["h1_confirmed"] is True
+
+
+def test_perturbed_mean_note_matches_the_computed_value(tmp_path):
     # the H1 rule's second clause reduces to rho_egipg > 0 under systema; the sealed record must say so
-    # rather than let a reader mistake it for a check that discriminated
     ev, echo, truth, perturbed_mean = _setup(tmp_path)
     res = ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=0)
     assert res["rho_perturbed_mean"] == pytest.approx(0.0, abs=1e-12)
+    assert res["perturbed_mean_is_structural_zero"] is True
     assert "structurally 0.0" in res["perturbed_mean_reference_note"]
+
+    # ...but the note must NOT be a hardcoded claim: if the caller supplies something that is not the
+    # train-mean broadcast, rho is not 0 and the record must say THAT instead of contradicting itself
+    ev2 = SealedEvaluator(ev.challenge_ds, ev.train_mean, sealed_root=tmp_path / "sealed2",
+                          predictions_root=tmp_path / "pred2")
+    bogus = truth * 0.5 + np.random.default_rng(7).standard_normal(truth.shape) * 0.3
+    res2 = ev2.evaluate(echo, {"perturbed_mean": bogus}, split="challenge", seed=0)
+    assert abs(res2["rho_perturbed_mean"]) > 1e-6
+    assert res2["perturbed_mean_is_structural_zero"] is False
+    assert "WARNING" in res2["perturbed_mean_reference_note"]
 
 
 def test_evaluate_guards(tmp_path):

@@ -181,11 +181,14 @@ def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repea
     PyG's ``dropout_edge`` draws from the GLOBAL torch RNG, which nothing else in the audit seeds, so the
     stability numbers (and ``mean_stability`` in the report) would otherwise depend on ambient process RNG
     state and not be reproducible from the audit's ``seed``. The global RNG is seeded here and its prior state
-    restored, so nothing leaks to the caller. ponytail: DropEdge only; a trained scorer that reads node states
-    will vary more than the zero-init head (which ranks by the node-independent gate), so this is a lower
-    bound on instability for an untrained head."""
+    restored, so nothing leaks to the caller — ``torch.manual_seed`` reseeds the CPU **and every CUDA**
+    generator, so the CUDA states must be saved/restored too (``torch.random.get/set_rng_state`` cover the CPU
+    generator alone). ponytail: DropEdge only; a trained scorer that reads node states will vary more than the
+    zero-init head (which ranks by the node-independent gate), so this is a lower bound on instability for an
+    untrained head."""
     was_training = graph_encoder.training
     rng_state = torch.random.get_rng_state()
+    cuda_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
     graph_encoder.train()
     try:
         torch.manual_seed(seed)
@@ -201,6 +204,8 @@ def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repea
     finally:
         graph_encoder.train(was_training)
         torch.random.set_rng_state(rng_state)
+        if cuda_states is not None:
+            torch.cuda.set_rng_state_all(cuda_states)
 
 
 def _audit_one(model, head, dataset, case: dict, tester, n_controls: int, sparsities, gen, seed: int) -> dict:
