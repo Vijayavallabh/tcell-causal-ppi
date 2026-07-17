@@ -2,8 +2,44 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-16 (Module 7 — Graph Baselines + Screening Harness **committed + two review passes fully resolved**: `6b6021f` (module) → xhigh `/code-review` 15 findings fixed across Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync. Module 6 landed earlier as `9f4f9d6`→`fe3a724`→`4043250`→`7ac113b`.)
-**Active Feature:** Module 7 (Graph Baselines + Screening Harness) — **feat-007 done** (3 graph baselines), **feat-011 in-progress** (harness done; the 32-trial campaign + 5-seed promotion remain). Also open: feat-006 in-progress (elastic-net + CatBoost deferred), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress, feat-010 not-started. Next: the full screening campaign with convergent training, feat-006 remainder, feat-010 external comparators, or feat-008 Stage-B fit loops.
+**Last Updated:** 2026-07-17 (Module 8 — External Comparators + Rationale Audit + Sealed Eval + Reproducibility **built + adversarially reviewed, NOT yet committed**. Prior: Module 7 committed `6b6021f` → xhigh review Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync `3f946fe` → state-file archive `1f1f52e`.)
+**Active Feature:** Module 8 (feat-010 + feat-012 + feat-013) — all three **in-progress**: the comparator adapters + rationale-audit + sealed-eval + reproducibility **frameworks are built + reviewed + tested** (200 tests); the real-data campaigns (16-trial comparators, 50-case audit on the frozen H1, the sealed challenge opening, a clean-checkout reproduction) remain and depend on a converged graph model (blocked on the Module-7 mini-batch refactor). Also open: feat-011 in-progress (32-trial screening campaign + 5-seed promotion), feat-006 in-progress (elastic-net + CatBoost), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress. Next: **commit Module 8** (awaiting user), then the mini-batch refactor → convergent training → the deferred campaigns.
+
+## Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) — this session (2026-07-17)
+
+New `src/tcell_pipeline/comparators/` (feat-010), `rationale/rationale_audit.py` (feat-012),
+`evaluation/sealed_eval.py` + `reproducibility/` (feat-013). Everything downstream of screening: the external
+comparators the H1 model must beat, the rationale stress-test, the write-once sealed challenge eval + H1 rule,
+and the clean-checkout reproducibility verifier + 11/11 fallacy scan. Like Module 7 this is verification
+machinery, not a compute campaign. **Not yet committed.**
+
+- **Comparators** (`comparators/`) — `StableShiftAdapter` (REIMPLEMENTED: fold-local low-rank SVD from train
+  only + one STRING graph-conv onto held-out targets), `TxPertPublicAdapter` (PUBLIC-ONLY STRING
+  score-attention aggregator; records whether upstream TxPert is importable), `source_adjacency` (shared
+  STRING-channel builder), `compatibility_report.py` (license / exposure / checkpoint / explicit PUBLIC_ONLY).
+  Two distinct comparator families under the ≤2-family / 16-trial caps.
+- **Rationale audit** (`rationale/rationale_audit.py`) — `audit_rationale(model, head, dataset, n_cases=50)`
+  on the frozen H1 + head (no training); stratified (degree×effect×condition×coverage, uncovered filtered
+  before selection); reuses `FaithfulnessTester`/`MatchedRandomSampler`/`RationaleHead` + adds minimality
+  curve, source ablation (BioPlex/HuRI/STRING/CORUM incl the 100%-CORUM membership edges), GInX-by-sparsity,
+  stability → `audit_report.json`.
+- **Sealed eval** (`evaluation/sealed_eval.py`) — `SealedEvaluator.evaluate` forwards the frozen model over
+  the sequestered challenge fold and applies **LCB₉₅(ρ_EGIPG−ρ_best) > 0.05 AND ρ_EGIPG > ρ_perturbed_mean**
+  (10 000 paired-row bootstrap on per-row systema); write-once (refuses overwrite; `min_rows` guard).
+- **Reproducibility** (`reproducibility/`) — `verify_reproducibility(checkout, manifest)` → REPRODUCIBLE /
+  PARTIALLY / NOT / CANNOT_VERIFY (deterministic hashes + schema + config + checkpoint + decision + the
+  11-detector fallacy scan); an errored detector can't silently certify a clean 11/11.
+- **config:** COMPARATORS_ROOT, RATIONALE_AUDIT_ROOT, SEALED_ROOT, REPRODUCIBILITY_ROOT, DELTA_PRED=0.05,
+  N_BOOTSTRAP=10000, N_RATIONALE_AUDIT_CASES=50.
+- **Adversarial review** (`docs/reviews/2026-07-17-code-review-module8.md`) — 5 finder dimensions → 13
+  candidates → skeptical verify → **6 confirmed + 3 plausible, all fixed** with regression tests: [high] a
+  crashed fallacy detector was counted as clean 11/11 (→ false REPRODUCIBLE); [med] CORUM ablation ignored
+  membership edges; [med] uncovered targets burned audit slots; [med] ecological flagged spuriously with ≤2
+  groups; [low] no min-row guard before sealing; [low] `public_only` substring matched "non-public". The
+  sealed-math + comparator-leakage finders confirmed those paths correct.
+- **Verification:** `./init.sh` green at **200 tests** (171 prior + 29 Module 8: 6 comparators, 3
+  rationale-audit, 6 sealed-eval, 14 reproducibility). Fully synthetic. Spec
+  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`.
 
 ## Module 7 (Graph Baselines + Screening Harness) — this session (2026-07-16)
 

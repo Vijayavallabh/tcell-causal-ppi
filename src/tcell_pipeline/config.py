@@ -192,6 +192,19 @@ N_SCREENING_SEEDS: int = 1        # one seed for architecture/hyperparameter scr
 N_FINAL_SEEDS: int = 5            # paired development seeds for the promoted final configurations
 
 
+# --- Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility;
+#     feat-010 + feat-012 + feat-013) ---
+COMPARATORS_ROOT: Path = Path(os.environ.get("COMPARATORS_ROOT", DATA_DIR / "results" / "comparators"))
+RATIONALE_AUDIT_ROOT: Path = Path(os.environ.get("RATIONALE_AUDIT_ROOT", DATA_DIR / "results" / "rationale_audit"))
+SEALED_ROOT: Path = Path(os.environ.get("SEALED_ROOT", DATA_DIR / "results" / "sealed"))
+REPRODUCIBILITY_ROOT: Path = Path(os.environ.get("REPRODUCIBILITY_ROOT", DATA_DIR / "results" / "reproducibility"))
+# H1 predictive-superiority margin: EG-IPG must beat the strongest baseline by MORE than this on the
+# sequestered challenge split, with 95% confidence, to confirm H1 (report §protocol, §10.7 hypothesis rule).
+DELTA_PRED: float = 0.05
+N_BOOTSTRAP: int = 10000           # paired-row bootstrap resamples for the sealed-eval confidence intervals
+N_RATIONALE_AUDIT_CASES: int = 50  # stratified rationale-audit case budget (feat-012)
+
+
 def ensure_dir(path: Path) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 

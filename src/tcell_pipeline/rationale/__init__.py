@@ -1,5 +1,6 @@
 from tcell_pipeline.rationale.faithfulness import FaithfulnessTester
 from tcell_pipeline.rationale.matched_random import MatchedRandomSampler
+from tcell_pipeline.rationale.rationale_audit import audit_rationale
 from tcell_pipeline.rationale.rationale_head import (
     RATIONALE_LABEL,
     RationaleHead,
@@ -12,6 +13,7 @@ from tcell_pipeline.rationale.rationale_loss import RationaleLoss
 __all__ = [
     "FaithfulnessTester",
     "MatchedRandomSampler",
+    "audit_rationale",
     "RATIONALE_LABEL",
     "RationaleHead",
     "RationaleLoss",

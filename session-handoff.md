@@ -19,6 +19,11 @@
   screening campaign with convergent training, feat-006 remainder (elastic-net + CatBoost), feat-010
   external comparators, or feat-008 Stage-B fit loops. **Module 7 committed (`6b6021f`) + its xhigh
   `/code-review` fully resolved (15 findings, Tiers 1-4: `9db57ae`→`32fb473`→`4e25f4b`→`04e6148`).**
+  **NEWEST — Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) built this
+  session (2026-07-17): feat-010 / feat-012 / feat-013 all in-progress — the comparator adapters, rationale
+  audit, sealed evaluator, and reproducibility verifier + 11/11 fallacy scan are built + adversarially
+  reviewed (6 confirmed + 3 plausible findings fixed) + tested (200 tests). NOT yet committed. The real-data
+  campaigns remain and depend on a converged graph model (Module-7 mini-batch refactor).**
 - Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
   state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
   `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,
@@ -28,6 +33,40 @@
   (Program Decoder) + feat-005 sparse_pca basis `172a506`/`fc385ef`, feat-016 (Module 2) `100a505`,
   feat-003 `35e3999`. The two planning docs (report + walkthrough) carry as-built notes but are gitignored
   (local-only). **Latest committed is always `git log -1` on main.**
+
+## Completed This Session (Module 8 — External Comparators + Rationale Audit + Sealed Eval + Reproducibility; feat-010 + feat-012 + feat-013)
+
+- **feat-010 (External Comparators) in-progress** — `src/tcell_pipeline/comparators/`: `StableShiftAdapter`
+  (REIMPLEMENTED — fold-local low-rank SVD from TRAIN only + one STRING graph-conv onto held-out targets),
+  `TxPertPublicAdapter` (PUBLIC-ONLY STRING score-attention aggregator; records whether `valence-labs/TxPert`
+  is importable, predict stays the public reimpl), `source_adjacency` (shared STRING-channel builder),
+  `compatibility_report.py` (license / exposure / checkpoint / explicit `PUBLIC_ONLY`). Two distinct
+  comparator families under the ≤2-family / 16-trial caps. Framework + tests done; the 16-trial real-data
+  campaign remains.
+- **feat-012 (Predictive-Rationale Audit) in-progress** — `rationale/rationale_audit.py`:
+  `audit_rationale(model, head, dataset, n_cases=50)` on the frozen H1 + head (no training), stratified
+  (degree×effect×condition×coverage, uncovered filtered before selection), reusing
+  `FaithfulnessTester`/`MatchedRandomSampler`/`RationaleHead` + minimality curve, source ablation
+  (BioPlex/HuRI/STRING/CORUM incl the 100%-CORUM membership edges), GInX-by-sparsity, stability →
+  `audit_report.json`. Machinery done; running it on the promoted frozen H1 (needs a converged graph model)
+  remains.
+- **feat-013 (Reproducibility + Sealed Eval) in-progress** — `evaluation/sealed_eval.py` (`SealedEvaluator`,
+  write-once challenge eval, LCB₉₅(ρ_EGIPG−ρ_best)>0.05 AND ρ_EGIPG>ρ_perturbed_mean, 10 000 paired-row
+  bootstrap on per-row systema, `min_rows` guard); `reproducibility/verify.py`
+  (`verify_reproducibility(checkout, manifest)` → REPRODUCIBLE/PARTIALLY/NOT/CANNOT_VERIFY over
+  hashes+schema+config+checkpoint+decision+fallacy) + `reproducibility/fallacy_scan.py` (11 detectors; an
+  errored detector can't silently certify a clean 11/11). Verifier + scan done; a real clean-checkout
+  reproduction + the sealed challenge opening remain.
+- **config:** COMPARATORS_ROOT, RATIONALE_AUDIT_ROOT, SEALED_ROOT, REPRODUCIBILITY_ROOT, DELTA_PRED=0.05,
+  N_BOOTSTRAP=10000, N_RATIONALE_AUDIT_CASES=50.
+- **Adversarial review** — `docs/reviews/2026-07-17-code-review-module8.md`: 5 finder dimensions → 13
+  candidates → skeptical verify → 6 confirmed + 3 plausible, **all fixed with regression tests** (crashed
+  fallacy detector no longer certifies clean 11/11; CORUM ablation reaches membership edges; uncovered
+  targets don't burn audit slots; ecological needs ≥3 groups; sealed min-row guard; explicit `public_only`).
+- **Verification:** `./init.sh` green at **200 tests** (171 prior + 29 Module 8). Spec
+  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`. **NOT yet committed** (awaiting the
+  user's go-ahead; the DoD triad — feature_list + progress + handoff — is updated and will land in the same
+  commit).
 
 ## Completed This Session (Module 7 — Graph Baselines + Screening Harness; feat-007 + feat-011)
 
