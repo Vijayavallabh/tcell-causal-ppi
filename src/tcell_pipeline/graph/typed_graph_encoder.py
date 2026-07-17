@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch_geometric.data import Batch
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import dropout_edge
 
@@ -31,6 +32,10 @@ _COND_INDEX = {c: i for i, c in enumerate(config.CONDITIONS)}
 # edge feature = source one-hot(len PPI_SOURCES) | score | is_direct | n_supporting; the score column
 # (clipped to [0,1]) is the per-edge SOURCE CONFIDENCE the graph regulariser's unsourced term reads.
 _SCORE_COL = len(config.PPI_SOURCES)
+
+
+def _store_key(rel: str):
+    return (PROTEIN, rel, PROTEIN) if rel in _PP_RELATIONS else (PROTEIN, _MEMBERSHIP, COMPLEX)
 
 
 def signed_message(h: torch.Tensor, w_sign: nn.Linear, w_mag: nn.Linear) -> torch.Tensor:
@@ -117,7 +122,7 @@ class TypedGraphEncoder(nn.Module):
         )
         self.readout = GraphReadout(hidden, config.GRAPH_N_HEADS)
 
-    def _edges_with_gates(self, sub, h_cond, device):
+    def _edges_with_gates(self, sub, h_cond, device, edge_batch=None):
         """Compute the per-edge condition gate once per relation, then symmetrise PP edges for
         undirected message passing.
 
@@ -125,12 +130,16 @@ class TypedGraphEncoder(nn.Module):
         sub-graph's ``edge_index``) for every relation — the mirrored second direction of a PP edge
         carries an identical gate (the gate reads only edge features + condition), so we don't double
         it into the Module-4-facing ``edge_gates``. ponytail: gate identity mapping (gate -> (u,v)) is
-        recoverable from the sub-graph's edge_index; forward the full identity API with Module 4."""
+        recoverable from the sub-graph's edge_index; forward the full identity API with Module 4.
+
+        ``edge_batch`` (dict relation -> per-edge sample id) is the mini-batched path, where ``sub``
+        holds several targets' subgraphs and ``h_cond`` has one row per sample: each edge is then
+        gated by ITS OWN sample's condition. None == one subgraph, one condition."""
         edges, gates, confs = {}, {}, {}
         for rel in _PP_RELATIONS:
             ei = sub[PROTEIN, rel, PROTEIN].edge_index
             ea = sub[PROTEIN, rel, PROTEIN].edge_attr
-            alpha = self._gate(rel, ea, h_cond)                       # E (one per original edge)
+            alpha = self._gate(rel, ea, self._cond_of(h_cond, edge_batch, rel))  # E (one per original edge)
             edges[rel] = (torch.cat([ei, ei.flip(0)], dim=1),         # 2E: undirected message passing
                           torch.cat([ea, ea], dim=0),
                           torch.cat([alpha, alpha], dim=0))
@@ -138,16 +147,23 @@ class TypedGraphEncoder(nn.Module):
             confs[rel] = ea[:, _SCORE_COL]                            # per-edge source confidence, aligned to gates
         ei = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index
         ea = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_attr
-        alpha = self._gate(_MEMBERSHIP, ea, h_cond)
+        alpha = self._gate(_MEMBERSHIP, ea, self._cond_of(h_cond, edge_batch, _MEMBERSHIP))
         edges[_MEMBERSHIP] = (ei, ea, alpha)
         gates[_MEMBERSHIP] = alpha.squeeze(-1)
         confs[_MEMBERSHIP] = ea[:, _SCORE_COL]
         return edges, gates, confs
 
+    @staticmethod
+    def _cond_of(h_cond: torch.Tensor, edge_batch, rel: str) -> torch.Tensor:
+        """(1, D) to broadcast over one subgraph's edges; (E, D) — each edge carrying its own
+        sample's condition — when a mini-batch mixes conditions."""
+        return h_cond if edge_batch is None else h_cond[edge_batch[rel]]
+
     def _gate(self, rel: str, edge_attr: torch.Tensor, h_cond: torch.Tensor) -> torch.Tensor:
         if edge_attr.numel() == 0:
             return edge_attr.new_zeros((0, 1))
-        cond = h_cond.expand(edge_attr.size(0), -1)
+        # h_cond is (1, D) for a single subgraph, or already per-edge (E, D) on the batched path
+        cond = h_cond.expand(edge_attr.size(0), -1) if h_cond.size(0) == 1 else h_cond
         return torch.sigmoid(self.gate[rel](torch.cat([cond, edge_attr], dim=1)))
 
     @staticmethod
@@ -220,26 +236,60 @@ class TypedGraphEncoder(nn.Module):
         lists over the batch (one per-edge tensor per sample) — the per-sample structure Module 4 and the
         Stage-A graph regulariser need; the two are aligned per edge. Unknown target genes fall back to a
         zero h_graph; an out-of-vocab culture_condition is invalid input and raises.
-        ponytail: per-sample loop; swap for PyG mini-batching if graph-encode throughput becomes the
-        bottleneck in Module 3.
+
+        The batch's subgraphs are message-passed as ONE PyG ``Batch``: edges never cross samples (the
+        batch offsets node ids), so a single set of relational kernels replaces a per-row Python loop.
+        The gate is scattered per edge and the readout attends per sample, so the result matches the
+        per-row loop edge for edge (test_batched_forward_matches_per_sample_loop).
+        ponytail: the batch is sampled row-by-row on CPU, so sampling is now the floor; make the
+        sampler batch-aware (or cache subgraphs per target) if it becomes the bottleneck again.
         """
         device = self.proj.weight.device
         h_do = h_do.to(device)
         rels = (*_PP_RELATIONS, _MEMBERSHIP)
-        h_graphs = []
-        edge_gates = {r: [] for r in rels}
-        edge_confidences = {r: [] for r in rels}
-        for b, (gene, cond) in enumerate(zip(target_genes, conditions)):
-            if gene not in self.gene_to_idx:
-                h_graphs.append(torch.zeros(config.GRAPH_HIDDEN_DIM, device=device))
-                for r in rels:
-                    edge_gates[r].append(torch.zeros(0, device=device))
-                    edge_confidences[r].append(torch.zeros(0, device=device))
-                continue
-            sub = sample_subgraph(self.graph, gene, gene_to_idx=self.gene_to_idx)
-            enc = self.encode_subgraph(sub, cond, h_do[b])
-            h_graphs.append(enc["h_graph"])
-            for r in rels:
-                edge_gates[r].append(enc["gates"][r])
-                edge_confidences[r].append(enc["edge_confidences"][r])
-        return torch.stack(h_graphs), edge_gates, edge_confidences
+        n = len(target_genes)
+        edge_gates = {r: [torch.zeros(0, device=device) for _ in range(n)] for r in rels}
+        edge_confidences = {r: [torch.zeros(0, device=device) for _ in range(n)] for r in rels}
+        h_graph = torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device)
+        known = [b for b, g in enumerate(target_genes) if g in self.gene_to_idx]
+        if not known:
+            return h_graph, edge_gates, edge_confidences  # every target absent -> all-zero, empty gates
+
+        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in known]
+        bat = Batch.from_data_list(subs).to(device)  # concatenate on CPU, then ONE host->device copy
+        rows = torch.tensor(known, device=device)
+        h_cond = self.condition(
+            torch.tensor([self._condition_index(conditions[b]) for b in known], device=device)
+        )  # (K, 64) — one condition row per kept sample
+        p_batch = bat[PROTEIN].batch
+        edge_batch = {r: p_batch[bat[_store_key(r)].edge_index[0]] for r in rels}  # each edge's sample
+
+        edges, gates, confs = self._edges_with_gates(bat, h_cond, device, edge_batch)
+        h_p = self.proj(bat[PROTEIN].x)
+        h_c, c_batch = self._batched_complex_states(bat, p_batch, device)
+        for layer in self.layers:
+            h_p, h_c = layer(h_p, h_c, edges)
+
+        # readout per sample: sort the concatenated protein+complex states by sample so each query
+        # attends over its own subgraph only. The stable sort keeps proteins-then-complexes within a
+        # sample, matching the single-subgraph cat([h_p, h_c]) order.
+        node_batch = torch.cat([p_batch, c_batch])
+        perm = torch.argsort(node_batch, stable=True)
+        h_graph[rows] = self.readout(
+            h_do[rows], torch.cat([h_p, h_c], dim=0)[perm], node_batch=node_batch[perm]
+        )[0]
+
+        for r in rels:
+            counts = [int(s[_store_key(r)].edge_index.shape[1]) for s in subs]
+            for i, (g, c) in enumerate(zip(torch.split(gates[r], counts), torch.split(confs[r], counts))):
+                edge_gates[r][known[i]] = g          # back to one per-edge tensor per sample, in order
+                edge_confidences[r][known[i]] = c
+        return h_graph, edge_gates, edge_confidences
+
+    def _batched_complex_states(self, bat, p_batch, device):
+        """Complex embeddings for the batch + each complex's sample id. ``orig_idx`` survives batching
+        un-offset (it is not an ``*index`` attribute), so it still points at the global complex table."""
+        n_c = int(bat[COMPLEX].num_nodes or 0)
+        if not n_c:  # no target in this batch belongs to any complex
+            return self.complex_embed(torch.zeros(0, dtype=torch.long, device=device)), p_batch.new_zeros(0)
+        return self.complex_embed(bat[COMPLEX].orig_idx), bat[COMPLEX].batch

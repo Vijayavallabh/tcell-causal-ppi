@@ -157,3 +157,21 @@ def test_neural_graph_baselines_emit_output_schema(tmp_path):
                                  type(enc).__name__, "val", 0, root=tmp_path / "pred")
         back = read_predictions(path)
         assert back["delta_z"].shape == (2, _K) and np.array_equal(back["row_index"], [0, 1])
+
+
+def test_untyped_batched_forward_matches_per_sample_loop():
+    """The mini-batched GCN must equal the per-target loop (encode_one is the unbatched oracle).
+    eval(): the batched path shares no code with encode_one, so this is a real cross-check."""
+    torch.manual_seed(0)
+    graph, gene_to_idx = _graph()
+    enc = UntypedGraphEncoder(graph, gene_to_idx).eval()
+    genes = ["G0", "NOTAGENE", "G3", "G5"]  # an absent target between real ones
+    h_do = torch.randn(len(genes), config.GRAPH_HIDDEN_DIM)
+    ref = torch.stack([
+        torch.zeros(enc.hidden) if g not in gene_to_idx else enc.encode_one(g, h_do[b])
+        for b, g in enumerate(genes)
+    ])
+    got, gates, confs = enc(genes, ["Rest"] * len(genes), h_do)
+    assert gates is None and confs is None  # untyped: no provenance, no gate -- by design
+    assert torch.allclose(got, ref, atol=1e-5)
+    assert torch.allclose(got[1], torch.zeros(enc.hidden))  # absent target -> zero

@@ -22,8 +22,10 @@
   **NEWEST — Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) built this
   session (2026-07-17): feat-010 / feat-012 / feat-013 all in-progress — the comparator adapters, rationale
   audit, sealed evaluator, and reproducibility verifier + 11/11 fallacy scan are built + adversarially
-  reviewed (6 confirmed + 3 plausible findings fixed) + tested (200 tests). NOT yet committed. The real-data
-  campaigns remain and depend on a converged graph model (Module-7 mini-batch refactor).**
+  reviewed (6 confirmed + 3 plausible findings fixed) + tested. Committed `5ea8a4b`→`6a68882`→`97f8451`.**
+  **NEWEST — the graph throughput refactor is DONE (2026-07-17), and the compute ceiling that blocked
+  feat-010/011/012/013 is lifted: 667 → 71 ms/row (9.4×), a 21,262-row epoch 3.94 h → 0.42 h, GPU util
+  median 1% → 43%. `./init.sh` green at 236. The four campaigns are now unblocked but NOT yet run.**
 - Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
   state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
   `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,
@@ -146,10 +148,17 @@
   sequential). Same-fold H2a/H2b: systema expr-only 0.0402 / untyped 0.0404 / typed-static 0.0412 /
   condition-gated 0.0350 / network-prop 0.0237. **H2a +0.0010 (nominally supported), H2b −0.0062 (not)** —
   noise-dominated at 1 epoch / 1k rows; the near-null-signal regime. Results in `data/results/screening/`.
-- **DEFERRED — the real perf fix:** mini-batch the graph encoders (PyG `Batch` over sampled subgraphs) so
-  message passing runs on many at once → true single-GPU saturation + tractable full-data runs. The
-  `ponytail:` upgrade in `TypedGraphEncoder`/`UntypedGraphEncoder`; touches Module 2/7, must preserve the
-  Module-4 edge_gates contract + keep 171 tests green. **This is the top graph-throughput task.**
+- **DONE 2026-07-17 — the perf fix, but NOT where this entry predicted.** The task was written as
+  "mini-batch the graph encoders so message passing runs on many at once". Profiling the real graph first
+  showed message passing was only **5%** of GPU wall-clock (34 ms/row); **`sample_subgraph` was 95%**
+  (581 ms/row) because it scanned the entire ~8M-edge table per row (`torch.isin` alone = 59%). Mini-batching
+  alone would have been capped at ~1.05× by Amdahl. Fixed in order: (1) a CSR neighbour index built once per
+  graph → 581 → 26 ms/row; (2) *then* PyG `Batch` mini-batching of the (now-dominant) message passing.
+  Net **667 → 71 ms/row (9.4×)**, epoch **3.94 h → 0.42 h**, GPU util **median 1% → 43%** (p90 86%).
+  Both changes are pinned by exact-equivalence tests (sampler vs full scan; batched forward vs per-sample
+  loop), so the Module-4 edge_gates contract and the sampled subgraphs are unchanged. `./init.sh` at 236.
+  **Lesson worth keeping: the deferred-task note named the fix, not the bottleneck — measure before you
+  refactor, even when a previous session already "diagnosed" it.**
 - `run_full_pipeline.sh` (repo root) runs Modules 1-7 unattended under nohup (M1-M4 fanned across 4 GPUs,
   M5→M6 in dep order, M7 last); Module 0 excluded (DESTRUCTIVE).
 
@@ -251,18 +260,23 @@ commit go-ahead. All fully synthetic (no marts). `./init.sh` green at **145 test
 
 ## Recommended Next Step
 
-- **Module 5 (Loss + Training) is committed on main** (`git log -1`); working tree clean, `./init.sh` green
-  (**92 tests**, zero warnings). The `training/` package, config, tests, the Module 5 spec, README, and
-  state-file syncs all landed in one commit. Stage A trains M1+M2+M3 (with **real donor-invariance**); Stage
-  B calibration is a loss module.
+- **The graph throughput ceiling is lifted (2026-07-17)** — a full 21,262-row epoch is now ~0.42 h instead of
+  ~3.94 h (9.4×), so every campaign that was "blocked on a converged graph model" is now simply *unrun work*.
+  `./init.sh` green at **236**. Use **batch size 8** (bs=32 buys 15.2 vs 14.0 rows/s for 3× the memory).
+- **The highest-value next step is the feat-011 screening campaign on the FULL fold** (32 trials + 5-seed
+  promotion) — it produces the converged/promoted model that feat-010 (comparators), feat-012 (rationale
+  audit on the frozen H1) and feat-013 (sealed opening + clean-checkout reproduction) all consume. Run it
+  before the campaigns, not alongside them.
+- **The sealed challenge split (5,608 rows) is still UNOPENED and must stay that way** until a promoted final
+  model exists — it is write-once, and opening it on a non-promoted model burns the fold (the exact
+  garden-of-forks Module 8 exists to prevent). `run_module0.py` remains DESTRUCTIVE and is hook-blocked.
 - To **advance feat-008 (the last pieces)**:
   1. **Stage A production run** — fit `EGIPGModel` on the full **train** fold with `run_train.py` (fold-local:
      `PerturbationDataset("train")`), select on **val**, then **freeze** the H1 checkpoint. Before the freeze,
      run the **near-null-signal check** on development data (H1 superiority is not guaranteed on this CD4+
-     screen — a negative result is valid). The graph path is CPU-bound per subgraph AND donor resampling
-     ~triples it, so a full multi-A100 run wants **PyG mini-batching** of the subgraphs + the donor
-     node-state cache (the two `ponytail:` notes in `typed_graph_encoder.forward` / `trainer._donor_variants`),
-     or `--no-donor-invariance` for a fast pass.
+     screen — a negative result is valid). Donor resampling still ~triples the graph path, so a full
+     multi-A100 run still wants the **donor node-state cache** (`ponytail:` in `trainer._donor_variants`),
+     or `--no-donor-invariance` for a fast pass. (The subgraph mini-batching half of that note is now DONE.)
   2. **Stage B fit loops** — on the frozen H1: fit `StageBCalibrationLoss` on the **calibration** partition,
      and fit `RationaleHead` with Module 4's `RationaleLoss` (both loss modules exist; the fit loops don't).
 - **Donor invariance is now a real trained signal** (donor resampling over the 4 real `control_donor_profiles`
@@ -277,7 +291,11 @@ commit go-ahead. All fully synthetic (no marts). `./init.sh` green at **145 test
   (real data ~21k → ~18k). (3) `Subset` silent-disable fixed — `Trainer._resolve_donor_pool` unwraps
   wrapper `.dataset` chains. The paralogue HGNC collision (GPR89A/GPR89B→`GPHRA`) surfaced earlier is an
   upstream **feat-002** id_mapping item. Still genuinely open: a shared/nuisance decomposition for donor
-  invariance (needs a nuisance head), and PyG mini-batching + a donor node-state cache for graph throughput.
+  invariance (needs a nuisance head), and a donor node-state cache for graph throughput. **The next graph
+  throughput ceiling** (after the 2026-07-17 refactor) is that the batch is still sampled row-by-row on CPU
+  (~26 ms/row, ~37% of a step, GPU idles between batches): options are batch-aware sampling, a per-target
+  subgraph cache (11,526 unique targets over 33,983 rows ≈ 2.9 rows/target), or sampling in DataLoader
+  workers. Deliberately NOT done — 0.42 h/epoch is tractable; revisit only if it actually hurts.
 - To **finish feat-005**: add the 4-method × 4-K (64/128/256/512) comparison on reconstruction / sparsity /
   stability + a shallow-VAE basis (the extraction machinery is done and the sparse_pca production loadings
   are frozen — only the study remains).

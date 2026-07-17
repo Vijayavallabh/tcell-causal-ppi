@@ -2,8 +2,46 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-17 (Module 8 `5ea8a4b` → xhigh `/code-review` 15 defects fixed `2edb44f` → **pass-3 adversarial verification OF those fixes found 2 still exploitable + 9 partial; root causes fixed**, `./init.sh` green at 224. Prior: Module 7 `6b6021f` → xhigh Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync `3f946fe` → archive `1f1f52e`.)
-**Active Feature:** Module 8 (feat-010 + feat-012 + feat-013) — all three **in-progress**: the comparator adapters + rationale-audit + sealed-eval + reproducibility **frameworks are built + reviewed + tested** (200 tests); the real-data campaigns (16-trial comparators, 50-case audit on the frozen H1, the sealed challenge opening, a clean-checkout reproduction) remain and depend on a converged graph model (blocked on the Module-7 mini-batch refactor). Also open: feat-011 in-progress (32-trial screening campaign + 5-seed promotion), feat-006 in-progress (elastic-net + CatBoost), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress. Next: **commit Module 8** (awaiting user), then the mini-batch refactor → convergent training → the deferred campaigns.
+**Last Updated:** 2026-07-17 (**graph throughput refactor: 9.4× end-to-end, `./init.sh` green at 236**. Prior: Module 8 `5ea8a4b` → xhigh `/code-review` 15 defects fixed `2edb44f` → pass-3 adversarial verification OF those fixes found 2 still exploitable + 9 partial, root causes fixed `6a68882` → real-data drivers `97f8451`.)
+**Active Feature:** the graph mini-batch refactor is **done** — the compute ceiling that blocked feat-010/011/012/013 is lifted (3.94 h → 0.42 h per 21,262-row epoch; GPU util median 1% → 43%). The four campaigns are now **unblocked but not yet run**: feat-011 (32-trial screening + 5-seed promotion), feat-010 (16-trial comparators), feat-012 (50-case audit on the frozen H1), feat-013 (sealed opening + clean-checkout reproduction). Also open: feat-006 (elastic-net + CatBoost), feat-008 (Stage-B calibration + rationale fit loops + freeze gate), feat-005. Next: the screening campaign → a converged/promoted model → the deferred campaigns.
+
+## Graph throughput refactor (2026-07-17) — the ceiling was the SAMPLER, not the message passing
+
+The deferred task was written as "mini-batch the message passing with PyG `Batch`". Profiling the real
+graph first said that was the wrong target, so both were fixed, sampler first:
+
+| on an A100, per row | before | after |
+| --- | --- | --- |
+| `sample_subgraph` | 581 ms (**95%**) | 26 ms |
+| message passing | 34 ms (5%) | batched |
+| **forward+backward, bs=8** | **667 ms** | **71 ms** |
+| GPU utilisation (median) | **1%** | **43%** (p90 86%) |
+| projected 21,262-row epoch | **3.94 h** | **0.42 h** |
+
+- **Root cause: `sample_subgraph` scanned the whole edge table per row.** `torch.isin(ei[a], frontier)`
+  over 6.9M functional_assoc edges × 2 directions × 3 relations × 2 hops, plus `_induce`'s full-graph
+  remap gather — `torch.isin` alone was 59% of sampler time, `_induce` 28%, `argsort` 0.03%. ~8M edges
+  swept to find a few thousand. Fixed with a CSR neighbour index (`_NeighborIndex`) built **once** per
+  graph (0.85 s, ~130 MB): incident-edge lookup is now O(sum of the node set's degree). 581 → 26 ms/row.
+- **Then** message passing (now the majority) was mini-batched via `Batch.from_data_list`: one set of
+  relational kernels per batch instead of a per-row Python loop. The condition gate is scattered per
+  edge (each edge gated by ITS OWN sample's condition) and the readout attends per sample via
+  `to_dense_batch` + a key-padding mask, so no attention leaks across targets.
+- **Equivalence is the correctness gate, and both are exact**: the sampler is bit-identical to the
+  full-scan reference (subgraph shapes on the real graph are unchanged — min 465 / max 512 nodes, mean
+  30,751 PP edges), and batched forward matches the per-sample loop edge-for-edge. Both oracles are
+  self-contained in the tests (they must NOT import the sampler's policy constants — a shared constant
+  moves both sides and the test silently loses its teeth; that was caught during this work). Teeth
+  verified by injecting 6 defects (selection priority, traversal direction, cap off-by-one, edge order,
+  condition broadcast, attention leak, reversed gate split) — each failed the suite.
+- DropEdge is train-only and random, so equivalence is asserted in `eval()`; that is the honest limit.
+- **bs=8 is the sweet spot**: bs=32 gives 15.2 vs 14.0 rows/s for 3× the memory (31.5 GB vs 10.0 GB).
+- **Saturation is NOT reached and the reason is known**: the batch is still sampled row-by-row on CPU
+  (~26 ms/row, ~37% of the step), so the GPU idles between batches. Next ceiling = batch-aware sampling,
+  a per-target subgraph cache (11,526 unique targets over 33,983 rows ≈ 2.9 rows/target), or sampling in
+  DataLoader workers. Not done — YAGNI until 0.42 h/epoch actually hurts.
+- Real-data smoke, all three §10.6 nested members, 600 rows / 1 epoch (machinery only, NOT science):
+  untyped_gnn systema=0.0534, typed_static systema=0.0531, condition_gated systema=0.0432.
 
 ## Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) — this session (2026-07-17)
 
@@ -117,8 +155,10 @@ under the report's frozen trial budget. **Not yet committed.**
   systema 0.0810 edges ridge 0.0806, G2-MQ PASSED). **M7 graph screening is compute-bound on full data** —
   single-threaded per-subgraph sampling, GPU ~0%; untyped_gnn didn't finish 1 epoch over 21,262 rows in
   ~11h. Workaround: 4 configs + network-prop on a **1,000-row fold, one A100 each in parallel** (~55 min) →
-  H2a +0.0010 (nominally supported), H2b −0.0062 (not) — noise at 1 epoch. **DEFERRED perf fix:** mini-batch
-  the graph encoders (PyG Batch) for true GPU saturation + full-data tractability (top throughput task).
+  H2a +0.0010 (nominally supported), H2b −0.0062 (not) — noise at 1 epoch. **RESOLVED 2026-07-17** by the
+  graph throughput refactor above (3.94 h → 0.42 h/epoch): the diagnosis "single-threaded per-subgraph
+  sampling" was right and was the 95%; "mini-batch the encoders" alone would have addressed only the 5%.
+  The full-fold screening campaign is now tractable and is the next compute task.
   `run_full_pipeline.sh` runs M1-7 unattended under nohup. See session-handoff for detail.
 
 ## Module 6 (Evaluation Metrics + Simple Baselines) — this session (2026-07-16)

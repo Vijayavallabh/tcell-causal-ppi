@@ -26,6 +26,7 @@ import scipy.sparse as sp
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch_geometric.data import Batch
 from torch_geometric.nn import GCNConv
 
 from tcell_pipeline import config
@@ -151,8 +152,10 @@ class UntypedGraphEncoder(nn.Module):
     untyped relation, edge provenance and the condition gate are discarded. Returns ``(h_graph, None,
     None)`` so an ``EGIPGModel`` wrapping it trains through the same decoder + Stage-A loss (the loss's
     graph-gate penalty is a no-op when ``edge_gates`` is None). ``conditions`` is ignored by design.
-    ponytail: per-target subgraph loop mirroring TypedGraphEncoder; swap for PyG mini-batching if
-    graph-encode throughput becomes the screening bottleneck."""
+
+    Mini-batched like TypedGraphEncoder: the batch's subgraphs go through one PyG ``Batch`` so the GCN
+    convolutions run once per batch rather than once per row.
+    ponytail: the batch is still sampled row-by-row on CPU, which is now the throughput floor."""
 
     def __init__(self, graph=None, gene_to_idx: dict[str, int] | None = None,
                  hidden: int = config.GRAPH_HIDDEN_DIM, layers: int = config.GRAPH_LAYERS) -> None:
@@ -185,13 +188,21 @@ class UntypedGraphEncoder(nn.Module):
     def forward(self, target_genes, conditions, h_do: torch.Tensor):
         device = self.proj.weight.device
         h_do = h_do.to(device)
-        h_graphs = []
-        for b, gene in enumerate(target_genes):
-            if gene not in self.gene_to_idx:
-                h_graphs.append(torch.zeros(self.hidden, device=device))
-                continue
-            h_graphs.append(self.encode_one(gene, h_do[b]))
-        return torch.stack(h_graphs), None, None
+        h_graph = torch.zeros(len(target_genes), self.hidden, device=device)
+        known = [b for b, g in enumerate(target_genes) if g in self.gene_to_idx]
+        if not known:
+            return h_graph, None, None
+        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in known]
+        bat = Batch.from_data_list(subs).to(device)
+        rows = torch.tensor(known, device=device)
+
+        h = F.relu(self.proj(bat[PROTEIN].x))
+        ei = self._homogeneous_edges(bat, device)
+        for conv in self.convs:
+            h = F.relu(conv(h, ei))
+        # each query attends over its own subgraph's nodes only (batch vector is already sorted)
+        h_graph[rows] = self.readout(h_do[rows], h, node_batch=bat[PROTEIN].batch)[0]
+        return h_graph, None, None
 
 
 # --------------------------------------------------------------------------------------------------
