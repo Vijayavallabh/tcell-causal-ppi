@@ -10,8 +10,15 @@ Neighbour lookup goes through a CSR index built ONCE per graph (``_NeighborIndex
 inducing both need "the edges incident on this node set"; done as a boolean scan over the full
 edge_index that costs O(|E|) *per row* -- ~8M edges swept to find a few thousand -- which made
 sampling 95% of graph-encode wall-clock on GPU. The index answers the same question in O(sum of
-the node set's degree) and returns edge ids in original edge order, so the sampled subgraph is
-bit-identical to the scan (see test_sampler_matches_full_scan_reference).
+the node set's degree), so the sampled subgraph is bit-identical to the scan (pinned by
+test_sampler_matches_full_scan_reference).
+
+``incident()`` returns edge ids GROUPED BY NODE, not in original edge order -- each caller sorts
+the subset it actually keeps. Both call sites then sort, and those sorts are LOAD-BEARING, not
+leftovers: original edge order is what the growth ranking ties on and what Module 4's (relation,
+edge position) pairs address. _PRIORITY_BONUS adds 1e6 to a float32 score, whose spacing at 1e6 is
+0.0625, so scores quantise into ties in bulk and the tie-break order decides which neighbours
+survive the cap. Delete either sort and the sampler silently returns a different neighbourhood.
 """
 from __future__ import annotations
 
@@ -48,27 +55,42 @@ def _gather(indptr: torch.Tensor, order: torch.Tensor, nodes: torch.Tensor) -> t
         return order.new_zeros(0)
     # ragged range: for each node, emit its [start, start+count) slice, vectorised
     base = torch.repeat_interleave(starts, counts)
-    within = torch.arange(total) - torch.repeat_interleave(torch.cumsum(counts, dim=0) - counts, counts)
+    span = torch.arange(total, device=order.device)  # follow the graph's device, not the default one
+    within = span - torch.repeat_interleave(torch.cumsum(counts, dim=0) - counts, counts)
     return order[base + within]
+
+
+def _edge_stores(graph: HeteroData):
+    """Every (relation, key-column) the index is derived from, in build order."""
+    for rel in _PP_RELATIONS:
+        for key in (0, 1):  # growth traverses PP edges in both directions
+            yield rel, key, graph[PROTEIN, rel, PROTEIN].edge_index
+    yield _MEMBERSHIP, 0, graph[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index  # keyed on the protein endpoint
+
+
+def _fingerprint(graph: HeteroData) -> tuple:
+    """Cheap identity of the edge_index tensors the index was built from: storage address, shape, and
+    autograd's in-place version counter. Catches a relation being reassigned, resized, or edited in
+    place -- the ways a graph actually changes."""
+    return tuple((ei.data_ptr(), tuple(ei.shape), ei._version) for _, _, ei in _edge_stores(graph))
 
 
 class _NeighborIndex:
     """Per-relation CSR over the full graph, built once and cached on the graph object.
 
-    Derived purely from each relation's ``edge_index``; the graph is built once and treated as
-    immutable, so rebuilding the graph is what invalidates this. Costs ~130 MB on the real graph
-    (two int64 orderings of the 6.9M functional_assoc edges dominate).
+    Derived purely from each relation's ``edge_index``. Costs ~130 MB on the real graph (two int64
+    orderings of the 6.9M functional_assoc edges dominate), so it is cached rather than rebuilt --
+    but the cache is fingerprinted, because the full scan it replaced re-read ``edge_index`` on every
+    call and so an edited graph took effect immediately. Silently sampling a stale topology would
+    hand an edge-ablation or rewired-network control the neighbourhood it thought it had removed.
     """
 
     def __init__(self, graph: HeteroData) -> None:
         n_protein = graph[PROTEIN].x.shape[0]
-        self._csr: dict[tuple[str, int], tuple[torch.Tensor, torch.Tensor]] = {}
-        for rel in _PP_RELATIONS:
-            ei = graph[PROTEIN, rel, PROTEIN].edge_index
-            for key in (0, 1):  # growth traverses PP edges in both directions
-                self._csr[(rel, key)] = _build_csr(ei[key], n_protein)
-        memb = graph[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index
-        self._csr[(_MEMBERSHIP, 0)] = _build_csr(memb[0], n_protein)  # keyed on the protein endpoint
+        self._csr: dict[tuple[str, int], tuple[torch.Tensor, torch.Tensor]] = {
+            (rel, key): _build_csr(ei[key], n_protein) for rel, key, ei in _edge_stores(graph)
+        }
+        self.fingerprint = _fingerprint(graph)
 
     def incident(self, rel: str, key: int, nodes: torch.Tensor) -> torch.Tensor:
         """Ids of the edges whose ``key`` endpoint lies in ``nodes`` -- exactly the set
@@ -76,16 +98,17 @@ class _NeighborIndex:
 
         Grouped by node, NOT in original edge order: sorting here would sort every candidate, while
         callers that need original order only need their surviving subset sorted (a ~5x smaller sort
-        for induction). ``nodes`` must be duplicate-free, else an edge whose other endpoint is also
-        in ``nodes`` would come back twice.
+        for induction). ``nodes`` must be duplicate-free -- a repeated node emits its whole CSR row
+        again, so every one of its edges would come back once per repeat.
         """
         indptr, order = self._csr[(rel, key)]
         return _gather(indptr, order, nodes)
 
 
 def _index_for(graph: HeteroData) -> _NeighborIndex:
+    """The graph's cached CSR index, rebuilt if its edges changed since the index was built."""
     index = getattr(graph, "_neighbor_index", None)
-    if index is None:
+    if index is None or index.fingerprint != _fingerprint(graph):
         index = _NeighborIndex(graph)
         graph._neighbor_index = index
     return index
@@ -102,10 +125,11 @@ def _grow(graph: HeteroData, seed: int, hops: int, cap: int, index: _NeighborInd
             if ei.numel() == 0:
                 continue
             for a, b in ((0, 1), (1, 0)):  # undirected traversal
-                # ascending ids == original edge order, which is what the score ranking below ties on
+                # LOAD-BEARING sort, not a leftover: ascending ids == original edge order, and the
+                # ranking below ties in bulk (see the module docstring), so this decides selection.
                 eids = torch.sort(index.incident(rel, a, frontier)).values
                 nodes.append(ei[b][eids])
-                keys.append(ea[eids][:, _SCORE_COL] + _PRIORITY_BONUS[rel])
+                keys.append(ea[eids, _SCORE_COL] + _PRIORITY_BONUS[rel])  # one column, not all of ea
         if not nodes:
             break
         nodes, keys = torch.cat(nodes), torch.cat(keys)
@@ -127,16 +151,16 @@ def _grow(graph: HeteroData, seed: int, hops: int, cap: int, index: _NeighborInd
 
 def _induce(ei: torch.Tensor, ea: torch.Tensor, src_remap: torch.Tensor, dst_remap: torch.Tensor,
             eids: torch.Tensor):
-    """Induce ``eids`` (the edges already known to have their source in the selection) onto the
-    sub-graph's local node ids, keeping those whose destination is also selected.
+    """Induce ``eids`` onto the sub-graph's local node ids, keeping those whose destination is also
+    selected. ``eids`` MUST come from ``incident(rel, 0, <the selection>)``, so every edge's source is
+    already in the selection by construction and only the destination needs testing.
 
     The kept ids are sorted so the sub-graph's edges stay in ORIGINAL edge order -- Module 4 hands
     out (relation, edge position) pairs, so the ordering is part of the contract.
     """
     if eids.numel() == 0:
         return torch.zeros((2, 0), dtype=torch.long), ea[:0]
-    keep = (src_remap[ei[0][eids]] >= 0) & (dst_remap[ei[1][eids]] >= 0)
-    kept = torch.sort(eids[keep]).values
+    kept = torch.sort(eids[dst_remap[ei[1][eids]] >= 0]).values
     sub_ei = torch.stack([src_remap[ei[0][kept]], dst_remap[ei[1][kept]]])
     return sub_ei, ea[kept]
 

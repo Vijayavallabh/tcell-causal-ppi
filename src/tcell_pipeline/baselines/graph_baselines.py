@@ -188,10 +188,11 @@ class UntypedGraphEncoder(nn.Module):
     def forward(self, target_genes, conditions, h_do: torch.Tensor):
         device = self.proj.weight.device
         h_do = h_do.to(device)
-        h_graph = torch.zeros(len(target_genes), self.hidden, device=device)
+        target_genes = list(target_genes)  # indexed by position below, where the old loop only zip()ed
+        n = len(target_genes)
         known = [b for b, g in enumerate(target_genes) if g in self.gene_to_idx]
-        if not known:
-            return h_graph, None, None
+        if not known:  # no readout runs -> mirror h_do, the tensor the decoder concatenates this with
+            return torch.zeros(n, self.hidden, device=device, dtype=h_do.dtype), None, None
         subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in known]
         bat = Batch.from_data_list(subs).to(device)
         rows = torch.tensor(known, device=device)
@@ -201,7 +202,10 @@ class UntypedGraphEncoder(nn.Module):
         for conv in self.convs:
             h = F.relu(conv(h, ei))
         # each query attends over its own subgraph's nodes only (batch vector is already sorted)
-        h_graph[rows] = self.readout(h_do[rows], h, node_batch=bat[PROTEIN].batch)[0]
+        pooled = self.readout(h_do[rows], h, node_batch=bat[PROTEIN].batch)[0]
+        # dtype follows the computed readout (as the old torch.stack did), not a hardcoded float32
+        h_graph = torch.zeros(n, self.hidden, device=device, dtype=pooled.dtype)
+        h_graph[rows] = pooled
         return h_graph, None, None
 
 
@@ -215,7 +219,7 @@ class StaticTypedGraphEncoder(TypedGraphEncoder):
     the returned ``edge_gates`` are all 1.0, which is the isolated variable H2b (condition gating) removes.
     The condition embedding is left in place but has no effect (its gradient is zero)."""
 
-    def _gate(self, rel: str, edge_attr: torch.Tensor, h_cond: torch.Tensor) -> torch.Tensor:
+    def _gate(self, rel: str, edge_attr: torch.Tensor, h_cond: torch.Tensor, edge_batch=None) -> torch.Tensor:
         return edge_attr.new_ones((edge_attr.size(0), 1))  # every edge counts equally, all conditions alike
 
 

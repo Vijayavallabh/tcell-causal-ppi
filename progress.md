@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-17 (**graph throughput refactor: 9.4× end-to-end, `./init.sh` green at 236**. Prior: Module 8 `5ea8a4b` → xhigh `/code-review` 15 defects fixed `2edb44f` → pass-3 adversarial verification OF those fixes found 2 still exploitable + 9 partial, root causes fixed `6a68882` → real-data drivers `97f8451`.)
-**Active Feature:** the graph mini-batch refactor is **done** — the compute ceiling that blocked feat-010/011/012/013 is lifted (3.94 h → 0.42 h per 21,262-row epoch; GPU util median 1% → 43%). The four campaigns are now **unblocked but not yet run**: feat-011 (32-trial screening + 5-seed promotion), feat-010 (16-trial comparators), feat-012 (50-case audit on the frozen H1), feat-013 (sealed opening + clean-checkout reproduction). Also open: feat-006 (elastic-net + CatBoost), feat-008 (Stage-B calibration + rationale fit loops + freeze gate), feat-005. Next: the screening campaign → a converged/promoted model → the deferred campaigns.
+**Last Updated:** 2026-07-17 (**graph throughput refactor: 10.9× end-to-end, `./init.sh` green at 242**, xhigh `/code-review` 15 defects fixed. Prior: Module 8 `5ea8a4b` → xhigh `/code-review` 15 defects fixed `2edb44f` → pass-3 adversarial verification OF those fixes found 2 still exploitable + 9 partial, root causes fixed `6a68882` → real-data drivers `97f8451`.)
+**Active Feature:** the graph mini-batch refactor is **done** — the compute ceiling that blocked feat-010/011/012/013 is lifted (3.94 h → 0.36 h per 21,262-row epoch; GPU util median 1% → 46%). The four campaigns are now **unblocked but not yet run**: feat-011 (32-trial screening + 5-seed promotion), feat-010 (16-trial comparators), feat-012 (50-case audit on the frozen H1), feat-013 (sealed opening + clean-checkout reproduction). Also open: feat-006 (elastic-net + CatBoost), feat-008 (Stage-B calibration + rationale fit loops + freeze gate), feat-005. Next: the screening campaign → a converged/promoted model → the deferred campaigns.
 
 ## Graph throughput refactor (2026-07-17) — the ceiling was the SAMPLER, not the message passing
 
@@ -12,17 +12,17 @@ graph first said that was the wrong target, so both were fixed, sampler first:
 
 | on an A100, per row | before | after |
 | --- | --- | --- |
-| `sample_subgraph` | 581 ms (**95%**) | 26 ms |
+| `sample_subgraph` | 581 ms (**95%**) | 22 ms |
 | message passing | 34 ms (5%) | batched |
-| **forward+backward, bs=8** | **667 ms** | **71 ms** |
-| GPU utilisation (median) | **1%** | **43%** (p90 86%) |
-| projected 21,262-row epoch | **3.94 h** | **0.42 h** |
+| **forward+backward, bs=8** | **667 ms** | **61 ms** |
+| GPU utilisation (median) | **1%** | **46%** (p90 94%) |
+| projected 21,262-row epoch | **3.94 h** | **0.36 h** |
 
 - **Root cause: `sample_subgraph` scanned the whole edge table per row.** `torch.isin(ei[a], frontier)`
   over 6.9M functional_assoc edges × 2 directions × 3 relations × 2 hops, plus `_induce`'s full-graph
   remap gather — `torch.isin` alone was 59% of sampler time, `_induce` 28%, `argsort` 0.03%. ~8M edges
   swept to find a few thousand. Fixed with a CSR neighbour index (`_NeighborIndex`) built **once** per
-  graph (0.85 s, ~130 MB): incident-edge lookup is now O(sum of the node set's degree). 581 → 26 ms/row.
+  graph (0.85 s, ~130 MB): incident-edge lookup is now O(sum of the node set's degree). 581 → 22 ms/row.
 - **Then** message passing (now the majority) was mini-batched via `Batch.from_data_list`: one set of
   relational kernels per batch instead of a per-row Python loop. The condition gate is scattered per
   edge (each edge gated by ITS OWN sample's condition) and the readout attends per sample via
@@ -35,13 +35,22 @@ graph first said that was the wrong target, so both were fixed, sampler first:
   verified by injecting 6 defects (selection priority, traversal direction, cap off-by-one, edge order,
   condition broadcast, attention leak, reversed gate split) — each failed the suite.
 - DropEdge is train-only and random, so equivalence is asserted in `eval()`; that is the honest limit.
-- **bs=8 is the sweet spot**: bs=32 gives 15.2 vs 14.0 rows/s for 3× the memory (31.5 GB vs 10.0 GB).
+- **bs=8 is the sweet spot**: bs=32 gives 15.2 vs 16.3 rows/s for 3× the memory (31.5 GB vs 10.0 GB).
 - **Saturation is NOT reached and the reason is known**: the batch is still sampled row-by-row on CPU
-  (~26 ms/row, ~37% of the step), so the GPU idles between batches. Next ceiling = batch-aware sampling,
+  (~22 ms/row, ~36% of the step), so the GPU idles between batches. Next ceiling = batch-aware sampling,
   a per-target subgraph cache (11,526 unique targets over 33,983 rows ≈ 2.9 rows/target), or sampling in
-  DataLoader workers. Not done — YAGNI until 0.42 h/epoch actually hurts.
+  DataLoader workers. Not done — YAGNI until 0.36 h/epoch actually hurts.
 - Real-data smoke, all three §10.6 nested members, 600 rows / 1 epoch (machinery only, NOT science):
   untyped_gnn systema=0.0534, typed_static systema=0.0531, condition_gated systema=0.0432.
+- **xhigh /code-review (37 agents) → 15 defects, all fixed** (`docs/specs/2026-07-17-graph-throughput-minibatch.md`
+  carries the full record). One real regression: `h_graph` preallocated float32 broke dtype under autocast.
+  The important one was **test blindness** — `_grow`'s order-restoring sort could be deleted with all 237
+  tests green while the sampler diverged on 35 of 60 fixture genes, because the 4 hand-picked probe genes
+  were exactly the ones that cannot fail; the module docstring asserted the opposite of the real contract.
+  Also: a vacuous all-ones assertion (`allclose` is True on a zero-length gate), CSR cache staleness (an
+  appended edge was silently never seen), `torch.split` views, and 3 hot-path wastes worth 9.4× → **10.9×**.
+  **Lesson: hand-picked probe cases are a way of choosing what the test cannot see; mutate the one line the
+  central claim rests on, not just the 6 you thought of.**
 
 ## Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) — this session (2026-07-17)
 
@@ -156,7 +165,7 @@ under the report's frozen trial budget. **Not yet committed.**
   single-threaded per-subgraph sampling, GPU ~0%; untyped_gnn didn't finish 1 epoch over 21,262 rows in
   ~11h. Workaround: 4 configs + network-prop on a **1,000-row fold, one A100 each in parallel** (~55 min) →
   H2a +0.0010 (nominally supported), H2b −0.0062 (not) — noise at 1 epoch. **RESOLVED 2026-07-17** by the
-  graph throughput refactor above (3.94 h → 0.42 h/epoch): the diagnosis "single-threaded per-subgraph
+  graph throughput refactor above (3.94 h → 0.36 h/epoch): the diagnosis "single-threaded per-subgraph
   sampling" was right and was the 95%; "mini-batch the encoders" alone would have addressed only the 5%.
   The full-fold screening campaign is now tractable and is the next compute task.
   `run_full_pipeline.sh` runs M1-7 unattended under nohup. See session-handoff for detail.

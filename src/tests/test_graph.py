@@ -176,6 +176,10 @@ _PRIORITY_BONUS_T = {"physical_ppi": 1e6, "co_complex": 1e6, "functional_assoc":
 _SCORE_COL_T = 5  # edge_attr layout: source one-hot(5) then score
 
 
+def _store_key_t(rel: str):
+    return (PROTEIN, rel, PROTEIN) if rel in _PP_RELATIONS_T else (PROTEIN, _MEMBERSHIP, COMPLEX)
+
+
 def _reference_grow(graph, seed, hops, cap):
     """The original O(|E|)-per-hop full-scan growth, frozen here as the equivalence oracle."""
     selected, seen = [seed], {seed}
@@ -270,9 +274,16 @@ def _dense_random_graph(n_genes=60, seed=0):
 @pytest.mark.parametrize("hops", [1, 2])
 def test_sampler_matches_full_scan_reference(cap, hops):
     """The neighbour-index sampler must be EXACTLY the full-scan sampler — same nodes, same edge
-    order, same features. Any divergence changes which subgraph the model sees, i.e. the science."""
+    order, same features. Any divergence changes which subgraph the model sees, i.e. the science.
+
+    Sweeps EVERY gene in the fixture, not a hand-picked few. An earlier version probed only
+    (G000, G001, G030, G059) and was blind: deleting _grow's order-restoring sort left the whole
+    suite green while the sampler diverged on 35 of these 60 genes. Divergence needs a frontier that
+    is BOTH multi-node AND cap-truncated under a priority tie, which no hand-picked handful reliably
+    hits — so pick none, and sweep. It costs ~nothing on a 60-node graph.
+    """
     graph, gene_to_idx = _dense_random_graph()
-    for gene in ("G000", "G001", "G030", "G059"):  # hub, ordinary, complex member, self-loop
+    for gene in gene_to_idx:
         ref = _reference_sample(graph, gene, hops, cap, gene_to_idx)
         sub = sample_subgraph(graph, gene, hops=hops, cap=cap, gene_to_idx=gene_to_idx)
         assert torch.equal(sub[PROTEIN].orig_idx, ref["protein_orig"]), f"{gene}: node set differs"
@@ -367,15 +378,26 @@ def test_batched_gate_uses_each_samples_own_condition():
 
 
 def test_batched_static_encoder_pins_gate_to_one():
-    """StaticTypedGraphEncoder overrides only _gate; the batched path must honour that."""
+    """StaticTypedGraphEncoder overrides only _gate; the batched path must honour that.
+
+    The all-ones assertion is vacuous on an empty gate (``allclose(zeros(0), ones(0))`` is True), so
+    the gates are first pinned to the sub-graph's real edge counts. Without that, a forward that
+    regressed to returning EMPTY gates for every sample would pass green — and empty gates silently
+    zero StageALoss._graph's sparsity + unsourced terms and empty the Module-4 rationale.
+    """
     from tcell_pipeline.baselines.graph_baselines import StaticTypedGraphEncoder
 
+    genes, conds = ["G000", "G001"], ["Rest", "Stim48hr"]
     graph, gene_to_idx = _dense_random_graph()
     enc = StaticTypedGraphEncoder(graph, gene_to_idx).eval()
-    _, gates, _ = enc(["G000", "G001"], ["Rest", "Stim48hr"], torch.randn(2, config.GRAPH_HIDDEN_DIM))
+    _, gates, confs = enc(genes, conds, torch.randn(len(genes), config.GRAPH_HIDDEN_DIM))
+    subs = [sample_subgraph(graph, g, gene_to_idx=gene_to_idx) for g in genes]  # sampler is deterministic
     for rel in (*_PP_RELATIONS_T, _MEMBERSHIP):
-        for g in gates[rel]:
-            assert torch.allclose(g, torch.ones_like(g))
+        for b, g in enumerate(gates[rel]):
+            assert g.numel() == subs[b][_store_key_t(rel)].edge_index.shape[1]  # one gate per real edge
+            assert confs[rel][b].shape == g.shape
+            assert torch.allclose(g, torch.ones_like(g))  # gate pinned to 1.0: the H2b isolated variable
+    assert sum(g.numel() for rel in _PP_RELATIONS_T for g in gates[rel]) > 0  # the gates are not all empty
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device available")
@@ -388,3 +410,83 @@ def test_batched_forward_matches_per_sample_loop_on_cuda():
     genes = ["G000", "NOTAGENE", "G001", "G030", "G059"]
     conds = ["Rest", "Rest", "Stim48hr", "Stim8hr", "Rest"]
     _assert_forward_matches(enc, genes, conds, torch.randn(len(genes), config.GRAPH_HIDDEN_DIM, device="cuda"))
+
+
+def test_forward_dtype_follows_the_readout_under_autocast():
+    """h_graph must carry whatever dtype the readout produced, as the old torch.stack(h_graphs) did.
+
+    Preallocating the buffer as torch.zeros(...) hardcodes float32, so under autocast the bf16/fp16
+    readout is silently cast back up into an fp32 h_graph: the graph pathway then leaves the autocast
+    region at a different dtype from every other pathway, and ProgramDecoder concatenates h_do with
+    h_graph. The unbatched encode_subgraph — the path Module 4 uses — is the reference dtype.
+    """
+    graph, gene_to_idx = _dense_random_graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    h_do = torch.randn(3, config.GRAPH_HIDDEN_DIM)
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        want = enc.encode_subgraph(
+            sample_subgraph(graph, "G000", gene_to_idx=gene_to_idx), "Rest", h_do[0]
+        )["h_graph"].dtype
+        h_graph, _, _ = enc(["G000", "NOTAGENE", "G001"], ["Rest", "Rest", "Stim48hr"], h_do)
+        h_absent, _, _ = enc(["NOPE"], ["Rest"], h_do[:1])
+    assert want == torch.bfloat16                       # the autocast region really is low-precision
+    assert h_graph.dtype == want, f"h_graph is {h_graph.dtype}, unbatched path gives {want}"
+    # all targets absent: no readout runs, so there is no computed dtype to follow — the invariant
+    # that matters is agreeing with h_do, which ProgramDecoder concatenates h_graph with
+    assert h_absent.dtype == h_do.dtype
+
+
+def test_untyped_forward_dtype_follows_the_readout_under_autocast():
+    from tcell_pipeline.baselines.graph_baselines import UntypedGraphEncoder
+
+    graph, gene_to_idx = _dense_random_graph()
+    enc = UntypedGraphEncoder(graph, gene_to_idx).eval()
+    h_do = torch.randn(2, config.GRAPH_HIDDEN_DIM)
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        want = enc.encode_one("G000", h_do[0]).dtype    # the unbatched path is the reference
+        h_graph, _, _ = enc(["G000", "NOTAGENE"], ["Rest", "Rest"], h_do)
+    assert want == torch.bfloat16
+    assert h_graph.dtype == want, f"h_graph is {h_graph.dtype}, unbatched path gives {want}"
+
+
+def test_per_sample_gates_own_their_storage():
+    """torch.split hands out VIEWS into the batch-wide gate tensor; the per-sample loop handed out
+    independent tensors. A consumer that edits one sample's gates in place (alpha.clamp_) would
+    otherwise raise, and holding one sample's gates would pin the whole batch's storage alive."""
+    graph, gene_to_idx = _dense_random_graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    with torch.no_grad():
+        _, gates, confs = enc(["G000", "G001"], ["Rest", "Stim48hr"], torch.randn(2, config.GRAPH_HIDDEN_DIM))
+    for rel in (*_PP_RELATIONS_T, _MEMBERSHIP):
+        for g, c in zip(gates[rel], confs[rel]):
+            assert g._base is None, f"{rel}: gate is a view into the batched tensor"
+            assert c._base is None, f"{rel}: confidence is a view into the batched tensor"
+            g.clamp_(0.0, 1.0)  # in-place must not raise on a split view
+
+
+def test_forward_accepts_any_iterable_of_targets():
+    """The batched path indexes target_genes/conditions by position; the old loop only zip()ed them,
+    so a generator caller must not silently degrade to an empty batch."""
+    graph, gene_to_idx = _dense_random_graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    h_do = torch.randn(2, config.GRAPH_HIDDEN_DIM)
+    ref, _, _ = enc(["G000", "G001"], ["Rest", "Stim48hr"], h_do)
+    got, _, _ = enc(iter(["G000", "G001"]), iter(["Rest", "Stim48hr"]), h_do)
+    assert torch.allclose(got, ref)
+    assert not torch.allclose(got, torch.zeros_like(got))  # not silently all-absent
+
+
+def test_sampler_index_rebuilds_when_the_graph_changes():
+    """The CSR index is cached on the graph. The full scan it replaced re-read edge_index every call,
+    so an edited graph took effect immediately; a stale index would hand an edge-ablation control the
+    topology it thought it had removed, silently."""
+    graph, gene_to_idx = _dense_random_graph()
+    before = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    store = graph[PROTEIN, "physical_ppi", PROTEIN]
+    seed = gene_to_idx["G001"]
+    new = max(set(range(len(gene_to_idx))) - set(before[PROTEIN].orig_idx.tolist()))  # an unreached node
+    store.edge_index = torch.cat([store.edge_index, torch.tensor([[seed], [new]])], dim=1)
+    store.edge_attr = torch.cat([store.edge_attr, store.edge_attr[:1]], dim=0)
+    after = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert new not in before[PROTEIN].orig_idx.tolist()
+    assert new in after[PROTEIN].orig_idx.tolist(), "stale index: the appended edge was never seen"

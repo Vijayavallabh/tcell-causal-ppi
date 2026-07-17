@@ -139,7 +139,7 @@ class TypedGraphEncoder(nn.Module):
         for rel in _PP_RELATIONS:
             ei = sub[PROTEIN, rel, PROTEIN].edge_index
             ea = sub[PROTEIN, rel, PROTEIN].edge_attr
-            alpha = self._gate(rel, ea, self._cond_of(h_cond, edge_batch, rel))  # E (one per original edge)
+            alpha = self._gate(rel, ea, h_cond, edge_batch)           # E (one per original edge)
             edges[rel] = (torch.cat([ei, ei.flip(0)], dim=1),         # 2E: undirected message passing
                           torch.cat([ea, ea], dim=0),
                           torch.cat([alpha, alpha], dim=0))
@@ -147,23 +147,22 @@ class TypedGraphEncoder(nn.Module):
             confs[rel] = ea[:, _SCORE_COL]                            # per-edge source confidence, aligned to gates
         ei = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index
         ea = sub[PROTEIN, _MEMBERSHIP, COMPLEX].edge_attr
-        alpha = self._gate(_MEMBERSHIP, ea, self._cond_of(h_cond, edge_batch, _MEMBERSHIP))
+        alpha = self._gate(_MEMBERSHIP, ea, h_cond, edge_batch)
         edges[_MEMBERSHIP] = (ei, ea, alpha)
         gates[_MEMBERSHIP] = alpha.squeeze(-1)
         confs[_MEMBERSHIP] = ea[:, _SCORE_COL]
         return edges, gates, confs
 
-    @staticmethod
-    def _cond_of(h_cond: torch.Tensor, edge_batch, rel: str) -> torch.Tensor:
-        """(1, D) to broadcast over one subgraph's edges; (E, D) — each edge carrying its own
-        sample's condition — when a mini-batch mixes conditions."""
-        return h_cond if edge_batch is None else h_cond[edge_batch[rel]]
-
-    def _gate(self, rel: str, edge_attr: torch.Tensor, h_cond: torch.Tensor) -> torch.Tensor:
+    def _gate(self, rel: str, edge_attr: torch.Tensor, h_cond: torch.Tensor, edge_batch=None) -> torch.Tensor:
+        """Per-edge condition gate. ``h_cond`` is (1, D) for a single subgraph; on the batched path it
+        is (K, D) and ``edge_batch[rel]`` says which sample each edge belongs to, so every edge is
+        gated by ITS OWN sample's condition. The per-edge expansion happens HERE rather than at the
+        call site so an override that ignores the condition (StaticTypedGraphEncoder) doesn't pay for
+        a (E, D) index_select it throws away."""
         if edge_attr.numel() == 0:
             return edge_attr.new_zeros((0, 1))
-        # h_cond is (1, D) for a single subgraph, or already per-edge (E, D) on the batched path
-        cond = h_cond.expand(edge_attr.size(0), -1) if h_cond.size(0) == 1 else h_cond
+        cond = h_cond if edge_batch is None else h_cond[edge_batch[rel]]
+        cond = cond.expand(edge_attr.size(0), -1) if cond.size(0) == 1 else cond
         return torch.sigmoid(self.gate[rel](torch.cat([cond, edge_attr], dim=1)))
 
     @staticmethod
@@ -246,14 +245,20 @@ class TypedGraphEncoder(nn.Module):
         """
         device = self.proj.weight.device
         h_do = h_do.to(device)
+        # materialise once: the batched path indexes by position, where the old loop only zip()ed, so
+        # a generator/iterable caller would otherwise silently see an empty batch
+        target_genes, conditions = list(target_genes), list(conditions)
         rels = (*_PP_RELATIONS, _MEMBERSHIP)
         n = len(target_genes)
-        edge_gates = {r: [torch.zeros(0, device=device) for _ in range(n)] for r in rels}
-        edge_confidences = {r: [torch.zeros(0, device=device) for _ in range(n)] for r in rels}
-        h_graph = torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device)
+        empty = torch.zeros(0, device=device, dtype=h_do.dtype)  # one shared blank, not 4n of them
+        edge_gates = {r: [empty] * n for r in rels}
+        edge_confidences = {r: [empty] * n for r in rels}
         known = [b for b, g in enumerate(target_genes) if g in self.gene_to_idx]
         if not known:
-            return h_graph, edge_gates, edge_confidences  # every target absent -> all-zero, empty gates
+            # every target absent -> all-zero h_graph, empty gates. No readout runs, so there is no
+            # computed dtype to follow; mirror h_do, which is what the decoder concatenates this with.
+            return (torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device, dtype=h_do.dtype),
+                    edge_gates, edge_confidences)
 
         subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in known]
         bat = Batch.from_data_list(subs).to(device)  # concatenate on CPU, then ONE host->device copy
@@ -275,15 +280,22 @@ class TypedGraphEncoder(nn.Module):
         # sample, matching the single-subgraph cat([h_p, h_c]) order.
         node_batch = torch.cat([p_batch, c_batch])
         perm = torch.argsort(node_batch, stable=True)
-        h_graph[rows] = self.readout(
+        pooled = self.readout(
             h_do[rows], torch.cat([h_p, h_c], dim=0)[perm], node_batch=node_batch[perm]
         )[0]
+        # dtype follows what the readout actually produced, exactly as the old torch.stack(h_graphs)
+        # did; a hardcoded-float32 buffer would silently downcast the result under .half()/autocast
+        h_graph = torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device, dtype=pooled.dtype)
+        h_graph[rows] = pooled
 
         for r in rels:
             counts = [int(s[_store_key(r)].edge_index.shape[1]) for s in subs]
+            # .clone(): torch.split returns VIEWS into the batch-wide tensor, so without this an
+            # in-place consumer (alpha.clamp_) would raise, and holding one sample's gates would pin
+            # the whole batch's storage. The per-sample loop handed out independent tensors.
             for i, (g, c) in enumerate(zip(torch.split(gates[r], counts), torch.split(confs[r], counts))):
-                edge_gates[r][known[i]] = g          # back to one per-edge tensor per sample, in order
-                edge_confidences[r][known[i]] = c
+                edge_gates[r][known[i]] = g.clone()   # one per-edge tensor per sample, in order
+                edge_confidences[r][known[i]] = c.clone()
         return h_graph, edge_gates, edge_confidences
 
     def _batched_complex_states(self, bat, p_batch, device):
