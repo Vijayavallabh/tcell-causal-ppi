@@ -163,6 +163,15 @@ checkpoint, and tuning budget.
 > (feat-006 done-criterion); graph baselines are feat-007. Details:
 > `docs/specs/2026-07-16-module6-evaluation.md`.
 
+> **As-built (Module 7, feat-007):** the three **graph baselines** are built in
+> `src/tcell_pipeline/baselines/graph_baselines.py`: **network propagation** (non-neural, symmetric-
+> normalised PPI diffusion of training responses; predict = graph-proximity-weighted mean), the **untyped
+> GNN diagnostic** (homogeneous GCN, all PPI edges collapsed to one relation — topology without evidence
+> types), and the **typed static graph** (`TypedGraphEncoder` with the condition gate pinned to 1.0 —
+> evidence types + topology, no condition gating). The two neural encoders drop into
+> `EGIPGModel(graph_encoder=…)` and train through the existing Stage-A `Trainer`; all three emit the common
+> prediction schema. Details: `docs/specs/2026-07-16-module7-screening.md`.
+
 ### Evaluation metrics
 
 **Prediction**: MAE, RMSE, Pearson/Spearman, Systema perturbation-specific delta correlation, centroid
@@ -624,6 +633,30 @@ and oracle), the null-control predictor scores ~0 under independent controls, an
 strongest baseline, edging a lightly-trained model** — the near-null-signal regime the report anticipates
 until the H1 predictor is trained to convergence. The synthetic unit checks (`src/tests/test_metrics.py`,
 `src/tests/test_baselines.py`) run under `./init.sh`.
+
+### Screen the nested family (Module 7 — feat-011)
+
+`screening/run_screening.py` trains and scores the §10.6 nested confirmatory family — expression-only,
+typed-static, condition-gated — plus the untyped-GNN diagnostic and the non-neural network-propagation
+reference on one fold, and reports **H2a** (typed-static > expression-only) and **H2b** (condition-gated >
+typed-static) on the `systema` primary endpoint. Every run is logged in the immutable experiment registry
+(`data/results/experiment_registry.yaml`) under the report's **32-trial EG-IPG / 16-per-comparator caps**
+(counted by distinct config, so dev re-runs don't exhaust the budget); the harness is **failure-isolating**
+(a config that OOMs is logged failed and the wave continues). Design + as-built:
+`docs/specs/2026-07-16-module7-screening.md`.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.run_screening --epochs 1 --batch-size 8 --device cuda
+```
+
+**Compute reality.** The typed graph encoders sample a ≤512-node subgraph *per row* and message-pass
+single-threaded on CPU (GPU util ~0%), so the graph configs are hours-long on the full 21,262-row fold —
+the untyped GNN did not finish one epoch in ~11 h. For a tractable comparison, cap the fold (`--n-max
+1000`) and/or run the configs in parallel across the four A100s (one per GPU — ~4× faster wall-clock, ~55
+min on 1,000 rows). On a 1,000-row / 1-epoch fold H2a is a hair positive (+0.001 systema) and H2b negative
+(−0.006) — noise in the near-null-signal regime; the genuine H2a/H2b test needs convergent training, which
+needs the deferred graph-encoder mini-batching upgrade (PyG `Batch` over subgraphs). `run_full_pipeline.sh`
+runs Modules 1-7 unattended under nohup. Review: `docs/reviews/2026-07-16-code-review-module7.md`.
 
 ## Repository / data-mart layout
 

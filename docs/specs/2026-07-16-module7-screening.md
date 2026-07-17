@@ -121,3 +121,16 @@ in the common schema. As-built findings:
   edges) — the graph model had never been trained on real data before (Module 5's real run was expr-only).
   Batch 4 + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` fits; CPU (1 TB RAM) is the report's stated
   home for graph message passing. `run_screening`'s failure isolation means this no longer aborts the wave.
+
+**Full real-data run (2026-07-17).** Modules 1-6 validated at full scale (M5 Stage-A `best_val` 3.4690; M6
+egipg `systema` 0.0810 edging ridge 0.0806, G2-MQ PASSED). **M7 graph screening is compute-bound on the
+full 21,262-row fold**: the per-target subgraph sampling + per-row message passing is single-threaded on CPU
+(`torch.set_num_threads(1)`, GPU ~0% util), so the *fastest* graph config (untyped-GNN) did **not** finish
+one epoch in ~11 h — full-data graph screening is not practical as-is. Tractable workaround used: the 4
+nested configs + network-propagation on a **1,000-row fold, one A100 each in parallel** (~55 min vs ~2.5 h
+sequential) → same-fold `systema` expr-only 0.0402 / untyped 0.0404 / typed-static 0.0412 / condition-gated
+0.0350 / network-prop 0.0237; **H2a +0.0010 (nominally supported), H2b −0.0062 (not)** — noise at 1 epoch,
+the near-null-signal regime. **Deferred top throughput task:** mini-batch the graph encoders (PyG `Batch`
+over sampled subgraphs) for true single-GPU saturation + tractable full-data runs — the `ponytail:` upgrade
+in `TypedGraphEncoder`/`UntypedGraphEncoder`; must preserve the Module-4 `edge_gates` contract and keep the
+test suite green. `run_full_pipeline.sh` (repo root) runs Modules 1-7 unattended under nohup.
