@@ -107,9 +107,30 @@ comparators over frozen seeds" step is the sealed evaluator, whose decision the 
 
 ## Verification
 
-`./init.sh` green at **200 tests** (171 prior + 29 Module 8: 6 comparators, 3 rationale-audit, 6 sealed-eval,
-14 reproducibility). Fully synthetic — tiny marts + a small STRING-typed PPI graph; deterministic echo model
-for the sealed H1 decision; crafted fallacy inputs + a synthetic checkout for the four repro verdicts.
+`./init.sh` green at **215 tests** (171 prior + 44 Module 8: 7 comparators, 5 rationale-audit, 8 sealed-eval,
+25 reproducibility). Fully synthetic — tiny marts + a small STRING-typed PPI graph; deterministic echo model
+for the sealed H1 decision; crafted fallacy inputs + a synthetic checkout for the repro verdicts. One test
+runs a real CUDA audit (skipped when no GPU is present).
+
+## As-built consequences of the two review passes
+
+Behaviours a caller must know, all forced by review findings:
+
+- **The sealed seal is per SPLIT, not per seed.** `seed` only redraws the bootstrap; keying the seal on it
+  would let the confirmatory decision be resampled until it confirms. The fold is opened once.
+- **The H1 rule's second clause is structurally weak.** `ρ_perturbed_mean` is exactly 0.0 under systema, so
+  `ρ_EGIPG > ρ_perturbed_mean` reduces to `ρ_EGIPG > 0`. Kept (spec-mandated) and stated in the sealed JSON's
+  `perturbed_mean_reference_note`; the binding constraint is the LCB clause.
+- **The verifier refuses to certify what it did not check.** Absolute/escaping manifest paths, an absent
+  `hashes` block, a decision record without `h1_confirmed` or numeric fields, and a missing `config_snapshot`
+  all yield CANNOT_VERIFY rather than REPRODUCIBLE. Manifest paths MUST be relative to the checkout, and
+  `verify_reproducibility` MUST be given a `config_snapshot`.
+- **Decision tolerance** defaults to `DEFAULT_DECISION_TOLERANCE = 1e-6` (bit-exact floats are not a
+  realistic cross-machine bar); a manifest may pin its own `decision.tolerance`.
+- **Degenerate detector input raises `Unevaluable`**, dropping 11/11 coverage → PARTIALLY. A detector that
+  could not run never certifies.
+- **`wrapped_upstream` reflects what actually runs** (always False — the public reimpl), with importability
+  recorded separately as `upstream_importable`.
 
 ## Review history
 
@@ -136,3 +157,15 @@ Each fix has a regression test (every fallacy detector's flag path now exercised
 CORUM-ablation reaches membership; ≥3-group ecological; degenerate-fold refusal; non-constant bootstrap LCB;
 explicit public-only). The sealed-math finder confirmed the per-row systema / paired bootstrap / H1 rule are
 correct; the comparators finder confirmed no train/challenge leakage.
+
+**Second pass — xhigh workflow `/code-review` of the committed module (2026-07-17, 63 agents):** **15
+confirmed, all fixed** across 4 tiers — see `docs/reviews/2026-07-17-code-review-module8.md`. The theme: each
+subsystem failed toward its own headline claim. The verifier certified REPRODUCIBLE on an **empty checkout**
+(absolute manifest paths hashed the original run), on a manifest with **no hashes block**, on a decision
+record pinning **nothing** (`None == None`), and with the config check **skipped by default**; the sealed
+**write-once seal was keyed on the bootstrap `seed`**, so bumping it re-opened the sequestered fold — the
+garden-of-forks this module ships a detector for; four fallacy detectors fired on clean data or passed on
+undefined input; the rationale audit crashed on any non-CPU device and its `stability` was not reproducible
+from the audit seed; and the TxPert provenance report asserted `wrapped_upstream` from mere importability.
+Fixing the device bug surfaced a **latent Module-4 bug** (`RationaleHead._select` indexes CPU tensors with a
+CUDA `topk` index — the head had never run on GPU), also fixed. +15 regression tests, red-green verified.

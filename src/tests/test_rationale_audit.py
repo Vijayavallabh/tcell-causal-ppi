@@ -132,6 +132,40 @@ def test_corum_ablation_reaches_complex_membership_edges():
     assert "complex_membership" not in string or int(string["complex_membership"].min()) == 1  # membership kept
 
 
+def test_stability_is_reproducible_from_the_audit_seed(tmp_path):
+    # PyG's dropout_edge draws from the GLOBAL torch RNG, which the audit seed does not otherwise touch, so
+    # mean_stability must not depend on ambient process RNG state. top_k=2 + a non-zero scorer makes the
+    # selection read node states, so DropEdge genuinely perturbs it (a zero-init head would be trivially 1.0).
+    paths = _write_marts(tmp_path)
+    graph, g2i = _graph()
+    model = _model(tmp_path, graph, g2i, paths)
+    ds = PerturbationDataset("train", **paths)
+    torch.manual_seed(0)
+    head = RationaleHead(top_k=2).eval()
+    torch.nn.init.normal_(head.score.weight, std=1.0)     # built ONCE, so only the ambient RNG varies below
+
+    vals = []
+    for ambient in (11, 22, 33):
+        torch.manual_seed(ambient)
+        rep = audit_rationale(model, head, ds, n_cases=2, n_controls=2, sparsities=(0.5,), seed=0,
+                              out_path=tmp_path / f"a{ambient}.json")
+        vals.append(rep["aggregate"]["mean_stability"])
+    assert len(set(vals)) == 1, f"stability not reproducible from the audit seed: {vals}"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device available")
+def test_audit_runs_on_cuda(tmp_path):
+    # the head's scorer consumes the encoder's node states; if it is left on CPU while the encoder runs on
+    # cuda, the first case dies with a device mismatch and no report is ever written
+    paths = _write_marts(tmp_path)
+    graph, g2i = _graph()
+    model = _model(tmp_path, graph, g2i, paths)
+    ds = PerturbationDataset("train", **paths)
+    rep = audit_rationale(model, RationaleHead().eval(), ds, n_cases=1, n_controls=2, sparsities=(0.5,),
+                          device="cuda", out_path=tmp_path / "cuda.json")
+    assert rep["n_audited"] == 1 and np.isfinite(rep["cases"][0]["sufficiency"])
+
+
 def test_audit_rejects_expression_only_model(tmp_path):
     paths = _write_marts(tmp_path)
     graph, g2i = _graph()

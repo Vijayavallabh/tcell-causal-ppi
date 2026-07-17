@@ -119,6 +119,29 @@ def test_sealed_result_is_write_once(tmp_path):
     assert res["h1_confirmed"] is True                        # force re-seals
 
 
+def test_seal_is_per_split_not_per_seed(tmp_path):
+    # `seed` only redraws the bootstrap RNG; if the seal were keyed on it, a steward who got lcb just under
+    # the margin could re-run at seed=1 and re-open the sequestered fold until the decision confirmed
+    ev, echo, truth, perturbed_mean = _setup(tmp_path)
+    ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=0)
+    with pytest.raises(FileExistsError, match="already sealed"):
+        ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=1)
+    assert not (tmp_path / "sealed" / "challenge" / "1.json").exists()   # no second sealed decision
+    # a DIFFERENT split is still sealable (the per-split seal is not a global lock)
+    ev2 = SealedEvaluator(ev.challenge_ds, ev.train_mean, sealed_root=tmp_path / "sealed",
+                          predictions_root=tmp_path / "pred")
+    assert ev2.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="calibration", seed=0)["n_rows"] == 4
+
+
+def test_perturbed_mean_reference_is_structurally_zero(tmp_path):
+    # the H1 rule's second clause reduces to rho_egipg > 0 under systema; the sealed record must say so
+    # rather than let a reader mistake it for a check that discriminated
+    ev, echo, truth, perturbed_mean = _setup(tmp_path)
+    res = ev.evaluate(echo, {"perturbed_mean": perturbed_mean}, split="challenge", seed=0)
+    assert res["rho_perturbed_mean"] == pytest.approx(0.0, abs=1e-12)
+    assert "structurally 0.0" in res["perturbed_mean_reference_note"]
+
+
 def test_evaluate_guards(tmp_path):
     ev, echo, truth, perturbed_mean = _setup(tmp_path)
     with pytest.raises(ValueError, match="perturbed_mean"):

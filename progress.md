@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Last Updated:** 2026-07-17 (Module 8 — External Comparators + Rationale Audit + Sealed Eval + Reproducibility **built + adversarially reviewed, NOT yet committed**. Prior: Module 7 committed `6b6021f` → xhigh review Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync `3f946fe` → state-file archive `1f1f52e`.)
+**Last Updated:** 2026-07-17 (Module 8 committed `5ea8a4b`, then its **xhigh `/code-review` (63 agents) found 15 more confirmed defects — all fixed**, `./init.sh` green at 215. Prior: Module 7 `6b6021f` → xhigh Tiers 1-4 `9db57ae`→`32fb473`→`4e25f4b`→`04e6148` → docs sync `3f946fe` → state-file archive `1f1f52e`.)
 **Active Feature:** Module 8 (feat-010 + feat-012 + feat-013) — all three **in-progress**: the comparator adapters + rationale-audit + sealed-eval + reproducibility **frameworks are built + reviewed + tested** (200 tests); the real-data campaigns (16-trial comparators, 50-case audit on the frozen H1, the sealed challenge opening, a clean-checkout reproduction) remain and depend on a converged graph model (blocked on the Module-7 mini-batch refactor). Also open: feat-011 in-progress (32-trial screening campaign + 5-seed promotion), feat-006 in-progress (elastic-net + CatBoost), feat-008 in-progress (Stage-B calibration + rationale fit loops + freeze gate), feat-005 in-progress. Next: **commit Module 8** (awaiting user), then the mini-batch refactor → convergent training → the deferred campaigns.
 
 ## Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) — this session (2026-07-17)
@@ -37,9 +37,28 @@ machinery, not a compute campaign. **Not yet committed.**
   membership edges; [med] uncovered targets burned audit slots; [med] ecological flagged spuriously with ≤2
   groups; [low] no min-row guard before sealing; [low] `public_only` substring matched "non-public". The
   sealed-math + comparator-leakage finders confirmed those paths correct.
-- **Verification:** `./init.sh` green at **200 tests** (171 prior + 29 Module 8: 6 comparators, 3
-  rationale-audit, 6 sealed-eval, 14 reproducibility). Fully synthetic. Spec
-  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`.
+- **xhigh `/code-review` pass 2 (2026-07-17, 63 agents, over the committed `5ea8a4b`)** — **15 confirmed,
+  all fixed.** Theme: *each subsystem failed toward its own headline claim.* The verifier certified
+  REPRODUCIBLE on an **empty checkout** (absolute manifest paths hashed the original run — proved by the
+  reviewers), on a manifest with **no hashes block**, on a decision record pinning **nothing**
+  (`bool(None)==bool(None)`), and with the config check **skipped by default** (so a changed `DELTA_PRED` —
+  the knob that flips H1 — certified clean); `tolerance` defaulted to 0.0 demanding bit-exact floats. The
+  sealed **write-once seal was keyed on the bootstrap `seed`**, so bumping it re-opened the sequestered fold
+  and resealed a possibly-confirming decision — **the garden-of-forks this module ships a detector for**.
+  Four fallacy detectors fired on clean data or passed on undefined input (`regression_to_mean(b, b−10)`
+  flagged despite correlation 1.0; `reverse_causation(0,0)` flagged; NaN crashed `_sign`; zero-survivor
+  `survivorship` silently passed). The audit crashed on any non-CPU device and its `stability` wasn't
+  reproducible from the seed. The TxPert report asserted `wrapped_upstream` from mere importability.
+  **Bonus:** the CUDA fix surfaced a **latent Module-4 bug** — `RationaleHead._select` indexes CPU tensors
+  with a CUDA `topk` index; the head had never run on GPU. All fixed; new `Unevaluable` makes "a check that
+  didn't run never certifies" explicit. The H1 second clause is a proven tautology (ρ_perturbed_mean ≡ 0
+  under systema) — **documented in the sealed JSON, not silently patched**.
+- **Verification:** `./init.sh` green at **215 tests** (171 prior + 44 Module 8), exit 0, incl. a real CUDA
+  audit run. +15 regression tests, red-green verified (reverting the `_resolve` fix demonstrably returns
+  REPRODUCIBLE on an empty checkout; one test I wrote this pass was itself caught by red-green as
+  non-discriminating and strengthened). Spec
+  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`; review record
+  `docs/reviews/2026-07-17-code-review-module8.md` (both passes).
 
 ## Module 7 (Graph Baselines + Screening Harness) — this session (2026-07-16)
 

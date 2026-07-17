@@ -22,6 +22,9 @@ VERDICTS = ("REPRODUCIBLE", "PARTIALLY_REPRODUCIBLE", "NOT_REPRODUCIBLE", "CANNO
 # deterministic preprocessing artifacts whose hashes MUST reproduce bit-for-bit (report: id_mapping, splits,
 # de_layers) — a mismatch here means the frozen pipeline did not reproduce.
 _DETERMINISTIC = ("id_mapping", "splits", "de_layers")
+# The sealed evaluator emits no `tolerance`, and bit-exact float equality across machines/BLAS builds is not a
+# realistic reproduction bar, so a manifest that pins no tolerance gets this (tight) float-noise default.
+DEFAULT_DECISION_TOLERANCE: float = 1e-6
 
 
 def _sha256_file(path: Path, chunk: int = 1 << 20) -> str | None:
@@ -35,17 +38,36 @@ def _sha256_file(path: Path, chunk: int = 1 << 20) -> str | None:
     return h.hexdigest()
 
 
-def _resolve(checkout: Path, rel: str) -> Path:
+def _resolve(checkout: Path, rel: str) -> Path | None:
+    """Resolve a manifest path INSIDE ``checkout``. An absolute path is rejected (None): config.py's roots are
+    absolute by default, so a manifest built from them would send every hash/schema check at the ORIGINAL
+    run's files — verifying that run against itself and certifying a checkout whose files were never read. A
+    path escaping the checkout via ``..`` is rejected for the same reason."""
     p = Path(rel)
-    return p if p.is_absolute() else Path(checkout) / rel
+    if p.is_absolute():
+        return None
+    resolved = (Path(checkout) / p).resolve()
+    root = Path(checkout).resolve()
+    return resolved if resolved == root or root in resolved.parents else None
 
 
 def _check_hashes(checkout: Path, entries: dict) -> list[dict]:
     checks = []
+    # every deterministic artifact must be PRESENT in the manifest — an absent (or misspelled) block would
+    # otherwise emit zero checks and sail through as REPRODUCIBLE without hashing anything
+    for name in _DETERMINISTIC:
+        if name not in entries:
+            checks.append({"check": f"hash:{name}", "category": "critical", "status": "missing",
+                           "reason": "manifest declares no hash for this deterministic artifact"})
     for name, spec in entries.items():
-        path = _resolve(checkout, spec["path"])
-        actual = _sha256_file(path)
         category = "critical" if name in _DETERMINISTIC else "provenance"
+        path = _resolve(checkout, spec["path"])
+        if path is None:
+            checks.append({"check": f"hash:{name}", "category": category, "status": "missing",
+                           "reason": f"path {spec['path']!r} is absolute or escapes the checkout — cannot "
+                                     f"attribute it to this checkout"})
+            continue
+        actual = _sha256_file(path)
         if actual is None:
             status = "missing"
         elif actual == spec["sha256"]:
@@ -62,7 +84,7 @@ def _check_predictions(checkout: Path, entries: dict) -> list[dict]:
     checks = []
     for name, spec in entries.items():
         path = _resolve(checkout, spec["path"])
-        if not path.exists():
+        if path is None or not path.exists():
             checks.append({"check": f"schema:{name}", "category": "schema", "status": "missing"})
             continue
         frame = pd.read_parquet(path)
@@ -77,28 +99,44 @@ def _check_predictions(checkout: Path, entries: dict) -> list[dict]:
 
 
 def _check_config(manifest: dict, config_snapshot: dict | None) -> list[dict]:
+    """The config the frozen run used is part of what must reproduce (a changed DELTA_PRED alone can flip the
+    H1 call), so an unverifiable config is 'missing', never a silent clean skip."""
     expected = (manifest.get("config_hashes") or {}).get("config_snapshot")
-    if expected is None or config_snapshot is None:
-        return [{"check": "config_hash", "category": "config", "status": "skip"}]
+    if expected is None:
+        return [{"check": "config_hash", "category": "critical", "status": "missing",
+                 "reason": "manifest declares no config_hashes.config_snapshot"}]
+    if config_snapshot is None:
+        return [{"check": "config_hash", "category": "critical", "status": "missing",
+                 "reason": "no config_snapshot supplied to compare against the frozen hash"}]
     actual = hashlib.sha256(json.dumps(config_snapshot, sort_keys=True, default=str).encode()).hexdigest()
-    return [{"check": "config_hash", "category": "config", "status": "pass" if actual == expected else "fail",
+    return [{"check": "config_hash", "category": "critical", "status": "pass" if actual == expected else "fail",
              "expected": expected, "actual": actual}]
 
 
 def _check_decision(manifest: dict) -> list[dict]:
+    """The confirmatory call must be COMPARED, not merely present. Requires ``h1_confirmed`` in both records
+    (``bool(None) == bool(None)`` would otherwise 'match' two records that pin nothing) and at least one
+    numeric field in common, so a decision record with renamed/dropped keys reports missing, not pass."""
     frozen = manifest.get("decision")
     observed = (manifest.get("observed") or {}).get("decision")
-    if frozen is None or observed is None:
-        return [{"check": "confirmatory_decision", "category": "critical", "status": "missing"}]
-    tol = float(frozen.get("tolerance", 0.0))
-    same_call = bool(frozen.get("h1_confirmed")) == bool(observed.get("h1_confirmed"))
-    within = True
-    for key in ("lcb_95", "rho_egipg", "delta_vs_best"):
-        if key in frozen and key in observed:
-            within = within and abs(float(frozen[key]) - float(observed[key])) <= tol
+    if not frozen or not observed:
+        return [{"check": "confirmatory_decision", "category": "critical", "status": "missing",
+                 "reason": "manifest lacks decision and/or observed.decision"}]
+    if "h1_confirmed" not in frozen or "h1_confirmed" not in observed:
+        return [{"check": "confirmatory_decision", "category": "critical", "status": "missing",
+                 "reason": "h1_confirmed absent from the frozen and/or observed decision — nothing to compare"}]
+    compared = [k for k in ("lcb_95", "rho_egipg", "delta_vs_best") if k in frozen and k in observed]
+    if not compared:
+        return [{"check": "confirmatory_decision", "category": "critical", "status": "missing",
+                 "reason": "no numeric decision field (lcb_95/rho_egipg/delta_vs_best) present in both records"}]
+    # sealed_eval emits no `tolerance`, so a 0.0 default would demand bit-exact floats across machines/BLAS
+    tol = float(frozen.get("tolerance", DEFAULT_DECISION_TOLERANCE))
+    same_call = bool(frozen["h1_confirmed"]) == bool(observed["h1_confirmed"])
+    within = all(abs(float(frozen[k]) - float(observed[k])) <= tol for k in compared)
     status = "pass" if (same_call and within) else "fail"
     return [{"check": "confirmatory_decision", "category": "critical", "status": status,
-             "frozen": frozen, "observed": observed, "same_call": same_call, "within_tolerance": within}]
+             "frozen": frozen, "observed": observed, "same_call": same_call, "within_tolerance": within,
+             "compared_fields": compared, "tolerance": tol}]
 
 
 def _check_fallacies(manifest: dict) -> tuple[list[dict], dict]:

@@ -93,6 +93,10 @@ class RationaleHead(nn.Module):
         rel_id = torch.cat([torch.full((importance[rel].numel(),), j, dtype=torch.long) for j, rel in enumerate(rels)])
         local = torch.cat([torch.arange(importance[rel].numel()) for rel in rels])
         vals, idx = torch.topk(flat, min(self.top_k, flat.numel()))  # sorted highest-first
+        # topk's indices land on flat's device; rel_id / local / mask are CPU bookkeeping tensors, and
+        # indexing a CPU tensor with a cuda index raises — so bring the index back to CPU. (The masks stay
+        # CPU: encode_subgraph's _weight_edges moves them onto the encoder's device itself.)
+        idx = idx.cpu()
         selected = []
         for v, j, i in zip(vals.tolist(), rel_id[idx].tolist(), local[idx].tolist()):
             rel = rels[j]

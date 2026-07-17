@@ -173,14 +173,22 @@ def _selected_set(selected: list) -> set:
     return {(rel, idx) for rel, idx, _ in selected}
 
 
-def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repeats: int = 3) -> float | None:
+def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repeats: int = 3,
+               seed: int = 0) -> float | None:
     """Mean Jaccard of the selected-edge set across independent train-mode (DropEdge-on) re-encodes vs the
-    eval selection — does the rationale survive stochastic message passing? ponytail: DropEdge only; a
-    trained scorer that reads node states will vary more than the zero-init head (which ranks by the
-    node-independent gate), so this is a lower bound on instability for the untrained head."""
+    eval selection — does the rationale survive stochastic message passing?
+
+    PyG's ``dropout_edge`` draws from the GLOBAL torch RNG, which nothing else in the audit seeds, so the
+    stability numbers (and ``mean_stability`` in the report) would otherwise depend on ambient process RNG
+    state and not be reproducible from the audit's ``seed``. The global RNG is seeded here and its prior state
+    restored, so nothing leaks to the caller. ponytail: DropEdge only; a trained scorer that reads node states
+    will vary more than the zero-init head (which ranks by the node-independent gate), so this is a lower
+    bound on instability for an untrained head."""
     was_training = graph_encoder.training
+    rng_state = torch.random.get_rng_state()
     graph_encoder.train()
     try:
+        torch.manual_seed(seed)
         jac = []
         for _ in range(n_repeats):
             with torch.no_grad():
@@ -192,9 +200,10 @@ def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repea
         return float(np.mean(jac))
     finally:
         graph_encoder.train(was_training)
+        torch.random.set_rng_state(rng_state)
 
 
-def _audit_one(model, head, dataset, case: dict, tester, n_controls: int, sparsities, gen, device: str) -> dict:
+def _audit_one(model, head, dataset, case: dict, tester, n_controls: int, sparsities, gen, seed: int) -> dict:
     gene, cond = case["gene"], case["condition"]
     i = case["row"]
     batch = build_encoder_batch(dataset.pc.iloc[[i]], dataset.obs.iloc[[i]])
@@ -215,7 +224,7 @@ def _audit_one(model, head, dataset, case: dict, tester, n_controls: int, sparsi
     ood = tester.structural_ood_audit(sub, mask)
     curve, minimality = _minimality(tester, sub, cond, h_do, selected, mask, dz_full, suff)
     ginx = _ginx(tester, sub, cond, h_do, rat["importance"], mask, dz_full, sparsities, gen)
-    stability = _stability(model.graph_encoder, head, sub, cond, h_do, _selected_set(selected))
+    stability = _stability(model.graph_encoder, head, sub, cond, h_do, _selected_set(selected), seed=seed)
     source_ablation = _source_ablation(tester, sub, cond, h_do, dz_full)
 
     return {
@@ -272,6 +281,10 @@ def audit_rationale(model, head, dataset, n_cases: int = config.N_RATIONALE_AUDI
         raise ValueError("audit_rationale needs a graph model (model.graph_encoder is None — nothing to audit)")
     model = model.to(device)
     model.eval()
+    # the head's scorer consumes the encoder's node states, so it must live on the SAME device — the encoder
+    # places its outputs on `device`, and a CPU nn.Linear fed a cuda tensor raises on the first case
+    head = head.to(device)
+    head.eval()
     tester = FaithfulnessTester(model.graph_encoder, model.decoder)
     gen = np.random.default_rng(seed)
     strata = _strata(dataset, model.graph_encoder.gene_to_idx)
@@ -282,7 +295,7 @@ def audit_rationale(model, head, dataset, n_cases: int = config.N_RATIONALE_AUDI
     n_uncovered = len(strata) - len(covered)
     chosen = _select_cases(covered, n_cases, seed)
 
-    cases = [_audit_one(model, head, dataset, case, tester, n_controls, sparsities, gen, device)
+    cases = [_audit_one(model, head, dataset, case, tester, n_controls, sparsities, gen, seed)
              for case in chosen]
 
     report = {"n_requested": n_cases, "n_audited": len(cases), "n_uncovered_in_dataset": n_uncovered,

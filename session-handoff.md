@@ -63,10 +63,22 @@
   candidates → skeptical verify → 6 confirmed + 3 plausible, **all fixed with regression tests** (crashed
   fallacy detector no longer certifies clean 11/11; CORUM ablation reaches membership edges; uncovered
   targets don't burn audit slots; ecological needs ≥3 groups; sealed min-row guard; explicit `public_only`).
-- **Verification:** `./init.sh` green at **200 tests** (171 prior + 29 Module 8). Spec
-  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`. **NOT yet committed** (awaiting the
-  user's go-ahead; the DoD triad — feature_list + progress + handoff — is updated and will land in the same
-  commit).
+- **xhigh `/code-review` pass 2 (63 agents) over the committed `5ea8a4b` — 15 confirmed, all fixed.** The
+  verifier certified REPRODUCIBLE on an empty checkout (absolute manifest paths hashed the original run), on
+  a manifest with no `hashes` block, on a decision pinning nothing, and with config skipped by default; the
+  sealed seal was keyed on the bootstrap `seed` (bumping it re-opened the sequestered fold — garden-of-forks);
+  4 fallacy detectors fired on clean data or passed on undefined input; the audit crashed on non-CPU devices
+  and its stability wasn't seed-reproducible; TxPert asserted `wrapped_upstream` from importability. The CUDA
+  fix surfaced a **latent Module-4 bug** (`RationaleHead._select` indexes CPU tensors with a CUDA topk index).
+  **As-built contracts callers must know:** manifest paths MUST be relative to the checkout;
+  `verify_reproducibility` MUST get a `config_snapshot` (else CANNOT_VERIFY); the sealed seal is **per split,
+  not per seed**; the H1 second clause is a structural tautology (ρ_perturbed_mean ≡ 0 under systema),
+  documented in the sealed JSON.
+- **Verification:** `./init.sh` green at **215 tests** (171 prior + 44 Module 8), exit 0, incl. a real CUDA
+  audit run; +15 regression tests red-green verified. Spec
+  `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md`; review record
+  `docs/reviews/2026-07-17-code-review-module8.md` (both passes). Committed: `5ea8a4b` (module) + the
+  review-fix commit.
 
 ## Completed This Session (Module 7 — Graph Baselines + Screening Harness; feat-007 + feat-011)
 

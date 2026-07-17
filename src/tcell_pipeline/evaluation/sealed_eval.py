@@ -9,8 +9,20 @@ the challenge fold and applies the confirmatory H1 rule on the primary endpoint 
     H1 confirmed  ⇔  LCB_95%( ρ_EGIPG − ρ_best_baseline ) > DELTA_PRED   AND   ρ_EGIPG > ρ_perturbed_mean
 
 ``ρ`` is the per-row systema correlation, macro-averaged. The lower confidence bound is the 2.5th percentile
-of a paired row-bootstrap (``N_BOOTSTRAP`` resamples) of the per-row EG-IPG − best-baseline difference. The
-second clause guarantees EG-IPG beats the treatment-mean reference every headline endpoint must clear.
+of a paired row-bootstrap (``N_BOOTSTRAP`` resamples) of the per-row EG-IPG − best-baseline difference.
+
+**The second clause is structurally weak, and the sealed record says so.** The perturbed-mean baseline
+predicts ``train_mean`` for every row, and systema subtracts ``train_mean`` from the prediction — so its
+prediction becomes an all-zero constant row, which the metric's degeneracy convention maps to exactly 0.0 for
+ANY data. ``ρ_perturbed_mean`` is therefore always 0.0 and the clause reduces to ``ρ_EGIPG > 0``. It is kept
+because the report specifies it and it pins the treatment-mean reference into the audit trail, but it is not
+an independent hurdle; the real bar is the LCB clause. ``perturbed_mean_reference_note`` in the written
+result records this so a reader can't mistake it for a check that discriminated.
+
+The best baseline is chosen by point estimate and the bootstrap then resamples rows against that FIXED
+baseline. This is deliberate and conservative for a confirmatory test — EG-IPG must clear the strongest
+observed baseline — though it does not propagate baseline-selection uncertainty into the interval.
+ponytail: re-select the argmax inside each resample if that uncertainty ever needs to be priced in.
 """
 from __future__ import annotations
 
@@ -74,11 +86,19 @@ class SealedEvaluator:
         ``'perturbed_mean'`` — the reference the second clause checks. Returns the result dict and writes
         ``<sealed_root>/<split>/<seed>.json`` (refuses to overwrite an existing sealed result unless
         ``force``)."""
-        result_path = self.sealed_root / split / f"{seed}.json"
-        if result_path.exists() and not force:
+        result_dir = self.sealed_root / split
+        result_path = result_dir / f"{seed}.json"
+        # write-once PER SPLIT, not per seed: `seed` only redraws the bootstrap RNG, so keying the seal on it
+        # would let a steward who got lcb_95=0.048 re-run at seed=1 and seal a fresh, possibly-confirming
+        # decision — resampling the confirmatory call until it confirms (the garden-of-forks this module ships
+        # a detector for). The sequestered fold is opened ONCE.
+        existing = sorted(result_dir.glob("*.json")) if result_dir.exists() else []
+        if existing and not force:
             raise FileExistsError(
-                f"sealed result {result_path} already exists — sealed evaluations are write-once (the "
-                f"challenge split is opened once); pass force=True only to deliberately re-seal")
+                f"split {split!r} is already sealed ({', '.join(p.name for p in existing)}) — sealed "
+                f"evaluations are write-once per split (the sequestered fold is opened once); re-running "
+                f"under a different seed would redraw the bootstrap and let the confirmatory decision be "
+                f"resampled until it confirms. Pass force=True only to deliberately re-seal.")
         if PERTURBED_MEAN not in baseline_predictions:
             raise ValueError(f"baseline_predictions must include {PERTURBED_MEAN!r} (the systema reference "
                              f"the H1 rule's second clause checks)")
@@ -126,6 +146,11 @@ class SealedEvaluator:
             "delta_vs_best": float(diff.mean()), "lcb_95": lcb, "ucb_95": ucb,
             "beats_margin": bool(beats_margin), "beats_perturbed_mean": bool(beats_perturbed),
             "h1_confirmed": h1_confirmed, "metrics": metrics,
+            "perturbed_mean_reference_note": (
+                "rho_perturbed_mean is structurally 0.0 under systema (the perturbed-mean prediction IS "
+                "train_mean, which systema subtracts, leaving a constant row scored 0.0), so the "
+                "'beats_perturbed_mean' clause reduces to rho_egipg > 0 and is not an independent hurdle; "
+                "the binding constraint is the LCB clause."),
         }
         import json
         config.write_text_atomic(json.dumps(result, indent=2, default=float), result_path)

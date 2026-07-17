@@ -12,14 +12,27 @@ from __future__ import annotations
 import numpy as np
 
 
+class Unevaluable(ValueError):
+    """A detector's input is degenerate, so the statistic it checks is undefined. Raised (not silently
+    returned as an unflagged pass) so ``run_fallacy_scan`` records the detector as errored → coverage drops
+    below 11/11 → the verifier reports PARTIALLY rather than certifying a trap it never examined."""
+
+
 def _corr(x, y) -> float:
+    """Pearson correlation over the finite pairs. Non-finite entries are dropped pairwise: ``np.ptp`` of an
+    array holding NaN returns NaN and ``nan == 0`` is False, so a NaN would slip the degeneracy guard, reach
+    ``np.corrcoef`` and poison every caller (``_sign(nan)`` then raises on int conversion)."""
     x, y = np.asarray(x, np.float64), np.asarray(y, np.float64)
+    ok = np.isfinite(x) & np.isfinite(y)
+    x, y = x[ok], y[ok]
     if x.size < 2 or np.ptp(x) == 0 or np.ptp(y) == 0:
         return 0.0
     return float(np.corrcoef(x, y)[0, 1])
 
 
 def _sign(v: float, eps: float = 1e-9) -> int:
+    if not np.isfinite(v):  # int(np.sign(nan)) raises; a non-finite statistic carries no direction
+        return 0
     return 0 if abs(v) < eps else int(np.sign(v))
 
 
@@ -39,14 +52,13 @@ def ecological(x, y, group, inflation: float = 0.3) -> dict:
     """Aggregate (group-mean) correlation inflated or sign-flipped vs the individual-level correlation.
 
     Needs >=3 groups: the correlation of 2 group means is degenerately +-1 regardless of the individual data,
-    so it would spuriously flag every 2-group study — with <3 groups the aggregate is uninformative and we do
-    not flag."""
+    so the aggregate carries no information and the comparison is undefined."""
     x, y, group = np.asarray(x, np.float64), np.asarray(y, np.float64), np.asarray(group)
     indiv = _corr(x, y)
     gs = [group == g for g in np.unique(group)]
     if len(gs) < 3:
-        return {"flagged": False, "evidence": {"individual_corr": indiv, "aggregate_corr": None,
-                                               "n_groups": len(gs)}}
+        raise Unevaluable(f"ecological needs >=3 groups to compare aggregate vs individual (got {len(gs)}); "
+                          f"the correlation of <=2 group means is degenerately +-1")
     gx = np.array([x[m].mean() for m in gs])
     gy = np.array([y[m].mean() for m in gs])
     agg = _corr(gx, gy)
@@ -55,12 +67,21 @@ def ecological(x, y, group, inflation: float = 0.3) -> dict:
             "evidence": {"individual_corr": indiv, "aggregate_corr": agg, "n_groups": len(gs)}}
 
 
-def berkson(x, y, selected, margin: float = 0.2) -> dict:
-    """Selection on a collider induces a spurious (more-negative) association within the selected sample."""
+def berkson(x, y, selected, margin: float = 0.2, min_selected: int = 3) -> dict:
+    """Selection on a collider induces a spurious (more-negative) association within the selected sample.
+
+    Needs enough selected rows for their correlation to mean anything: with <``min_selected`` rows ``_corr``
+    degenerates to 0.0, which the comparison would misread as 'selection destroyed the association' and flag
+    a study that has no collider selection at all."""
     x, y, selected = np.asarray(x, np.float64), np.asarray(y, np.float64), np.asarray(selected, bool)
+    n_sel = int(selected.sum())
+    if n_sel < min_selected:
+        raise Unevaluable(f"berkson needs >={min_selected} selected rows to estimate the within-selection "
+                          f"correlation (got {n_sel})")
     full = _corr(x, y)
     sel = _corr(x[selected], y[selected])
-    return {"flagged": bool(sel < full - margin), "evidence": {"corr_full": full, "corr_selected": sel}}
+    return {"flagged": bool(sel < full - margin),
+            "evidence": {"corr_full": full, "corr_selected": sel, "n_selected": n_sel}}
 
 
 def _partial_corr(x, y, z) -> float:
@@ -90,26 +111,36 @@ def base_rate(y_true, y_pred, acc_thresh: float = 0.9, precision_thresh: float =
 
 
 def regression_to_mean(baseline, followup, select_frac: float = 0.1, margin: float = 0.1) -> dict:
-    """An extreme-selected group reverts toward the grand mean on retest — apparent change that is noise."""
+    """An extreme-selected group reverts toward the mean on retest — apparent change that is only noise.
+
+    Each series is measured against its OWN mean. Pooling baseline+followup into one grand mean would make any
+    uniform level shift between the two occasions (a real effect, or just different units) look like
+    regression: followup=baseline-10 correlates 1.0 with baseline and regresses not at all, yet its selected
+    group sits closer to a pooled mean that the shift dragged down."""
     b, f = np.asarray(baseline, np.float64), np.asarray(followup, np.float64)
-    grand = float(np.concatenate([b, f]).mean())
     k = max(1, int(round(select_frac * len(b))))
     top = np.argsort(b)[-k:]                       # the extreme-high baseline group
-    d_base = abs(b[top].mean() - grand)
-    d_follow = abs(f[top].mean() - grand)
+    d_base = abs(b[top].mean() - b.mean())         # deviation from the BASELINE mean...
+    d_follow = abs(f[top].mean() - f.mean())       # ...vs from the FOLLOWUP mean (shift-invariant)
     flag = d_follow < d_base - margin * (abs(d_base) + 1e-9)
     return {"flagged": bool(flag),
-            "evidence": {"grand_mean": grand, "selected_baseline_dev": d_base, "selected_followup_dev": d_follow}}
+            "evidence": {"baseline_mean": float(b.mean()), "followup_mean": float(f.mean()),
+                         "selected_baseline_dev": d_base, "selected_followup_dev": d_follow}}
 
 
 def survivorship(values, survived, margin: float = 0.2) -> dict:
-    """A metric reported on survivors only differs materially from the full-population value."""
+    """A metric reported on survivors only differs materially from the full-population value.
+
+    With zero survivors the survivor-only metric is undefined; falling back to the full-population mean would
+    report a clean, unflagged pass for a check that never ran."""
     v, s = np.asarray(values, np.float64), np.asarray(survived, bool)
+    if not s.any():
+        raise Unevaluable("survivorship has zero survivors — the survivor-only metric is undefined")
     full = float(v.mean())
-    surv = float(v[s].mean()) if s.any() else full
+    surv = float(v[s].mean())
     spread = np.std(v) + 1e-9
     return {"flagged": bool(abs(surv - full) > margin * spread),
-            "evidence": {"mean_full": full, "mean_survivors": surv}}
+            "evidence": {"mean_full": full, "mean_survivors": surv, "n_survivors": int(s.sum())}}
 
 
 def look_elsewhere(pvalues, alpha: float = 0.05) -> dict:
@@ -141,11 +172,17 @@ def correlation_not_causation(corr, has_interventional_support, threshold: float
             "evidence": {"corr": float(corr), "interventional_support": bool(has_interventional_support)}}
 
 
-def reverse_causation(forward_corr, reverse_corr, margin: float = 0.0) -> dict:
+def reverse_causation(forward_corr, reverse_corr, margin: float = 0.0, min_forward: float = 0.1) -> dict:
     """The reverse cross-lagged association (y→x) is as strong as, or stronger than, the claimed forward one
-    (x→y) — the causal direction is not identified by the data."""
+    (x→y) — the causal direction is not identified by the data.
+
+    Requires a forward association of at least ``min_forward`` first: with no forward effect there is no
+    directional claim to invalidate, and comparing two ~zero correlations would fire on every null endpoint
+    (``reverse_causation(0.0, 0.0)`` is not a reverse-causation trap). ``margin`` raises the bar for flagging,
+    matching the polarity of ``berkson``/``collider``."""
     f, r = abs(float(forward_corr)), abs(float(reverse_corr))
-    return {"flagged": bool(r >= f - margin), "evidence": {"forward": f, "reverse": r}}
+    flagged = f >= min_forward and r >= f + margin
+    return {"flagged": bool(flagged), "evidence": {"forward": f, "reverse": r, "min_forward": min_forward}}
 
 
 _DETECTORS = {

@@ -24,7 +24,9 @@ def compatibility(adapter) -> dict:
         "checkpoint": adapter.CHECKPOINT,
         # explicit declaration, NOT a substring of EXPOSURE_CLASS — "non-public" contains "public"
         "public_only": bool(getattr(adapter, "PUBLIC_ONLY", False)),
+        # whether upstream code ACTUALLY runs, not whether it happens to be installed (recorded separately)
         "wrapped_upstream": bool(getattr(adapter, "wrapped", False)),
+        "upstream_importable": bool(getattr(adapter, "upstream_importable", False)),
     }
 
 

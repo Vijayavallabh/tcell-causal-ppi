@@ -21,7 +21,7 @@ from tcell_pipeline import config
 from tcell_pipeline.baselines.simple_baselines import BaseBaseline, _np
 from tcell_pipeline.comparators.stable_shift import STRING, source_adjacency
 
-try:  # public package presence is recorded in the compatibility report; predict stays the public reimpl
+try:  # importability is INFORMATIONAL only — see `wrapped` below
     import txpert as _txpert  # type: ignore  # noqa: F401
 
     _TXPERT_AVAILABLE = True
@@ -39,7 +39,12 @@ class TxPertPublicAdapter(BaseBaseline):
     PUBLIC_ONLY = True
     CHECKPOINT: str | None = None
     family = "txpert_public"
-    wrapped = _TXPERT_AVAILABLE
+    # `predict` is the public reimplementation on EVERY path and never calls into the upstream package, so
+    # this is False regardless of what is installed. Deriving it from importability would make the provenance
+    # report claim upstream TxPert code ran whenever ANY module named `txpert` (the real package, a name-squat,
+    # or a stray txpert.py on sys.path) happened to import — in the one artifact meant to audit provenance.
+    wrapped = False
+    upstream_importable = _TXPERT_AVAILABLE  # informational: recorded, never asserted as "wrapped"
 
     def __init__(self, adjacency, gene_to_idx: dict[str, int], basis=None, temperature: float = 0.5) -> None:
         super().__init__(basis)
