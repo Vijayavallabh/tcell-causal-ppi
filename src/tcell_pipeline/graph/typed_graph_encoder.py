@@ -38,6 +38,12 @@ def _store_key(rel: str):
     return (PROTEIN, rel, PROTEIN) if rel in _PP_RELATIONS else (PROTEIN, _MEMBERSHIP, COMPLEX)
 
 
+def _chunks(items: list, size: int):
+    """Split into runs of at most ``size`` (0/None == one run: no chunking)."""
+    size = size or len(items)
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
 def signed_message(h: torch.Tensor, w_sign: nn.Linear, w_mag: nn.Linear) -> torch.Tensor:
     """m = tanh(W_sign h) * relu(W_mag h): tanh carries the sign, relu the (non-negative) magnitude."""
     return torch.tanh(w_sign(h)) * torch.relu(w_mag(h))
@@ -236,10 +242,13 @@ class TypedGraphEncoder(nn.Module):
         Stage-A graph regulariser need; the two are aligned per edge. Unknown target genes fall back to a
         zero h_graph; an out-of-vocab culture_condition is invalid input and raises.
 
-        The batch's subgraphs are message-passed as ONE PyG ``Batch``: edges never cross samples (the
-        batch offsets node ids), so a single set of relational kernels replaces a per-row Python loop.
-        The gate is scattered per edge and the readout attends per sample, so the result matches the
-        per-row loop edge for edge (test_batched_forward_matches_per_sample_loop).
+        Subgraphs are message-passed as PyG ``Batch``es: edges never cross samples (the batch offsets
+        node ids), so one set of relational kernels replaces a per-row Python loop. The gate is
+        scattered per edge and the readout attends per sample, so the result matches the per-row loop
+        edge for edge (test_batched_forward_matches_per_sample_loop). At most
+        ``config.GRAPH_ENCODE_CHUNK`` subgraphs go through message passing at once, so the caller's
+        batch size picks the optimisation batch while peak memory stays bounded — the per-row loop this
+        replaced held exactly one subgraph, and evaluation scores at BATCH_SIZE=64 under no_grad.
         ponytail: the batch is sampled row-by-row on CPU, so sampling is now the floor; make the
         sampler batch-aware (or cache subgraphs per target) if it becomes the bottleneck again.
         """
@@ -260,12 +269,31 @@ class TypedGraphEncoder(nn.Module):
             return (torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device, dtype=h_do.dtype),
                     edge_gates, edge_confidences)
 
-        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in known]
+        pooled_parts = []
+        for part in _chunks(known, config.GRAPH_ENCODE_CHUNK):
+            pooled, gates, confs = self._encode_chunk(part, target_genes, conditions, h_do)
+            pooled_parts.append(pooled)
+            for r in rels:
+                for i, b in enumerate(part):
+                    edge_gates[r][b] = gates[r][i]
+                    edge_confidences[r][b] = confs[r][i]
+        pooled = torch.cat(pooled_parts, dim=0)
+        # dtype follows what the readout actually produced, exactly as the old torch.stack(h_graphs)
+        # did; a hardcoded-float32 buffer would silently downcast the result under .half()/autocast
+        h_graph = torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device, dtype=pooled.dtype)
+        h_graph[torch.tensor(known, device=device)] = pooled
+        return h_graph, edge_gates, edge_confidences
+
+    def _encode_chunk(self, part: list[int], target_genes, conditions, h_do):
+        """Message-pass one chunk of the batch's known rows -> (pooled (k, dim), gates, confidences),
+        the latter two as per-relation lists holding one per-edge tensor per row of ``part``."""
+        device = self.proj.weight.device
+        rels = (*_PP_RELATIONS, _MEMBERSHIP)
+        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in part]
         bat = Batch.from_data_list(subs).to(device)  # concatenate on CPU, then ONE host->device copy
-        rows = torch.tensor(known, device=device)
         h_cond = self.condition(
-            torch.tensor([self._condition_index(conditions[b]) for b in known], device=device)
-        )  # (K, 64) — one condition row per kept sample
+            torch.tensor([self._condition_index(conditions[b]) for b in part], device=device)
+        )  # (k, 64) — one condition row per kept sample
         p_batch = bat[PROTEIN].batch
         edge_batch = {r: p_batch[bat[_store_key(r)].edge_index[0]] for r in rels}  # each edge's sample
 
@@ -281,22 +309,20 @@ class TypedGraphEncoder(nn.Module):
         node_batch = torch.cat([p_batch, c_batch])
         perm = torch.argsort(node_batch, stable=True)
         pooled = self.readout(
-            h_do[rows], torch.cat([h_p, h_c], dim=0)[perm], node_batch=node_batch[perm]
+            h_do[torch.tensor(part, device=device)],
+            torch.cat([h_p, h_c], dim=0)[perm], node_batch=node_batch[perm],
         )[0]
-        # dtype follows what the readout actually produced, exactly as the old torch.stack(h_graphs)
-        # did; a hardcoded-float32 buffer would silently downcast the result under .half()/autocast
-        h_graph = torch.zeros(n, config.GRAPH_HIDDEN_DIM, device=device, dtype=pooled.dtype)
-        h_graph[rows] = pooled
 
+        out_g, out_c = {}, {}
         for r in rels:
             counts = [int(s[_store_key(r)].edge_index.shape[1]) for s in subs]
-            # .clone(): torch.split returns VIEWS into the batch-wide tensor, so without this an
-            # in-place consumer (alpha.clamp_) would raise, and holding one sample's gates would pin
-            # the whole batch's storage. The per-sample loop handed out independent tensors.
-            for i, (g, c) in enumerate(zip(torch.split(gates[r], counts), torch.split(confs[r], counts))):
-                edge_gates[r][known[i]] = g.clone()   # one per-edge tensor per sample, in order
-                edge_confidences[r][known[i]] = c.clone()
-        return h_graph, edge_gates, edge_confidences
+            # .clone(): torch.split returns VIEWS into the chunk-wide tensor, so without this an
+            # in-place consumer (alpha.clamp_) would raise, holding one sample's gates would pin the
+            # whole chunk's storage, and the chunk could never be freed. The per-sample loop this
+            # replaced handed out independent tensors.
+            out_g[r] = [g.clone() for g in torch.split(gates[r], counts)]
+            out_c[r] = [c.clone() for c in torch.split(confs[r], counts)]
+        return pooled, out_g, out_c
 
     def _batched_complex_states(self, bat, p_batch, device):
         """Complex embeddings for the batch + each complex's sample id. ``orig_idx`` survives batching

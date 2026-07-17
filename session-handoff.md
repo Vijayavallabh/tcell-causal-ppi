@@ -26,7 +26,11 @@
   **NEWEST — the graph throughput refactor is DONE (2026-07-17) + its xhigh `/code-review` fully resolved
   (37 agents, 15 defects fixed). The compute ceiling that blocked feat-010/011/012/013 is lifted:
   667 → 61 ms/row (10.9×), a 21,262-row epoch 3.94 h → 0.36 h, GPU util median 1% → 46%. `./init.sh` green
-  at 242. The four campaigns are now unblocked but NOT yet run.**
+  at 252 (all 15 review findings fixed, including eval-memory chunking). The four campaigns are now
+  unblocked but NOT yet run. **Use batch_size 8 for training; evaluation may keep BATCH_SIZE=64 — the
+  encoders now chunk message passing at `config.GRAPH_ENCODE_CHUNK` (default 8), which bounds eval peak
+  memory (12.53 GB -> 2.01 GB at batch 64/no_grad) without touching results. Chunking does NOT reduce
+  training memory (autograd retains all chunks until backward).**
 - Branch / commit: main. **Module 5 (Loss + Training) committed this session** — all code + docs +
   state-file syncs in a single commit: the new `training/` package (`losses.py`, `dataset.py`, `trainer.py`,
   `run_train.py`, `__init__.py`), `config.py` (Module 5 constants), `src/tests/test_training.py`,

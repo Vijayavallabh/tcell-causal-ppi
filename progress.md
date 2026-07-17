@@ -51,6 +51,16 @@ graph first said that was the wrong target, so both were fixed, sampler first:
   appended edge was silently never seen), `torch.split` views, and 3 hot-path wastes worth 9.4× → **10.9×**.
   **Lesson: hand-picked probe cases are a way of choosing what the test cannot see; mutate the one line the
   central claim rests on, not just the 6 you thought of.**
+- **All 15 findings are now fixed, including the 2 first waved through.** (a) `incident()`'s duplicate-free
+  precondition was docstring-only -> enforced (free next to the gather it guards; a duplicate silently
+  corrupts the sampled neighbourhood). (b) **Eval peak memory was a REAL regression, not inherent**: the
+  per-row loop bounded eval peak to ONE subgraph regardless of batch, and `collect_predictions` defaults to
+  `batch_size=BATCH_SIZE=64` under `no_grad`. Both encoders now message-pass at most
+  `config.GRAPH_ENCODE_CHUNK` (default 8) subgraphs at once and stitch — **batch 64 / no_grad: 12.53 GB ->
+  2.01 GB (6.2x) and slightly faster (2.9s -> 2.5s)**, results bit-identical at every chunk size. The
+  original goal had asked for "a working batch size / chunking path"; it had not been built.
+  **Honest limit: chunking does NOT cut TRAINING memory** (autograd retains every chunk until backward —
+  batch-64 training still peaks at 55.9 GB); batch size is the training knob, chunking bounds evaluation.
 
 ## Module 8 (External Comparators + Rationale Audit + Sealed Eval + Reproducibility) — this session (2026-07-17)
 

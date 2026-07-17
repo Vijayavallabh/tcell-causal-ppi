@@ -38,6 +38,7 @@ from tcell_pipeline.graph import (
     sample_subgraph,
 )
 from tcell_pipeline.graph.graph_readout import GraphReadout
+from tcell_pipeline.graph.typed_graph_encoder import _chunks
 
 _PP_RELATIONS = ("physical_ppi", "co_complex", "functional_assoc")
 _SCORE_COL = len(config.PPI_SOURCES)  # edge_attr layout: onehot(5) then score at index 5
@@ -193,20 +194,25 @@ class UntypedGraphEncoder(nn.Module):
         known = [b for b, g in enumerate(target_genes) if g in self.gene_to_idx]
         if not known:  # no readout runs -> mirror h_do, the tensor the decoder concatenates this with
             return torch.zeros(n, self.hidden, device=device, dtype=h_do.dtype), None, None
-        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in known]
-        bat = Batch.from_data_list(subs).to(device)
-        rows = torch.tensor(known, device=device)
+        # at most GRAPH_ENCODE_CHUNK subgraphs in flight, so the caller's batch_size sets the
+        # optimisation batch and not the memory ceiling (the per-row loop held exactly one)
+        pooled = torch.cat([self._encode_chunk(part, target_genes, h_do)
+                            for part in _chunks(known, config.GRAPH_ENCODE_CHUNK)], dim=0)
+        # dtype follows the computed readout (as the old torch.stack did), not a hardcoded float32
+        h_graph = torch.zeros(n, self.hidden, device=device, dtype=pooled.dtype)
+        h_graph[torch.tensor(known, device=device)] = pooled
+        return h_graph, None, None
 
+    def _encode_chunk(self, part, target_genes, h_do: torch.Tensor) -> torch.Tensor:
+        device = self.proj.weight.device
+        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in part]
+        bat = Batch.from_data_list(subs).to(device)
         h = F.relu(self.proj(bat[PROTEIN].x))
         ei = self._homogeneous_edges(bat, device)
         for conv in self.convs:
             h = F.relu(conv(h, ei))
         # each query attends over its own subgraph's nodes only (batch vector is already sorted)
-        pooled = self.readout(h_do[rows], h, node_batch=bat[PROTEIN].batch)[0]
-        # dtype follows the computed readout (as the old torch.stack did), not a hardcoded float32
-        h_graph = torch.zeros(n, self.hidden, device=device, dtype=pooled.dtype)
-        h_graph[rows] = pooled
-        return h_graph, None, None
+        return self.readout(h_do[torch.tensor(part, device=device)], h, node_batch=bat[PROTEIN].batch)[0]
 
 
 # --------------------------------------------------------------------------------------------------

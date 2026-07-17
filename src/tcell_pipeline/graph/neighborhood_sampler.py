@@ -98,9 +98,17 @@ class _NeighborIndex:
 
         Grouped by node, NOT in original edge order: sorting here would sort every candidate, while
         callers that need original order only need their surviving subset sorted (a ~5x smaller sort
-        for induction). ``nodes`` must be duplicate-free -- a repeated node emits its whole CSR row
-        again, so every one of its edges would come back once per repeat.
+        for induction).
+
+        ``nodes`` MUST be duplicate-free: a repeated node emits its whole CSR row again, so its edges
+        would come back once per repeat and the sub-graph would carry duplicates the boolean scan
+        never produced. Both callers dedupe by construction, and the check is cheap next to the gather
+        it guards (<=512 nodes vs ~160k edges), so enforce it rather than trust it -- a duplicate here
+        corrupts the sampled neighbourhood silently, which is the one failure mode worth paying for.
         """
+        if torch.unique(nodes).numel() != nodes.numel():
+            raise ValueError(f"incident({rel!r}, key={key}) needs duplicate-free nodes; got "
+                             f"{nodes.numel() - torch.unique(nodes).numel()} repeat(s)")
         indptr, order = self._csr[(rel, key)]
         return _gather(indptr, order, nodes)
 

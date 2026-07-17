@@ -101,6 +101,13 @@ GRAPH_HIDDEN_DIM: int = 256      # unified node hidden dim in message passing (=
 GRAPH_LAYERS: int = 3            # relational message-passing layers
 GRAPH_N_HEADS: int = 4           # cross-attention heads in the graph readout
 EDGE_DROPOUT: float = 0.1        # DropEdge probability during training
+# Subgraphs are mini-batched through message passing, so peak memory scales with the batch — and a hub's
+# 512-node neighbourhood carries tens of thousands of edges (the typed encoder OOMs 80 GB at batch 32).
+# The encoders therefore message-pass at most this many subgraphs at once and stitch the results, so a
+# caller's batch_size (evaluation defaults to BATCH_SIZE=64) sets the optimisation batch, not the memory
+# ceiling. Costs ~8% throughput vs one big batch (bs=32 measured 15.2 vs 16.3 rows/s at bs=8) for a 3x
+# smaller footprint. 0/None disables chunking.
+GRAPH_ENCODE_CHUNK: int = int(os.environ.get("GRAPH_ENCODE_CHUNK", 8))
 EDGE_FEATURE_DIM: int = 8        # source_onehot(5)+score(1)+is_direct_binary(1)+n_supporting(1)
 COMPLEX_EMBED_DIM: int = 256     # learned protein-complex node embedding dim
 CONDITION_EMBED_DIM: int = 64    # culture-condition embedding feeding the edge gate (Module 1 pattern)

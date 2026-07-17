@@ -182,6 +182,32 @@ Hot-path waste: `ea[eids][:, _SCORE_COL]` materialised every edge-feature column
 tensors per forward → one shared blank. Those last three took sampling 26 → 22 ms/row and the end-to-end
 figure from 9.4× to **10.9×**.
 
-**Accepted, not fixed:** eval-only DropEdge equivalence; non-saturation; the duplicated `_store_key`
-(dependency direction prevents reuse); ~130 MB index memory; batch peak memory no longer bounded to one
-subgraph (that is what batching *is* — callers control batch size, and bs=8 measures at 10.0 GB).
+**Also fixed on a second pass (the two originally waved through):**
+
+- **Unguarded precondition (#7).** `incident()` requires a duplicate-free node set — a repeated node
+  re-emits its whole CSR row, so its edges come back once per repeat and the sub-graph carries
+  duplicates the boolean scan never produced. Both callers dedupe by construction, but the contract was
+  docstring-only. Now enforced: the check is ≤512 nodes against a ~160k-edge gather, i.e. free, and the
+  failure it prevents is silent corruption of the sampled neighbourhood.
+- **Eval peak memory (#10) — this one was reachable, and waving it through was wrong.** The per-row loop
+  bounded eval peak to ONE subgraph *regardless of batch size*; the batched version holds the whole
+  batch. That is not hypothetical: `screening.collect_predictions` defaults to `batch_size=BATCH_SIZE=64`
+  under `no_grad`, and the typed encoder already OOMs 80 GB at batch 32 on real dense subgraphs. The
+  original goal had asked for "a working batch size / chunking path" and none was built. Now both
+  encoders message-pass at most `config.GRAPH_ENCODE_CHUNK` (default 8) subgraphs at once and stitch the
+  results, so the caller's batch size sets the *optimisation* batch and not the memory ceiling.
+
+  | batch 64, `no_grad` (the real eval path) | peak | time |
+  | --- | --- | --- |
+  | chunking off | 12.53 GB | 2.9 s |
+  | chunk = 8 | **2.01 GB** | **2.5 s** |
+
+  6.2× less memory and slightly *faster*. Chunking is invisible to results — every chunk size (1, 2, 3,
+  8, and off) agrees with the unchunked batch edge for edge, pinned by
+  `test_encode_chunking_does_not_change_results`, and `test_chunking_bounds_message_passing_width`
+  asserts no more than `chunk` subgraphs are ever in flight. **Honest limit: chunking does NOT reduce
+  TRAINING memory** — autograd retains every chunk's activations until backward, so a batch-64 training
+  step still peaks at 55.9 GB. Batch size remains the training knob; chunking bounds evaluation.
+
+**Accepted, not fixed:** eval-only DropEdge equivalence; non-saturation (sampling is still row-by-row on
+CPU); the duplicated `_store_key` (dependency direction prevents reuse); ~130 MB index memory.

@@ -490,3 +490,68 @@ def test_sampler_index_rebuilds_when_the_graph_changes():
     after = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
     assert new not in before[PROTEIN].orig_idx.tolist()
     assert new in after[PROTEIN].orig_idx.tolist(), "stale index: the appended edge was never seen"
+
+
+@pytest.mark.parametrize("chunk", [1, 2, 3, 8, 0])
+def test_encode_chunking_does_not_change_results(chunk, monkeypatch):
+    """Chunking bounds peak memory; it must not touch the numbers. Every chunk size — including 0
+    (disabled) and 1 (fully serial) — must agree with the unchunked batch, edge for edge."""
+    graph, gene_to_idx = _dense_random_graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    genes = ["G000", "NOTAGENE", "G001", "G030", "G059"]
+    conds = ["Rest", "Rest", "Stim48hr", "Stim8hr", "Rest"]
+    h_do = torch.randn(len(genes), config.GRAPH_HIDDEN_DIM)
+    monkeypatch.setattr(config, "GRAPH_ENCODE_CHUNK", 0)
+    ref_h, ref_g, ref_c = enc(genes, conds, h_do)
+    monkeypatch.setattr(config, "GRAPH_ENCODE_CHUNK", chunk)
+    got_h, got_g, got_c = enc(genes, conds, h_do)
+    assert torch.allclose(got_h, ref_h, atol=1e-5)
+    for rel in (*_PP_RELATIONS_T, _MEMBERSHIP):
+        for b in range(len(genes)):
+            assert torch.allclose(got_g[rel][b], ref_g[rel][b], atol=1e-5), f"{rel}[{b}] chunk={chunk}"
+            assert torch.allclose(got_c[rel][b], ref_c[rel][b], atol=1e-5)
+
+
+@pytest.mark.parametrize("chunk", [1, 3, 0])
+def test_untyped_encode_chunking_does_not_change_results(chunk, monkeypatch):
+    from tcell_pipeline.baselines.graph_baselines import UntypedGraphEncoder
+
+    graph, gene_to_idx = _dense_random_graph()
+    enc = UntypedGraphEncoder(graph, gene_to_idx).eval()
+    genes = ["G000", "NOTAGENE", "G001", "G030"]
+    h_do = torch.randn(len(genes), config.GRAPH_HIDDEN_DIM)
+    monkeypatch.setattr(config, "GRAPH_ENCODE_CHUNK", 0)
+    ref, _, _ = enc(genes, ["Rest"] * len(genes), h_do)
+    monkeypatch.setattr(config, "GRAPH_ENCODE_CHUNK", chunk)
+    got, _, _ = enc(genes, ["Rest"] * len(genes), h_do)
+    assert torch.allclose(got, ref, atol=1e-5)
+
+
+def test_chunking_bounds_message_passing_width(monkeypatch):
+    """The point of chunking: no more than `chunk` subgraphs are message-passed at once, whatever
+    batch the caller passes. Evaluation scores at BATCH_SIZE=64 under no_grad, where the per-row loop
+    this replaced held exactly one subgraph — so an unbounded batch is a real memory regression."""
+    graph, gene_to_idx = _dense_random_graph()
+    enc = TypedGraphEncoder(graph, gene_to_idx).eval()
+    widths = []
+    real = enc._encode_chunk
+    monkeypatch.setattr(enc, "_encode_chunk",
+                        lambda part, *a, **k: (widths.append(len(part)), real(part, *a, **k))[1])
+    monkeypatch.setattr(config, "GRAPH_ENCODE_CHUNK", 2)
+    genes = ["G000", "G001", "G002", "G003", "G004", "G005", "G006"]
+    enc(genes, ["Rest"] * len(genes), torch.randn(len(genes), config.GRAPH_HIDDEN_DIM))
+    assert widths and max(widths) <= 2, f"chunk width exceeded: {widths}"
+    assert sum(widths) == len(genes)  # and every row still got encoded exactly once
+
+
+def test_incident_rejects_duplicate_nodes():
+    """A repeated node re-emits its whole CSR row, so its edges would come back twice and the
+    sub-graph would carry duplicates the boolean scan never produced. Guard, don't trust."""
+    from tcell_pipeline.graph.neighborhood_sampler import _index_for
+
+    graph, gene_to_idx = _dense_random_graph()
+    index = _index_for(graph)
+    ok = index.incident("physical_ppi", 0, torch.tensor([0, 1, 2]))
+    assert ok.numel() >= 0                                   # duplicate-free is accepted
+    with pytest.raises(ValueError, match="duplicate-free"):
+        index.incident("physical_ppi", 0, torch.tensor([0, 1, 1]))
