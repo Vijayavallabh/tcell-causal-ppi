@@ -23,6 +23,16 @@ Like Module 7, this is a **verification / comparator framework**, not a compute 
 reproduction run and the 32-trial comparator sweep are compute the harness enables. All logic is exercised on
 synthetic fixtures.
 
+**Status (2026-07-17): unblocked, unrun.** All four campaigns here need a graph model trained to
+convergence, which was blocked by the graph compute ceiling. That ceiling is lifted — a full 21,262-row
+epoch went 3.94 h → **0.36 h** (10.9×; see `docs/specs/2026-07-17-graph-throughput-minibatch.md`) — so
+feat-010 (16-trial comparators), feat-012 (50-case audit on the frozen H1) and feat-013 (clean-checkout
+reproduction + the sealed opening) are now simply *unrun work*, not blocked work. The ordering still
+binds: **feat-011's full-fold screening produces the promoted model the other three consume**, so run it
+first. The **sealed challenge split (5,608 rows) remains UNOPENED and must stay that way until a promoted
+final model exists** — it is write-once, and opening it on a non-promoted model burns the fold, which is
+the exact garden-of-forks this module exists to prevent.
+
 ## A) External comparators (feat-010) — `comparators/`
 
 Both are `BaseBaseline` subclasses with the graph-baseline contract (`fit(genes, z)` → `predict(genes)` →

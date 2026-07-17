@@ -122,7 +122,9 @@ in the common schema. As-built findings:
   Batch 4 + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` fits; CPU (1 TB RAM) is the report's stated
   home for graph message passing. `run_screening`'s failure isolation means this no longer aborts the wave.
 
-**Full real-data run (2026-07-17).** Modules 1-6 validated at full scale (M5 Stage-A `best_val` 3.4690; M6
+**Full real-data run (2026-07-17) — ⚠ the compute verdict below was SUPERSEDED later the same day; read
+the RESOLVED note that follows before acting on any of it.** Modules 1-6 validated at full scale (M5
+Stage-A `best_val` 3.4690; M6
 egipg `systema` 0.0810 edging ridge 0.0806, G2-MQ PASSED). **M7 graph screening is compute-bound on the
 full 21,262-row fold**: the per-target subgraph sampling + per-row message passing is single-threaded on CPU
 (`torch.set_num_threads(1)`, GPU ~0% util), so the *fastest* graph config (untyped-GNN) did **not** finish
@@ -130,7 +132,22 @@ one epoch in ~11 h — full-data graph screening is not practical as-is. Tractab
 nested configs + network-propagation on a **1,000-row fold, one A100 each in parallel** (~55 min vs ~2.5 h
 sequential) → same-fold `systema` expr-only 0.0402 / untyped 0.0404 / typed-static 0.0412 / condition-gated
 0.0350 / network-prop 0.0237; **H2a +0.0010 (nominally supported), H2b −0.0062 (not)** — noise at 1 epoch,
-the near-null-signal regime. **Deferred top throughput task:** mini-batch the graph encoders (PyG `Batch`
-over sampled subgraphs) for true single-GPU saturation + tractable full-data runs — the `ponytail:` upgrade
-in `TypedGraphEncoder`/`UntypedGraphEncoder`; must preserve the Module-4 `edge_gates` contract and keep the
-test suite green. `run_full_pipeline.sh` (repo root) runs Modules 1-7 unattended under nohup.
+the near-null-signal regime. `run_full_pipeline.sh` (repo root) runs Modules 1-7 unattended under nohup.
+
+**RESOLVED (2026-07-17) — the paragraph above is history, not current guidance.** The full fold is now
+tractable: **667 → 61 ms/row (10.9×)**, a 21,262-row epoch **3.94 h → 0.36 h**, GPU util **median 1% →
+46%**. The diagnosis above was half right and the prescription was wrong, which is the part worth
+remembering: "single-threaded per-target subgraph sampling, GPU ~0%" correctly named the *symptom*, but
+the deferred task it prescribed — mini-batch the encoders — targeted **message passing, which measured
+only 5%** of GPU wall-clock. `sample_subgraph` was **95%**, because `_grow`/`_induce` each scanned the
+whole ~8M-edge table *per row*. Mini-batching alone would have been Amdahl-capped at ~1.05×. Fixed in
+that order: a CSR neighbour index (581 → 22 ms/row), *then* the PyG `Batch` mini-batching this entry
+asked for. Both pinned by exact-equivalence tests; the Module-4 `edge_gates` contract and the sampled
+subgraphs are unchanged. Full measurements + the xhigh review that followed:
+`docs/specs/2026-07-17-graph-throughput-minibatch.md`.
+
+**What this changes for screening:** run the nested family on the **full fold**, not `--n-max 1000`. The
+capped-fold H2a/H2b numbers above are noise and must not be cited as a result. Use `--batch-size 8`
+(bs=32 buys ~5% for 3× memory); the batch-32 OOM note above still stands for *training*, but evaluation
+at `BATCH_SIZE=64` is now safe — the encoders chunk message passing at `config.GRAPH_ENCODE_CHUNK`
+(default 8), bounding eval peak to 2.01 GB (from 12.53 GB) without changing results.

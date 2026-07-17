@@ -534,6 +534,15 @@ conditions** (the condition gate is the module's core claim). GPU-automatic; exi
 python src/tcell_pipeline/graph/run_module2_smoke.py
 ```
 
+The encoder mini-batches a batch's sampled subgraphs through one PyG `Batch` (edges never cross
+samples, so each edge is gated by *its own* row's condition and the readout attends per sample), and
+`sample_subgraph` answers "which edges touch this node set?" from a CSR neighbour index built once per
+graph instead of scanning the whole edge table per row. Both are pinned by exact-equivalence tests —
+the sampler is bit-identical to the original full scan, and the batched forward matches the per-sample
+loop edge for edge — because a divergence here silently changes which subgraph the model sees. Note the
+index is cached on the graph and fingerprinted: **edit a graph's `edge_index` and the next sample
+rebuilds it**, so edge-ablation and rewired-network controls see the topology they actually set.
+
 ### Fit the fold-local program basis (Module 3)
 
 The program decoder predicts deltas in a latent-program space defined by a basis learned from the
@@ -649,14 +658,29 @@ typed-static) on the `systema` primary endpoint. Every run is logged in the immu
 PYTHONPATH=src python -m tcell_pipeline.screening.run_screening --epochs 1 --batch-size 8 --device cuda
 ```
 
-**Compute reality.** The typed graph encoders sample a ≤512-node subgraph *per row* and message-pass
-single-threaded on CPU (GPU util ~0%), so the graph configs are hours-long on the full 21,262-row fold —
-the untyped GNN did not finish one epoch in ~11 h. For a tractable comparison, cap the fold (`--n-max
-1000`) and/or run the configs in parallel across the four A100s (one per GPU — ~4× faster wall-clock, ~55
-min on 1,000 rows). On a 1,000-row / 1-epoch fold H2a is a hair positive (+0.001 systema) and H2b negative
-(−0.006) — noise in the near-null-signal regime; the genuine H2a/H2b test needs convergent training, which
-needs the deferred graph-encoder mini-batching upgrade (PyG `Batch` over subgraphs). `run_full_pipeline.sh`
-runs Modules 1-7 unattended under nohup. Review: `docs/reviews/2026-07-16-code-review-module7.md`.
+**Compute reality (updated 2026-07-17 — the full fold is now tractable).** Graph screening used to be
+hours-long: the untyped GNN did not finish one epoch on the 21,262-row fold in ~11 h, with the GPU at
+~0%. The cause was **not** message passing — that was already only 5% of GPU wall-clock. It was
+`sample_subgraph`, at **95%**, because growing and inducing each subgraph scanned the whole ~8M-edge
+table *per row*. A CSR neighbour index (built once per graph) plus PyG mini-batching fixed it:
+
+| A100, forward+backward, bs=8 | before | after |
+| --- | --- | --- |
+| per row | 667 ms | **61 ms** |
+| GPU utilisation | median 1% | median 46% |
+| 21,262-row epoch | 3.94 h | **0.36 h** |
+
+**10.9× end-to-end**, so the §10.6 nested family now runs on the full fold rather than a capped one.
+Use `--batch-size 8` (bs=32 buys ~5% for 3× the memory). Evaluation may keep `BATCH_SIZE=64`: the
+encoders message-pass at most `config.GRAPH_ENCODE_CHUNK` (default 8) subgraphs at once and stitch, so
+peak eval memory is bounded (12.53 GB → 2.01 GB at batch 64 / `no_grad`) without changing results.
+Chunking does **not** reduce *training* memory — autograd retains every chunk until backward.
+
+The old capped-fold numbers (H2a +0.001, H2b −0.006 on 1,000 rows / 1 epoch) were **noise in the
+near-null-signal regime and should not be cited**; the genuine H2a/H2b test needs convergent training on
+the full fold, which is now affordable and is the next compute task. `run_full_pipeline.sh` runs Modules
+1-7 unattended under nohup. Design + measurements: `docs/specs/2026-07-17-graph-throughput-minibatch.md`.
+Reviews: `docs/reviews/2026-07-16-code-review-module7.md`.
 
 ## Repository / data-mart layout
 
