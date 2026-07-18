@@ -25,8 +25,9 @@ immutable experiment registry that enforces the report's trial caps and logs eve
 - **In (feat-011):** `screening/{screening,experiment_registry,run_screening}.py` — `screen_config`,
   `run_screening`, the nested-family factories, the registry, and the real-data driver.
 - **Out:** external comparators (feat-010: Stable-Shift / TxPert-public adapters) and the rationale
-  faithfulness audit (feat-012). The full 32-trial screening campaign + five-seed promotion is a compute
-  campaign, not code — the harness is done, the campaign is feat-011's remaining work.
+  faithfulness audit (feat-012). The full-fold screening campaign is a compute campaign, not code — the
+  harness is done, and the **single-seed campaign ran on 2026-07-18** (result in the DONE note below);
+  only the report's **five-seed promotion** of the frozen H1 remains as feat-011 compute.
 
 ## The three graph baselines (feat-007)
 
@@ -151,3 +152,17 @@ capped-fold H2a/H2b numbers above are noise and must not be cited as a result. U
 (bs=32 buys ~5% for 3× memory); the batch-32 OOM note above still stands for *training*, but evaluation
 at `BATCH_SIZE=64` is now safe — the encoders chunk message passing at `config.GRAPH_ENCODE_CHUNK`
 (default 8), bounding eval peak to 2.01 GB (from 12.53 GB) without changing results.
+
+**DONE (2026-07-18) — the full-fold campaign ran, and the result is NEGATIVE (reported, not tuned).**
+On one shared full fold (21,262 train / 4,400 val, 20-epoch budget, 8.2 h / 17.7 GPU-hours), `systema`
+ranked untyped_gnn 0.0951 > expression_only 0.0861 > condition_gated 0.0834 > typed_static 0.0786 >
+network_propagation 0.0319: **H2a NOT supported** (−0.0075, the typed graph hurts) and **H2b supported**
+(+0.0048) but condition_gated is still below the no-graph baseline — the full EG-IPG does not beat
+expression-only, and the untyped-GCN diagnostic scores best. All within ~0.017 on a 0.086 base
+(single-seed, no error bars); the no-graph model was still descending at the budget while the graph
+models overfit at epoch 1–2. Frozen H1 = the pre-registered `condition_gated` (`--promote --pin`,
+rank 3/4, margin −0.0117), the only member that supports the feat-012 audit. The campaign needed three
+additions to this harness — a per-target subgraph cache (`config.SUBGRAPH_CACHE_SIZE`; 22.7 h → 12.5 h),
+a registry advisory lock (concurrent lanes collided on a fixed temp path), and `--only` / `--merge` /
+`--promote` / `--pin` with a stale-parquet guard. Full record + the xhigh review that followed:
+`docs/specs/2026-07-17-feat011-full-fold-campaign.md`.

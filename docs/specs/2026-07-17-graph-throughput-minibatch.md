@@ -124,6 +124,16 @@ so a cache is worth ~2.9× within an epoch and ~all of it across epochs, at ~17�
 in DataLoader workers. Left undone: 0.36 h/epoch is tractable, and the cheapest of these costs real memory.
 The `ponytail:` markers in both encoders now name this floor rather than the old one.
 
+**Update (2026-07-18): the per-target subgraph cache above was built** for the feat-011 campaign — the
+0.36 h/epoch bench turned out to be encoder-only, and the real `Trainer` step is 3× larger because
+donor-invariance re-forwards the whole model, which made sampling worth caching after all.
+`_SubgraphCache` (bounded LRU, `config.SUBGRAPH_CACHE_SIZE`) memoises the pure-function sampler on the
+resolved seed; on the full fold it took the campaign 22.7 h → 12.5 h (untyped_gnn 5.3×) at ~38.6 GB RSS
+per graph lane, and GPU util to 79–99%. Invalidation is by tensor object identity (`_TensorSet`, immune
+to `data_ptr` ABA) on both the cache and the CSR index; a graph edited through `tensor.data` bypasses
+version tracking and must call `invalidate_graph_caches(graph)`. Full record + the xhigh review it
+survived: `docs/specs/2026-07-17-feat011-full-fold-campaign.md`.
+
 ## Verification
 
 `./init.sh` green at **242** tests (224 + 18 new). Real-data smoke, all three §10.6 nested members,

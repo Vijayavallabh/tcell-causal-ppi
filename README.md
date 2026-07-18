@@ -700,13 +700,22 @@ Chunking does **not** reduce *training* memory — autograd retains every chunk 
 thread, 19.9 at 8, and **470.7 at this box's 64-thread default** — a 17× cliff that makes the sampler
 look hopeless if you call it without pinning threads.
 
-The old capped-fold numbers (H2a +0.001, H2b −0.006 on 1,000 rows / 1 epoch) were **noise in the
-near-null-signal regime and should not be cited**. The genuine H2a/H2b test — the §10.6 family on one
-shared full fold — is the **feat-011 campaign** (`./run_screening_campaign.sh`, ~12.5 h over three
-A100s), which fans one lane per GPU (`--only NAME`), recombines with `--merge`, and names the frozen H1
-with `--promote`. `run_full_pipeline.sh` runs Modules 1-7 unattended under nohup. Design +
-measurements: `docs/specs/2026-07-17-feat011-full-fold-campaign.md` and
-`docs/specs/2026-07-17-graph-throughput-minibatch.md`. Reviews:
+**The full-fold campaign has run (2026-07-18) and the result is negative — reported, not tuned.** The
+old capped-fold numbers (H2a +0.001, H2b −0.006 on 1,000 rows / 1 epoch) were noise; the real §10.6
+family on one shared full fold (21,262 train / 4,400 val, 20-epoch budget, 8.2 h / 17.7 GPU-hours over
+three A100s) ranks on `systema`: **untyped_gnn 0.0951 > expression_only 0.0861 > condition_gated 0.0834
+> typed_static 0.0786 > network_prop 0.0319**. So **H2a is NOT supported** (typed_static − expr-only =
+−0.0075: the typed graph *lowers* systema below no-graph) and **H2b is technically supported** (+0.0048)
+but condition_gated is still *below* expression_only — the full typed+gated EG-IPG does not beat the
+no-graph baseline, and a plain untyped GCN scores best. All neural members sit within ~0.017 on a 0.086
+base (single-seed, no error bars), and the no-graph model was *still improving* at the 20-epoch budget
+while the graph models overfit by epoch 1–2 — so more compute widens the gap *against* the graph. The
+frozen H1 is the pre-registered `condition_gated` (`--promote --pin condition_gated`, rank 3/4, margin
+−0.0117), the only member that can support the feat-012 rationale audit. The campaign fans one lane per
+GPU (`--only NAME`), recombines with `--merge`, and names the H1 with `--promote`;
+`./run_screening_campaign.sh` runs it under nohup. Full write-up + numbers:
+`docs/specs/2026-07-17-feat011-full-fold-campaign.md`; throughput + cache:
+`docs/specs/2026-07-17-graph-throughput-minibatch.md`; reviews:
 `docs/reviews/2026-07-16-code-review-module7.md`.
 
 Note when reading screening logs: **`best_val` is not comparable across the family.** `typed_static`

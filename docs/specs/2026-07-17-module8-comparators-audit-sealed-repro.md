@@ -23,15 +23,22 @@ Like Module 7, this is a **verification / comparator framework**, not a compute 
 reproduction run and the 32-trial comparator sweep are compute the harness enables. All logic is exercised on
 synthetic fixtures.
 
-**Status (2026-07-17): unblocked, unrun.** All four campaigns here need a graph model trained to
-convergence, which was blocked by the graph compute ceiling. That ceiling is lifted — a full 21,262-row
-epoch went 3.94 h → **0.36 h** (10.9×; see `docs/specs/2026-07-17-graph-throughput-minibatch.md`) — so
-feat-010 (16-trial comparators), feat-012 (50-case audit on the frozen H1) and feat-013 (clean-checkout
-reproduction + the sealed opening) are now simply *unrun work*, not blocked work. The ordering still
-binds: **feat-011's full-fold screening produces the promoted model the other three consume**, so run it
-first. The **sealed challenge split (5,608 rows) remains UNOPENED and must stay that way until a promoted
-final model exists** — it is write-once, and opening it on a non-promoted model burns the fold, which is
-the exact garden-of-forks this module exists to prevent.
+**Status (2026-07-18): the gating dependency is satisfied — the frozen H1 now exists.** All four
+campaigns here need a graph model trained to convergence; the compute ceiling that blocked it was lifted
+(3.94 h → **0.36 h**/epoch; `docs/specs/2026-07-17-graph-throughput-minibatch.md`), and **feat-011's
+full-fold screening ran on 2026-07-18 and froze the H1**: the pre-registered `condition_gated`
+(`data/results/screening/condition_gated/0/ckpt/stage_a_best.pt`, `promoted.json`; a NEGATIVE result —
+the graph did not beat no-graph, so this is the pre-committed H1 kept honestly at rank 3/4, see
+`docs/specs/2026-07-17-feat011-full-fold-campaign.md`). So feat-010 (16-trial comparators), feat-012
+(50-case audit on that frozen H1) and feat-013 (clean-checkout reproduction + the sealed opening) are now
+simply *unrun work* — the model they consume is on disk. Two carry-overs before feat-012 runs:
+`run_module8_real.py`'s `run_audit` still prints a STALE "the graph model cannot converge until the
+mini-batch refactor lands" (false — the refactor landed and the checkpoint above is a trained graph
+model); and a graph-mutating ablation control that edits via `tensor.data` must call
+`invalidate_graph_caches(graph)` (the subgraph cache/index invalidate automatically only on reassignment
+or a normal in-place edit). The **sealed challenge split (5,608 rows) remains UNOPENED** — write-once,
+test-steward-only, against the PROMOTED model; opening it early burns the fold, the exact garden-of-forks
+this module exists to prevent.
 
 ## A) External comparators (feat-010) — `comparators/`
 
