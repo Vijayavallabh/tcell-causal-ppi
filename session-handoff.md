@@ -1,5 +1,28 @@
 # Session Handoff
 
+## ✅ feat-010 external comparators — DONE (2026-07-18): H1 clears the comparators, graph premise still fails
+
+Scored `StableShiftAdapter` + `TxPertPublicAdapter` on the SAME dev val fold the campaign used (4,400 rows,
+`blocked_target_ood`, fold identity VERIFIED) through the SAME scorer path as `network_propagation`
+(`run_module8_real.py --part comparators`; fit on train responses only, STRING-only adjacency,
+`response_metric_suite`). **systema:** frozen H1 `condition_gated` 0.0834 > `txpert_public` 0.0321 >
+`stable_shift` 0.0217 → **H1 beats the strongest eligible comparator by +0.0513** (outside the 0.01 band).
+BUT no-graph `expression_only` (0.0861) and `untyped_gnn` (0.0951) beat the comparators too, so this is
+*trained-predictor > public-smoother*, **not** *graph > no-graph* — H2a stays negative; the comparator win
+does not rescue the graph. `txpert_public` 0.0321 ≈ `network_propagation` 0.0319 cross-checks the path.
+Single-seed (no error bars; 5-seed promotion still owed). Deterministic (~65 s CPU, 0 GPU-hours). Cap: 2
+configs / 2 families, 1/16 trials each — at the family ceiling; 15 slots/family unused. New
+`summarize_vs_h1()` + red-green adversarial test; `./init.sh` green at **281**. Artifacts under
+`data/results/comparators/` (`comparators_vs_h1.json` is the H1-vs-comparators table). **Not committed yet.**
+
+**Still owed on feat-010 / next:** the comparators are single-hop public reimplementations (1/16 slots each) —
+a stronger sweep (more hops / learned propagation / multi-head) within the 16-trial budget is available but
+unrun. feat-012 (rationale audit) remains BLOCKED — the frozen H1 is Stage-A-only (no rationale head; fitted
+separately in Stage B, needs feat-008's fit loop); `run_module8_real.run_audit` still prints the stale
+"cannot converge until the mini-batch refactor lands" line (false) — correct it when feat-012 is picked up.
+The single-seed negative wants the 5-seed promotion (`N_FINAL_SEEDS=5`) before "the graph doesn't help" is
+treated as final. Do NOT open the sealed split.
+
 ## ✅ CAMPAIGN DONE — feat-011 full-fold screening (finished 2026-07-18 03:32 IST) — NEGATIVE result
 
 `./run_screening_campaign.sh` completed: the §10.6 nested family on ONE shared full fold (21,262 train /

@@ -1,5 +1,30 @@
 # Session Progress Log
 
+## ✅ DONE: feat-010 external-comparator campaign (2026-07-18) — H1 beats the comparators, but the graph premise still fails
+
+Scored the two public comparators on the SAME development val fold the feat-011 campaign used (21,262 train /
+4,400 val, `blocked_target_ood`) through the SAME scorer path as `network_propagation`
+(`run_module8_real.py --part comparators`): fit on TRAIN responses only (leakage fence), STRING-only
+adjacency, `compute_all_metrics = response_metric_suite`. **Fold identity verified** — each comparator's
+prediction row-index is identical to the campaign val fold (4,400 rows). Deterministic re-run reproduced the
+numbers exactly; ~65 s CPU each, **0 GPU-hours**.
+
+**Result on `systema` (primary endpoint):** frozen H1 `condition_gated` **0.0834** > `txpert_public` 0.0321 >
+`stable_shift` 0.0217 (both comparators cover 4,232/4,400; 168 targets have no covered STRING neighbour →
+zero shift, counted against them). **H1 BEATS the strongest eligible comparator by +0.0513** — outside the
+0.01 noise band, so H1's "beyond the strongest comparator" clause HOLDS on the dev fold.
+
+**Honest frame — this does NOT rescue the graph.** The no-graph `expression_only` (0.0861) and `untyped_gnn`
+(0.0951) beat both comparators too, so the win is *trained-neural-predictor > topology-only-public-smoother*,
+not *graph > no-graph* (H2a stayed −0.0075). Consistency check: `txpert_public` 0.0321 ≈ `network_propagation`
+0.0319 (both STRING smoothers, same suite) confirms the comparator path equals the campaign's non-neural
+reference. **Single-seed, no error bars** (the report's 5-seed promotion, `N_FINAL_SEEDS=5`, would be needed).
+Cap: 2 distinct comparator configs across 2 families = 1/16 trials each, **2/2 families (at the ceiling)**; the
+other 15 slots/family (a hyperparameter sweep) are unused. New: `summarize_vs_h1()` + a red-green,
+adversarial-input test. Artifacts under `data/results/comparators/` (`comparators_val.parquet`,
+`comparators_vs_h1.json`, per-family `compatibility_report.yaml`). `./init.sh` green at **281**. feat-010 → **done**.
+**Not yet committed** (awaiting the commit ask).
+
 ## ✅ DONE: the feat-011 full-fold screening campaign (finished 2026-07-18 03:32 IST, 8.2 h) — NEGATIVE result
 
 `./run_screening_campaign.sh` ran the §10.6 nested family on ONE shared FULL fold (21,262 train / 4,400

@@ -119,6 +119,37 @@ def test_public_only_is_explicit_flag_not_substring():
     assert compatibility(_Proprietary)["public_only"] is False
 
 
+def test_summarize_vs_h1_ranks_margin_and_guards_bad_input():
+    from tcell_pipeline.run_module8_real import summarize_vs_h1
+
+    comps = [{"name": "stable_shift", "systema": 0.0217}, {"name": "txpert_public", "systema": 0.0321}]
+    h1 = {"name": "condition_gated", "systema": 0.0834}
+    s = summarize_vs_h1(comps, h1)
+    assert s["strongest_comparator"] == "txpert_public"        # max-systema eligible comparator
+    assert abs(s["margin_h1_minus_strongest"] - (0.0834 - 0.0321)) < 1e-12
+    assert s["h1_beats_strongest"] is True
+    assert [e["name"] for e in s["ranked"]][0] == "condition_gated"   # H1 tops the joint systema ranking
+
+    # CONSTRUCTED breaker: a NaN-systema comparator must NOT be picked as strongest (mirrors promote()'s
+    # non-finite fix) and must not crash the ranking.
+    s2 = summarize_vs_h1(comps + [{"name": "broken", "systema": float("nan")}], h1)
+    assert s2["strongest_comparator"] == "txpert_public"
+    assert [e["name"] for e in s2["ranked"]][-1] == "broken"   # non-finite sinks to the bottom, not the top
+
+    # HONEST converging-negative: an H1 BELOW the strongest comparator reports a loss, not a win.
+    s3 = summarize_vs_h1(comps, {"name": "weak_h1", "systema": 0.010})
+    assert s3["h1_beats_strongest"] is False and s3["margin_h1_minus_strongest"] < 0
+
+    # No frozen H1 on disk (promoted.json absent) -> still ranks comparators, margin is undefined not a crash.
+    s4 = summarize_vs_h1(comps, None)
+    assert s4["margin_h1_minus_strongest"] is None and s4["h1_beats_strongest"] is False
+    assert {e["name"] for e in s4["ranked"]} == {"stable_shift", "txpert_public"}
+
+    # No comparator landed -> nothing to beat, no crash.
+    s5 = summarize_vs_h1([], h1)
+    assert s5["strongest_comparator"] is None and s5["margin_h1_minus_strongest"] is None
+
+
 def test_comparators_register_as_distinct_families(tmp_path):
     reg = tmp_path / "registry.yaml"
     r1 = register_run("stable_shift_v1", "H1-comparator", "q_pre", "blocked", 0, None,

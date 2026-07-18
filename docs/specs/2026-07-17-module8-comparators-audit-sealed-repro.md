@@ -29,9 +29,12 @@ campaigns here need a graph model trained to convergence; the compute ceiling th
 full-fold screening ran on 2026-07-18 and froze the H1**: the pre-registered `condition_gated`
 (`data/results/screening/condition_gated/0/ckpt/stage_a_best.pt`, `promoted.json`; a NEGATIVE result —
 the graph did not beat no-graph, so this is the pre-committed H1 kept honestly at rank 3/4, see
-`docs/specs/2026-07-17-feat011-full-fold-campaign.md`). So feat-010 (16-trial comparators), feat-012
-(50-case audit on that frozen H1) and feat-013 (clean-checkout reproduction + the sealed opening) are now
-simply *unrun work* — the model they consume is on disk. Two carry-overs before feat-012 runs:
+`docs/specs/2026-07-17-feat011-full-fold-campaign.md`). **feat-010 has since RUN (2026-07-18) — DONE**: both
+comparators scored on the frozen dev fold; the frozen H1 beats the strongest eligible comparator by +0.0513
+systema, but the no-graph baseline beats the comparators too, so it does not rescue the graph (see §A-results).
+feat-012 (50-case audit on that frozen H1) and feat-013 (clean-checkout reproduction + the sealed opening)
+remain *unrun work* — the model they consume is on disk (feat-012 additionally needs a fitted rationale head,
+see below). Two carry-overs before feat-012 runs:
 `run_module8_real.py`'s `run_audit` still prints a STALE "the graph model cannot converge until the
 mini-batch refactor lands" (false — the refactor landed and the checkpoint above is a trained graph
 model); and a graph-mutating ablation control that edits via `tensor.data` must call
@@ -61,6 +64,46 @@ class, checkpoint, public-only + wrapped-upstream flags). They register as two d
 ponytail: single graph-conv hop / fixed SVD rank (Stable-Shift), single deterministic attention head + STRING
 only (TxPert-public) — the documented upgrade paths are more hops / learned propagation / multi-head
 transformer over STRING+GO or wrapping the upstream public checkpoint.
+
+### A-results) feat-010 comparator campaign (2026-07-18) — DONE, H1 clears the comparators
+
+Ran `run_module8_real.py --part comparators` on the REAL frozen fold: both adapters fit on TRAIN responses
+only (STRING-only adjacency, `train.B` basis — the leakage fence) and scored on the FULL val fold through the
+SAME scorer path `network_propagation` used in the campaign (`compute_all_metrics = response_metric_suite`,
+`train_mean` from train). **Fold identity verified** — each comparator's prediction `row_index` set is
+identical to the campaign val fold (4,400 rows). Deterministic (no RNG); a re-run reproduced the numbers
+bit-for-bit; ~65 s CPU per run, **0 GPU-hours**.
+
+| rank on `systema` | model | systema | pearson | mae | rmse | coverage |
+| --- | --- | --- | --- | --- | --- | --- |
+| — | **condition_gated (frozen H1)** | **0.0834** | 0.1127 | 0.8155 | 1.0361 | 4400/4400 |
+| 1 (comparator) | txpert_public | 0.0321 | 0.0856 | 0.8171 | 1.0363 | 4232/4400 |
+| 2 (comparator) | stable_shift | 0.0217 | 0.0822 | 0.8171 | 1.0365 | 4232/4400 |
+
+- **H1 beats the strongest eligible comparator (`txpert_public`) by +0.0513 systema** — outside the 0.01
+  noise band. H1's "beyond the strongest eligible comparator" clause HOLDS on the development fold. The
+  strongest-comparator selection guards non-finite metrics (a NaN systema cannot be the bar to clear — the
+  same guard `promote()` grew), and a negative margin would be reported as a LOSS, not hidden.
+- **This does NOT rescue the graph premise.** The no-graph `expression_only` (0.0861) and the untyped
+  `untyped_gnn` (0.0951) also beat both comparators, so the win is *trained-neural-predictor >
+  topology-only-public-smoother*, not *graph > no-graph* — H2a stayed negative (−0.0075). Read alongside the
+  feat-011 campaign result below, not as independent evidence for the graph.
+- **Consistency check:** `txpert_public` 0.0321 ≈ `network_propagation` 0.0319 (both STRING smoothers scored
+  through the same suite) confirms the comparator path is equivalent to the campaign's non-neural reference.
+- **Coverage:** both comparators cover 4,232/4,400 rows; the 168 val targets with no covered STRING neighbour
+  return a zero shift, which counts against their systema (a real limitation of topology-only comparators,
+  scored over the identical 4,400-row truth as H1 — no unfairness).
+- **Single-seed, no error bars** — the report's 5-seed promotion (`N_FINAL_SEEDS=5`) is what would put error
+  bars on both this and the campaign's negative. Direction, not decimals.
+- **Cap accounting:** 2 distinct comparator configs (`stable_shift_v1`, `txpert_public_v1`) across 2 families
+  = **1/16 trials each family, 2/2 families (at the family ceiling)**; the remaining 15 slots/family (a
+  hyperparameter sweep within the 16-trial budget — more hops / learned propagation / multi-head) are UNUSED.
+  Fresh completed runs registered (run-0013/0014) under `H1-comparator`; every run logged.
+- **Artifacts:** `data/results/comparators/{comparators_val.parquet, comparators_vs_h1.json,
+  <family>/compatibility_report.yaml}`, `data/results/predictions/<family>/val/0.parquet`. New:
+  `summarize_vs_h1()` + `test_summarize_vs_h1_ranks_margin_and_guards_bad_input` (watched failing;
+  constructed breakers — NaN-systema comparator can't be strongest, H1-below-comparator reports a loss,
+  missing `promoted.json`, empty comparator set). `./init.sh` green at **281**.
 
 ## B) Rationale audit (feat-012) — `rationale/rationale_audit.py`
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -56,6 +57,43 @@ _COMPARATORS = (StableShiftAdapter, TxPertPublicAdapter)
 def _folds(n_max=None):
     train, val = PerturbationDataset("train", n_max=n_max), PerturbationDataset("val", n_max=n_max)
     return train, val
+
+
+def _finite(x) -> bool:
+    return isinstance(x, (int, float)) and math.isfinite(x)
+
+
+def summarize_vs_h1(comparator_rows: list[dict], h1: dict | None) -> dict:
+    """H1-vs-comparators on the primary endpoint (report §Comparators: H1 must beat "the strongest eligible
+    comparator"). Ranks the external comparators + the frozen H1 on ``systema`` and records H1's margin over
+    the strongest ELIGIBLE comparator — a finite-systema one, so a NaN/Inf metric (a near-null-signal
+    degeneracy) cannot masquerade as the bar to clear (the same guard ``promote()`` grew). ``h1`` is read
+    from ``promoted.json`` (NOT retrained); ``None`` when no frozen H1 exists yet — the comparators still
+    rank, margin is undefined rather than a crash. A negative margin is reported as a LOSS, not hidden: an
+    H1 that also loses to a public comparator is a valid converging negative."""
+    finite = [r for r in comparator_rows if _finite(r.get("systema"))]
+    strongest = sorted(finite, key=lambda r: (-r["systema"], r["name"]))[0] if finite else None
+    h1_sys = h1.get("systema") if h1 else None
+    margin = (h1_sys - strongest["systema"]) if (strongest and _finite(h1_sys)) else None
+
+    entries = [{"name": r["name"], "systema": r.get("systema"), "kind": "comparator"} for r in comparator_rows]
+    if h1:
+        entries.append({"name": h1.get("name"), "systema": h1_sys, "kind": "frozen_h1"})
+    # non-finite systema sinks to the bottom of the ranking rather than sorting as a huge/small number
+    ranked = sorted(entries, key=lambda e: (-(e["systema"] if _finite(e["systema"]) else -math.inf), e["name"]))
+    return {
+        "primary_metric": "systema",
+        "frozen_h1": h1.get("name") if h1 else None,
+        "h1_systema": h1_sys,
+        "strongest_comparator": strongest["name"] if strongest else None,
+        "strongest_comparator_systema": strongest["systema"] if strongest else None,
+        "margin_h1_minus_strongest": margin,
+        "h1_beats_strongest": bool(margin is not None and margin > 0),
+        "ranked": ranked,
+        "basis": "development val fold (blocked_target_ood); single-seed; H1 systema read from promoted.json "
+                 "(frozen campaign artifact, NOT retrained). A comparator win does NOT rescue the graph "
+                 "premise — the no-graph expression_only model beats these comparators too (see campaign spec).",
+    }
 
 
 # --------------------------------------------------------------------------------------------------
@@ -101,6 +139,25 @@ def run_comparators(n_max=None, seed: int = 0, register: bool = True) -> int:
     for r in rows:
         print(" ".join(f"{r['name']:>16}" if c == "name" else f"{r[c]:>9.4f}" for c in _COLS))
     print(f"[m8-comp] table -> {out}")
+
+    # H1-vs-comparators on systema. The frozen H1 systema is read from promoted.json (this run scores only
+    # the comparators; the H1 was scored by the campaign on the SAME fold — do not retrain it).
+    from tcell_pipeline.screening.screening import _finite_or_none
+    promo_path = Path(config.SCREENING_ROOT) / "promoted.json"
+    h1 = json.loads(promo_path.read_text()).get("final") if promo_path.exists() else None
+    summary = summarize_vs_h1(rows, h1)
+    summary["comparators_val_parquet"] = str(out)
+    summary["promoted_json"] = str(promo_path) if h1 else None
+    summ_path = Path(config.COMPARATORS_ROOT) / "comparators_vs_h1.json"
+    config.write_text_atomic(json.dumps(_finite_or_none(summary), indent=2, allow_nan=False), summ_path)
+    if h1:
+        verdict = ("beats" if summary["h1_beats_strongest"] else "does NOT beat")
+        print(f"[m8-comp] H1 {summary['frozen_h1']} systema={summary['h1_systema']:+.4f} {verdict} strongest "
+              f"comparator {summary['strongest_comparator']} systema="
+              f"{summary['strongest_comparator_systema']:+.4f} (margin {summary['margin_h1_minus_strongest']:+.4f})")
+    else:
+        print("[m8-comp] no promoted.json — comparators ranked without a frozen H1 to compare against")
+    print(f"[m8-comp] H1-vs-comparators summary -> {summ_path}")
     return 0
 
 
