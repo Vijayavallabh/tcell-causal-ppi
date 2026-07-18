@@ -1,5 +1,43 @@
 # Session Handoff
 
+## ✅ CAMPAIGN DONE — feat-011 full-fold screening (finished 2026-07-18 03:32 IST) — NEGATIVE result
+
+`./run_screening_campaign.sh` completed: the §10.6 nested family on ONE shared full fold (21,262 train /
+4,400 val), 20-epoch budget, bs=8, three A100s. All 5 members completed; `summary.json`,
+`experiment_registry.yaml`, `promoted.json` written (parquets verified fresh). Full write-up + numbers:
+`docs/specs/2026-07-17-feat011-full-fold-campaign.md` (Results). NOTE: early stopping DID fire on the
+typed lanes — my pre-launch claim that it wouldn't was **wrong**: the graph models overfit at ep1–2 and
+tripped patience 10; expression_only/untyped_gnn ran the full 20 (expression_only still descending @ep19).
+
+**The result (reported, not tuned — a negative H2a is a VALID outcome):** the graph does not help on
+this fold. `systema`: untyped_gnn 0.0951 > expression_only 0.0861 > condition_gated 0.0834 >
+typed_static 0.0786 > network_prop 0.0319. **H2a NOT supported** (−0.0075: typed graph *hurts*);
+**H2b supported** (+0.0048) but condition_gated is still *below* no-graph, so the full EG-IPG does not
+beat expression-only. All within ~0.017 on a 0.086 base; promotion margin 0.0090 flagged WITHIN NOISE.
+Single-seed — no error bars (the report's 5-seed promotion is a separate step). 17.7 GPU-hours; GPU util
+79–99% on graph lanes (the subgraph cache worked).
+
+### H1 FROZEN (2026-07-18, PI's call): condition_gated, the pre-registered confirmatory H1
+
+Decision taken: `--promote --pin condition_gated` — freeze the pre-registered typed+gated H1, NOT the
+argmax screening winner. `promoted.json`: final=condition_gated, pinned_rank 3/4, screening_winner=
+untyped_gnn, runner_up=untyped_gnn, margin −0.0117 (the H1 is BEHIND the winner), within_noise=False.
+This is the confirmatory-protocol-correct call (commit to H1 before the fold; keep it; report it lost)
+and the only one under which feat-012's rationale audit can run. Frozen H1 checkpoint:
+`data/results/screening/condition_gated/0/ckpt/stage_a_best.pt` — what feat-010/012/013 load.
+
+feat-010/012/013 are now UNBLOCKED (each is still a separate campaign — do not start without asking).
+**Before feat-012:** `run_module8_real.py`'s `run_audit` carries a STALE line — "the graph model cannot
+converge until the mini-batch refactor lands" — now false; correct it (the frozen H1 above is a trained
+graph checkpoint). The sealed split (5,608 rows) remains UNOPENED — feat-013 / test-steward only.
+
+**NOT COMMITTED** (user has not asked). Uncommitted, all with `./init.sh` green at **271**: subgraph
+cache (`neighborhood_sampler.py` + `config.SUBGRAPH_CACHE_SIZE`), registry advisory lock
+(`experiment_registry.py`), `--only`/`--merge`/`--promote` + `merge_lane_results` + stale-parquet guard
+(`run_screening.py`, `screening.py`, `promotion.py`, `screening/__init__.py`), `run_screening_campaign.sh`,
+the campaign spec, README/spec doc updates, the DoD triad, and the new tests (`test_graph.py`,
+`test_screening.py`). All of it lands in ONE commit when asked.
+
 ## Current Objective
 
 - Goal: Build the EG-IPG model for T cell perturbation response prediction

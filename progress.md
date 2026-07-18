@@ -1,5 +1,42 @@
 # Session Progress Log
 
+## ✅ DONE: the feat-011 full-fold screening campaign (finished 2026-07-18 03:32 IST, 8.2 h) — NEGATIVE result
+
+`./run_screening_campaign.sh` ran the §10.6 nested family on ONE shared FULL fold (21,262 train / 4,400
+val), 20-epoch budget, bs=8, three A100s. All 5 members completed; merge + promotion done. Full write-up:
+`docs/specs/2026-07-17-feat011-full-fold-campaign.md` (Results section).
+
+**The graph does not help on this fold — a clean negative, reported not tuned.** Ranking on `systema`:
+untyped_gnn 0.0951 > expression_only 0.0861 > condition_gated 0.0834 > typed_static 0.0786 >
+network_prop 0.0319. **H2a NOT supported** (typed_static − expr-only = −0.0075: the typed graph *hurts*);
+**H2b technically supported** (+0.0048) but condition_gated is still *below* the no-graph expression_only,
+so the full EG-IPG does not beat no-graph. Best model is the untyped-GCN diagnostic. All within ~0.017 of
+each other on a 0.086 base; promotion margin 0.0090 flagged WITHIN NOISE (single-seed, no error bars).
+Convergence asymmetry: expression_only still descending at ep20 (best@19), the typed models overfit at
+ep1–2 — more budget would widen the gap *against* the graph. 17.7 GPU-hours; GPU util ~79–99% on graph
+lanes (cache worked).
+
+**H1 FROZEN (PI's call): condition_gated, the pre-registered confirmatory H1** (`--promote --pin
+condition_gated`). Not the argmax winner (untyped_gnn) — the confirmatory protocol keeps the pre-committed
+typed+gated model, and it's the only one feat-012's audit can run on. `promoted.json` records it honestly:
+pinned_rank 3/4, screening_winner untyped_gnn, margin −0.0117 (H1 behind the winner), within_noise False.
+Frozen checkpoint: `data/results/screening/condition_gated/0/ckpt/stage_a_best.pt`. feat-010/012/013 now
+unblocked (each a separate campaign — not started). **Not committed yet.** `./init.sh` green at 273.
+
+Three things the next reader needs:
+
+1. **The 0.36 h/epoch figure below does NOT size a training run** — it is an encoder-only bench. The
+   real `Trainer` does 1+`DONOR_INVARIANCE_SAMPLES`=3 forwards per step (`_donor_variants` re-forwards
+   the whole model), measured at **183.4 ms/row = exactly 3.0×** the bench. The campaign was 22.7 h,
+   not ~7 h. A **per-target subgraph cache** (`config.SUBGRAPH_CACHE_SIZE`) took it to **12.5 h**
+   (1.8×; untyped_gnn 5.3× — it was almost pure sampling) at 38.6 GB RSS per graph lane. GPU util is
+   now 99%/84%/43%, up from a median 46%.
+2. **Early stopping will NOT fire**: patience 10 but min-delta 1e-6 against ~1e-3/epoch improvements.
+   20 epochs is a BUDGET. If val is still descending at 20, the verdict is **"not converged at
+   budget"** — not convergence. A negative H2a/H2b is a valid outcome; do not tune until it turns.
+3. **Stale `stage_a_history.json` files** from a 15:43 run sit at the exact paths the lanes write and
+   read as plausible progress. Check mtime before reporting anything from them.
+
 ## Current State
 
 **Last Updated:** 2026-07-17 (**graph throughput refactor: 10.9× end-to-end, `./init.sh` green at 242**, xhigh `/code-review` 15 defects fixed. Prior: Module 8 `5ea8a4b` → xhigh `/code-review` 15 defects fixed `2edb44f` → pass-3 adversarial verification OF those fixes found 2 still exploitable + 9 partial, root causes fixed `6a68882` → real-data drivers `97f8451`.)

@@ -257,7 +257,8 @@ def _finite_or_none(obj):
 def run_screening(configs: list[dict], train_ds, val_ds, *, device: str = "cpu", split: str = "val",
                   predictions_root: Path = config.PREDICTIONS_ROOT,
                   screening_root: Path = config.SCREENING_ROOT,
-                  registry_path: Path | None = None, resilient: bool = True, extra_scorers=None) -> dict:
+                  registry_path: Path | None = None, resilient: bool = True, extra_scorers=None,
+                  write_summary: bool = True) -> dict:
     """Screen every config on the same train/val split and report H2a / H2b on the primary endpoint.
     Writes ``<screening_root>/summary.json`` with the per-config table and the two contrasts.
 
@@ -305,9 +306,73 @@ def run_screening(configs: list[dict], train_ds, val_ds, *, device: str = "cpu",
     by_name = {r["name"]: r for r in results}
     summary = {"results": results, **_nested_comparison(by_name)}
     summary_path = Path(screening_root) / "summary.json"
+    if write_summary:  # a fan-out lane screens ONE config, so its summary would claim the wave
+        _write_summary(summary, summary_path)
+        summary["summary_path"] = str(summary_path)
+    return summary
+
+
+def _write_summary(summary: dict, summary_path: Path) -> None:
     # sanitize non-finite -> None (and allow_nan=False as a loud backstop) so the deliverable is valid JSON
     config.write_text_atomic(
         json.dumps(_finite_or_none(summary), indent=2, default=float, allow_nan=False), summary_path)
+
+
+def _latest_status(registry_path: Path, seed: int) -> dict:
+    """config_id -> its LATEST registry run's status (this seed). log_run flips a run's status in
+    place, so the newest run per config is the current truth. Used to reject a stale parquet left by a
+    prior run of a config this campaign only got as far as ``registered``. A config ABSENT from the
+    map is not tracked by the registry at all (e.g. the non-neural network_propagation reference, which
+    is never registered) — callers must fall back to parquet presence for those, not assume stale."""
+    from tcell_pipeline.screening.experiment_registry import load_registry
+    latest: dict = {}
+    for r in load_registry(registry_path):  # append order, so the last write per config_id wins
+        if int(r.get("seed", 0)) == seed:
+            latest[r["config_id"]] = r.get("status")
+    return latest
+
+
+def _is_stale(name: str, latest: dict | None) -> bool:
+    """True only when the registry TRACKS ``name`` and its latest run is not completed — i.e. its
+    parquet (if any) is stale/incomplete. Untracked names return False (defer to parquet presence)."""
+    return latest is not None and name in latest and latest[name] != "completed"
+
+
+def merge_lane_results(names: list[str], seed: int = 0,
+                       screening_root: Path = config.SCREENING_ROOT,
+                       registry_path: Path | None = None) -> dict:
+    """Recombine the per-config result rows the fan-out lanes wrote (``<root>/<name>/<seed>.parquet``)
+    into ONE summary + the H2a/H2b contrasts.
+
+    Lanes run one config per process — the H2a/H2b comparison spans configs, so it can only be formed
+    after they all land. ``names`` is what was EXPECTED: a lane that OOMed/crashed wrote no parquet,
+    and silently omitting it would leave a summary that reads like full coverage of a short wave. A
+    missing config is therefore recorded ``status: missing``, and it drops out of the nested contrast
+    (``_nested_comparison`` needs both members present) rather than being compared against nothing.
+
+    ``registry_path`` (optional) guards the OTHER staleness direction: the screening tree accumulates
+    parquets across runs, so a config this campaign only ``registered`` (or that crashed) can still
+    have a PRIOR run's parquet on disk. Trusting file presence would report those stale numbers as a
+    result. When a registry is given, a config whose latest run is not ``completed`` is treated as
+    missing even if a parquet exists — stale-wrong is worse than absent.
+    """
+    import pandas as pd
+    latest = _latest_status(registry_path, seed) if registry_path is not None else None
+    results = []
+    for name in names:
+        path = Path(screening_root) / name / f"{seed}.parquet"
+        if _is_stale(name, latest):
+            results.append({"name": name, "seed": seed, "status": "missing",
+                            "error": f"registry's latest run for {name!r} is {latest[name]!r}, not completed "
+                                     f"— its parquet, if any, is stale from a prior run"})
+        elif path.exists():
+            results.append(pd.read_parquet(path).iloc[0].to_dict())
+        else:
+            results.append({"name": name, "seed": seed, "status": "missing",
+                            "error": f"no result row at {path} — the lane never completed"})
+    summary = {"results": results, **_nested_comparison({r["name"]: r for r in results})}
+    summary_path = Path(screening_root) / "summary.json"
+    _write_summary(summary, summary_path)
     summary["summary_path"] = str(summary_path)
     return summary
 

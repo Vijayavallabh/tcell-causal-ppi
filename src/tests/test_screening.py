@@ -7,6 +7,8 @@ registering/logging a run; the 32-trial EG-IPG cap; and that a failing config is
 """
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -21,9 +23,11 @@ from tcell_pipeline.encoders.embedding_store import PluggableEmbeddingStore
 from tcell_pipeline.evaluation.output_schema import prediction_path, read_predictions
 from tcell_pipeline.graph import build_hetero_graph
 from tcell_pipeline.screening import (
+    CONDITION_GATED,
     EXPRESSION_ONLY,
     NETWORK_PROP,
     TYPED_STATIC,
+    UNTYPED_GNN,
     collect_predictions,
     collect_truth,
     dataset_delta_z,
@@ -360,3 +364,224 @@ def test_screen_config_logs_completed_run(tmp_path):
     assert r["metrics"]["systema"] == pytest.approx(float(res["systema"]))     # metrics logged in the right arg slot
     assert r["checkpoint"] and "stage_a_best.pt" in r["checkpoint"]            # checkpoint path (not metrics) logged
     assert r["gpu_hours"] is not None and r["gpu_hours"] >= 0                  # completed-path gpu_hours recorded
+
+
+# --------------------------------------------------------------------------------------------------
+# Concurrent lanes against one manifest (the real campaign fans one process per GPU)
+# --------------------------------------------------------------------------------------------------
+def _register_worker(args):
+    """Module-level so ProcessPoolExecutor can pickle it."""
+    from tcell_pipeline.screening.experiment_registry import register_run
+    path, n, tag = args
+    return [register_run(f"{tag}-cfg{i}", "screening", "q_pre", "blocked_target_ood", 0, None, path=path)
+            for i in range(n)]
+
+
+def test_registry_survives_concurrent_lanes(tmp_path):
+    """The screening campaign runs ONE PROCESS PER GPU against one manifest, and register_run is a
+    read-modify-write: two lanes read the same run list, both append, and the second save overwrites
+    the first's entry. That silently drops runs from what is meant to be a complete audit trail and
+    hands two lanes the same run-NNNN id -- so a later log_run writes the wrong row."""
+    from concurrent.futures import ProcessPoolExecutor
+    path = tmp_path / "registry.yaml"
+    workers, per = 6, 4                                   # 24 distinct configs, under the 32 cap
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        handed = [i for sub in ex.map(_register_worker, [(path, per, f"lane{w}") for w in range(workers)])
+                  for i in sub]
+    runs = load_registry(path)
+    assert len(set(handed)) == workers * per, "the same run id was handed to two lanes"
+    assert len(runs) == workers * per, f"registry lost runs under concurrency: {len(runs)}/{workers * per}"
+    assert len({r["config_id"] for r in runs}) == workers * per, "a lane's config vanished from the manifest"
+
+
+def test_merge_lane_results_reports_a_missing_lane_rather_than_dropping_it(tmp_path):
+    """The lanes write one row each; merge forms H2a/H2b across them. A lane that OOMed wrote NO row,
+    and quietly omitting it would leave a summary that reads like full coverage of a short wave — so
+    it is recorded `missing`, and a contrast that lost a member is absent rather than computed
+    against whatever else happened to be there."""
+    from tcell_pipeline.screening.screening import merge_lane_results
+    root = tmp_path / "screening"
+    for name, systema in ((EXPRESSION_ONLY, 0.10), (TYPED_STATIC, 0.20)):
+        (root / name).mkdir(parents=True)
+        pd.DataFrame([{"name": name, "seed": 0, "status": "completed", "primary": systema,
+                       "systema": systema}]).to_parquet(root / name / "0.parquet")
+    # CONDITION_GATED never landed -> H2b (gated vs static) must NOT be reported
+    summary = merge_lane_results([EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED], seed=0,
+                                 screening_root=root)
+    by_name = {r["name"]: r for r in summary["results"]}
+    assert by_name[CONDITION_GATED]["status"] == "missing", "a lane that never ran vanished from the summary"
+    assert summary["h2a"]["supported"] is True and summary["h2a"]["delta"] == pytest.approx(0.10)
+    assert "h2b" not in summary, "H2b was computed with a missing member"
+    assert json.loads((root / "summary.json").read_text())["h2a"]["better"] == TYPED_STATIC
+
+
+# --------------------------------------------------------------------------------------------------
+# Promotion: naming the frozen H1 that feat-010 / feat-012 / feat-013 all consume
+# --------------------------------------------------------------------------------------------------
+def _lane(root, name, systema, seed=0, ckpt=True):
+    (root / name / str(seed) / "ckpt").mkdir(parents=True, exist_ok=True)
+    pd.DataFrame([{"name": name, "seed": seed, "status": "completed", "primary": systema,
+                   "systema": systema, "gpu_hours": 1.0}]).to_parquet(root / name / f"{seed}.parquet")
+    if ckpt:
+        (root / name / str(seed) / "ckpt" / "stage_a_best.pt").write_bytes(b"x")
+
+
+def test_promote_ranks_by_the_primary_endpoint(tmp_path):
+    """The promoted model is whatever won on systema_pert_specific_delta — the locked primary endpoint —
+    not on best_val, which is not even comparable across the family (the graph members' totals carry
+    regulariser terms expression_only has no equivalent of)."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.10)
+    _lane(root, TYPED_STATIC, 0.30)
+    _lane(root, CONDITION_GATED, 0.20)
+    got = promote([EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED], screening_root=root)
+    assert got["final"]["name"] == TYPED_STATIC
+    assert got["runner_up"]["name"] == CONDITION_GATED
+    assert got["margin"] == pytest.approx(0.10)
+    assert got["final"]["checkpoint"].endswith(f"{TYPED_STATIC}/0/ckpt/stage_a_best.pt")
+    assert json.loads((root / "promoted.json").read_text())["final"]["name"] == TYPED_STATIC
+
+
+def test_promote_excludes_the_non_neural_reference(tmp_path):
+    """network_propagation is a topology-diffusion REFERENCE, not an EG-IPG candidate: it has no
+    checkpoint and nothing downstream could load it as the frozen H1. Winning the table must not
+    promote it."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.10)
+    _lane(root, TYPED_STATIC, 0.20)
+    _lane(root, NETWORK_PROP, 0.99, ckpt=False)          # would top the table
+    got = promote([EXPRESSION_ONLY, TYPED_STATIC, NETWORK_PROP], screening_root=root)
+    assert got["final"]["name"] == TYPED_STATIC, "a non-neural reference was promoted as the H1"
+    assert NETWORK_PROP not in [r["name"] for r in got["ranking"]]
+
+
+def test_promote_refuses_when_the_winner_has_no_checkpoint(tmp_path):
+    """Promotion hands downstream a path to LOAD. A row without weights on disk is not a model, and
+    silently promoting it would fail hours later inside feat-012/013 instead of here."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.10)
+    _lane(root, TYPED_STATIC, 0.30, ckpt=False)
+    with pytest.raises(FileNotFoundError, match="stage_a_best.pt"):
+        promote([EXPRESSION_ONLY, TYPED_STATIC], screening_root=root)
+
+
+def test_promote_flags_a_margin_inside_the_noise(tmp_path):
+    """In this near-null-signal regime the whole family lands within ~0.001 of each other, and the
+    capped-fold campaign already produced H2a=+0.0010 that was pure noise. A promotion whose margin is
+    that small is a coin toss and has to SAY so rather than read as a winner."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.4000)
+    _lane(root, TYPED_STATIC, 0.4004)
+    got = promote([EXPRESSION_ONLY, TYPED_STATIC], screening_root=root, noise_margin=0.01)
+    assert got["final"]["name"] == TYPED_STATIC
+    assert got["margin_within_noise"] is True, "a coin-toss margin was reported as a clean win"
+
+
+def test_promote_is_deterministic_under_an_exact_tie(tmp_path):
+    """Exact ties are reachable, not hypothetical: systema is rounded through a parquet round-trip and
+    the family sits within noise. Whatever is chosen must not depend on filesystem ordering."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, TYPED_STATIC, 0.2000)
+    _lane(root, CONDITION_GATED, 0.2000)
+    a = promote([TYPED_STATIC, CONDITION_GATED], screening_root=root)
+    b = promote([CONDITION_GATED, TYPED_STATIC], screening_root=root)
+    assert a["final"]["name"] == b["final"]["name"], "a tie resolved differently by argument order"
+    assert a["tie"] is True
+
+
+def test_merge_ignores_a_stale_parquet_the_registry_says_never_completed(tmp_path):
+    """The screening tree accumulates parquets across runs. A lane that is REGISTERED but not yet (or
+    never) completed leaves its PRIOR run's parquet sitting at the same path, and trusting file
+    presence alone would report those stale numbers as this campaign's result — a silent wrong-coverage
+    failure worse than a missing lane. The registry's latest run per config is the freshness signal:
+    log_run flips status in place, so a stale parquet's config still reads `registered`."""
+    from tcell_pipeline.screening.screening import merge_lane_results
+    root = tmp_path / "screening"; reg = tmp_path / "registry.yaml"
+    for name, s in ((EXPRESSION_ONLY, 0.10), (TYPED_STATIC, 0.20)):   # both have a parquet on disk
+        (root / name).mkdir(parents=True)
+        pd.DataFrame([{"name": name, "seed": 0, "status": "completed", "primary": s, "systema": s}]
+                     ).to_parquet(root / name / "0.parquet")
+    # registry: expression_only really completed THIS campaign; typed_static only registered (stale parquet)
+    rid = register_run(EXPRESSION_ONLY, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+    log_run(rid, "completed", {"systema": 0.10}, path=reg)
+    register_run(TYPED_STATIC, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+    summary = merge_lane_results([EXPRESSION_ONLY, TYPED_STATIC], seed=0, screening_root=root,
+                                 registry_path=reg)
+    by = {r["name"]: r for r in summary["results"]}
+    assert by[TYPED_STATIC]["status"] == "missing", "a stale parquet was accepted as a fresh result"
+    assert "h2a" not in summary, "H2a formed against a stale member"
+
+
+def test_promote_skips_a_stale_parquet_and_the_untracked_reference(tmp_path):
+    """Promotion must not crown last run's winner off a stale parquet, and must still accept a config
+    the registry does not track at all (the non-neural reference is never registered — but it is not
+    promotable anyway, so what this really pins is: a tracked-but-not-completed config is skipped while
+    a tracked-and-completed one is kept)."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"; reg = tmp_path / "registry.yaml"
+    _lane(root, EXPRESSION_ONLY, 0.10)
+    _lane(root, TYPED_STATIC, 0.99)                       # stale parquet with a winning score
+    rid = register_run(EXPRESSION_ONLY, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+    log_run(rid, "completed", {"systema": 0.10}, path=reg)
+    register_run(TYPED_STATIC, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)  # only registered
+    got = promote([EXPRESSION_ONLY, TYPED_STATIC], screening_root=root, registry_path=reg)
+    assert got["final"]["name"] == EXPRESSION_ONLY, "a stale parquet's score won promotion"
+    assert TYPED_STATIC not in [r["name"] for r in got["ranking"]]
+
+
+def test_merge_keeps_an_untracked_config_with_a_fresh_parquet(tmp_path):
+    """network_propagation is never registered (it is a non-neural reference, not a capped trial), so
+    with a registry passed it is UNTRACKED. The freshness guard must not drop an untracked config that
+    has a parquet — over-rejecting it would silently delete the reference row from the table whenever a
+    registry is used."""
+    from tcell_pipeline.screening.screening import merge_lane_results
+    root = tmp_path / "screening"; reg = tmp_path / "registry.yaml"
+    for name, s in ((EXPRESSION_ONLY, 0.10), (NETWORK_PROP, 0.03)):
+        (root / name).mkdir(parents=True)
+        pd.DataFrame([{"name": name, "seed": 0, "status": "completed", "primary": s, "systema": s}]
+                     ).to_parquet(root / name / "0.parquet")
+    rid = register_run(EXPRESSION_ONLY, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+    log_run(rid, "completed", {"systema": 0.10}, path=reg)   # netprop deliberately NOT registered
+    summary = merge_lane_results([EXPRESSION_ONLY, NETWORK_PROP], seed=0, screening_root=root,
+                                 registry_path=reg)
+    by = {r["name"]: r for r in summary["results"]}
+    assert by[NETWORK_PROP]["status"] == "completed", "an untracked reference was dropped by the guard"
+    assert by[NETWORK_PROP]["systema"] == pytest.approx(0.03)
+
+
+def test_promote_pins_the_preregistered_h1_over_the_screening_winner(tmp_path):
+    """The graph lost: on a negative fold the PI may freeze the PRE-REGISTERED confirmatory H1 rather
+    than the argmax screening winner (only the typed+gated model can support the feat-012 audit). Pin
+    must freeze that config as final REGARDLESS of rank, while recording honestly that it was not the
+    winner: its rank, the true screening winner, and a (negative) margin to the thing that beat it."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.0861)
+    _lane(root, UNTYPED_GNN, 0.0951)                      # the argmax winner
+    _lane(root, CONDITION_GATED, 0.0834)                 # the pre-registered H1 — 3rd of 3
+    got = promote([EXPRESSION_ONLY, UNTYPED_GNN, CONDITION_GATED], screening_root=root,
+                  pin=CONDITION_GATED, noise_margin=0.01)
+    assert got["final"]["name"] == CONDITION_GATED, "pin did not freeze the pre-registered H1"
+    assert got["pinned"] == CONDITION_GATED
+    assert got["pinned_rank"] == 3, "the honest rank of the pinned H1 was not recorded"
+    assert got["screening_winner"] == UNTYPED_GNN, "the true screening winner was hidden"
+    assert got["runner_up"]["name"] == UNTYPED_GNN, "runner-up should surface the model that outscored the H1"
+    assert got["margin"] == pytest.approx(0.0834 - 0.0951)   # NEGATIVE — the H1 lost to the winner
+    assert got["margin_within_noise"] is False               # |−0.0117| > 0.01: the H1 is meaningfully behind
+    assert got["final"]["checkpoint"].endswith(f"{CONDITION_GATED}/0/ckpt/stage_a_best.pt")
+
+
+def test_promote_pin_rejects_a_config_that_did_not_complete(tmp_path):
+    """Pinning a config with no completed result is an error, not a silent fallback to the argmax
+    winner — the PI asked for a specific H1 and must be told it isn't there."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.10)
+    _lane(root, UNTYPED_GNN, 0.20)
+    with pytest.raises(ValueError, match="pinned"):
+        promote([EXPRESSION_ONLY, UNTYPED_GNN], screening_root=root, pin=CONDITION_GATED)

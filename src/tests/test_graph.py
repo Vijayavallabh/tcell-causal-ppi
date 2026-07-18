@@ -555,3 +555,145 @@ def test_incident_rejects_duplicate_nodes():
     assert ok.numel() >= 0                                   # duplicate-free is accepted
     with pytest.raises(ValueError, match="duplicate-free"):
         index.incident("physical_ppi", 0, torch.tensor([0, 1, 1]))
+
+
+# --------------------------------------------------------------------------------------------------
+# Per-target subgraph cache: sample_subgraph is a pure function of (graph, gene, hops, cap), and the
+# donor-invariance training path re-forwards the SAME batch once per donor variant, so it re-samples
+# identical subgraphs 1+DONOR_INVARIANCE_SAMPLES times per step. Memoising is only safe if a hit is
+# indistinguishable from a fresh sample AND goes stale the instant the graph it was derived from does.
+# --------------------------------------------------------------------------------------------------
+def _assert_same_subgraph(a, b, why: str):
+    assert torch.equal(a[PROTEIN].orig_idx, b[PROTEIN].orig_idx), f"{why}: protein node set"
+    assert torch.equal(a[PROTEIN].x, b[PROTEIN].x), f"{why}: protein features"
+    assert torch.equal(a[COMPLEX].orig_idx, b[COMPLEX].orig_idx), f"{why}: complex node set"
+    for rel in ("physical_ppi", "co_complex", "functional_assoc"):
+        assert torch.equal(a[PROTEIN, rel, PROTEIN].edge_index,
+                           b[PROTEIN, rel, PROTEIN].edge_index), f"{why}: {rel} edge_index"
+        assert torch.equal(a[PROTEIN, rel, PROTEIN].edge_attr,
+                           b[PROTEIN, rel, PROTEIN].edge_attr), f"{why}: {rel} edge_attr"
+    assert torch.equal(a[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index,
+                       b[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index), f"{why}: membership edge_index"
+
+
+@pytest.mark.parametrize("hops", [1, 2])
+def test_subgraph_cache_hit_is_identical_to_a_fresh_sample(hops):
+    """A cached hit must equal what the sampler would have produced. Swept over EVERY gene, not a
+    hand-picked few: the last review found four probe genes that were exactly the ones that could not
+    fail while the sampler diverged on 35 of 60."""
+    graph, gene_to_idx = _dense_random_graph()
+    fresh = {g: sample_subgraph(graph, g, hops=hops, cap=512, gene_to_idx=gene_to_idx)
+             for g in gene_to_idx}                                    # populates the cache
+    for g in gene_to_idx:
+        _assert_same_subgraph(sample_subgraph(graph, g, hops=hops, cap=512, gene_to_idx=gene_to_idx),
+                              fresh[g], f"cached hit for {g}")
+
+
+def test_subgraph_cache_invalidates_when_edges_change():
+    """Same staleness hazard the CSR index has: a cached subgraph must not survive an edited topology,
+    or an edge-ablation control silently gets the neighbourhood it thought it had removed."""
+    graph, gene_to_idx = _dense_random_graph()
+    before = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    store = graph[PROTEIN, "physical_ppi", PROTEIN]
+    seed = gene_to_idx["G001"]
+    new = max(set(range(len(gene_to_idx))) - set(before[PROTEIN].orig_idx.tolist()))
+    store.edge_index = torch.cat([store.edge_index, torch.tensor([[seed], [new]])], dim=1)
+    store.edge_attr = torch.cat([store.edge_attr, store.edge_attr[:1]], dim=0)
+    after = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert new in after[PROTEIN].orig_idx.tolist(), "stale subgraph cache: appended edge never seen"
+
+
+def test_subgraph_cache_invalidates_when_edges_are_rewired_in_place():
+    """Topology has to be fingerprinted in its OWN right. Appending an edge also grows edge_attr, so
+    an append is still caught by the edge_attr stamp alone — it cannot tell whether topology is
+    fingerprinted at all. A rewire edits edge_index in place and leaves edge_attr untouched, which is
+    what an edge-ablation / rewired-network control actually does."""
+    graph, gene_to_idx = _dense_random_graph()
+    before = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    store = graph[PROTEIN, "physical_ppi", PROTEIN]
+    seed = gene_to_idx["G001"]
+    reached = set(before[PROTEIN].orig_idx.tolist())
+    new = max(set(range(len(gene_to_idx))) - reached)                  # an unreached node
+    out = (store.edge_index[0] == seed).nonzero().flatten()
+    assert out.numel(), "fixture must give G001 an outgoing physical_ppi edge to rewire"
+    store.edge_index[1, int(out[0])] = new                             # in place: shape/ptr unchanged
+    after = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert new in after[PROTEIN].orig_idx.tolist(), "stale subgraph cache: rewired edge never seen"
+
+
+def test_subgraph_cache_invalidates_when_node_features_change():
+    """The cached subgraph embeds graph[PROTEIN].x[sel] -- node FEATURES, which the edge-only
+    fingerprint does not cover. A features-only edit leaves the topology (and so the CSR index)
+    untouched, so nothing else forces a rebuild: without x in the fingerprint the cache serves the old
+    features forever, silently."""
+    graph, gene_to_idx = _dense_random_graph()
+    before = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    graph[PROTEIN].x = graph[PROTEIN].x + 1.0                          # topology untouched
+    after = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert torch.equal(after[PROTEIN].x, before[PROTEIN].x + 1.0), \
+        "stale subgraph cache: node features were edited but the cache served the old ones"
+
+
+def test_subgraph_cache_invalidates_when_edge_attributes_change():
+    """The cached subgraph also embeds edge_attr[kept]; edge_attr carries the confidence score the
+    graph regulariser reads, and editing it leaves edge_index (the topology) identical."""
+    graph, gene_to_idx = _dense_random_graph()
+    before = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    store = graph[PROTEIN, "physical_ppi", PROTEIN]
+    store.edge_attr = store.edge_attr + 0.5                            # topology untouched
+    after = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert not torch.equal(after[PROTEIN, "physical_ppi", PROTEIN].edge_attr,
+                           before[PROTEIN, "physical_ppi", PROTEIN].edge_attr), \
+        "stale subgraph cache: edge_attr was edited but the cache served the old values"
+
+
+def test_subgraph_cache_keys_on_hops_and_cap():
+    """hops/cap change the sampled neighbourhood, so they are part of the key -- a cache keyed on the
+    gene alone would hand a 2-hop request the 1-hop subgraph it had already stored."""
+    graph, gene_to_idx = _dense_random_graph()
+    one = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    two = sample_subgraph(graph, "G000", hops=2, cap=512, gene_to_idx=gene_to_idx)
+    small = sample_subgraph(graph, "G000", hops=2, cap=3, gene_to_idx=gene_to_idx)
+    assert one[PROTEIN].orig_idx.numel() < two[PROTEIN].orig_idx.numel(), "hops not in the key"
+    assert small[PROTEIN].orig_idx.numel() <= 3, "cap not in the key"
+    _assert_same_subgraph(sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx),
+                          one, "re-request of hops=1 after hops=2")
+
+
+def test_subgraph_cache_is_bounded(monkeypatch):
+    """The full real fold is 7,079 in-graph targets x ~4.6 MB = ~32 GB, so the cache is capped. Past
+    the cap it must keep serving correct subgraphs (evicting, not corrupting), and 0 disables it."""
+    from tcell_pipeline.graph import neighborhood_sampler as ns
+    graph, gene_to_idx = _dense_random_graph()
+    genes = list(gene_to_idx)[:8]
+    for size in (0, 2):
+        monkeypatch.setattr(config, "SUBGRAPH_CACHE_SIZE", size)
+        graph._subgraph_cache = None                                   # a fresh cache per size
+        got = {g: sample_subgraph(graph, g, hops=1, cap=512, gene_to_idx=gene_to_idx) for g in genes}
+        cache = getattr(graph, "_subgraph_cache", None)
+        held = 0 if cache is None else len(cache.entries)
+        assert held <= size, f"cache size {size} holds {held} entries"
+        for g in genes:                                                # eviction must not corrupt
+            _assert_same_subgraph(sample_subgraph(graph, g, hops=1, cap=512, gene_to_idx=gene_to_idx),
+                                  got[g], f"after eviction at size={size}, gene {g}")
+
+
+def test_subgraph_cache_hands_out_independent_copies():
+    """HeteroData.to(device) MUTATES IN PLACE and returns the same object, and encode_subgraph does
+    `sub = sub.to(device)` on whatever the sampler handed it. Serving the cached object itself would
+    let that migrate the entry onto the GPU (a ~32 GB host cache becoming a GPU allocation), and any
+    caller edit would silently poison every later sample of that target."""
+    graph, gene_to_idx = _dense_random_graph()
+    first = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    baseline = first[PROTEIN].x.clone()
+    # the edit has to land on a cache HIT: the miss path returns the object it stored a clone OF, so
+    # editing that one proves nothing (it was never the cached entry).
+    hit = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert hit is not first, "cache handed out the same object twice"
+    hit[PROTEIN].x += 1.0                                    # what sub.to(device) does, in place
+    after = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert torch.equal(after[PROTEIN].x, baseline), "an edit to a cache HIT poisoned the cache"
+    first[PROTEIN].x += 1.0                                  # and the miss path's copy is loose too
+    assert torch.equal(sample_subgraph(graph, "G000", hops=1, cap=512,
+                                       gene_to_idx=gene_to_idx)[PROTEIN].x, baseline), \
+        "an edit to the miss path's return value poisoned the cache"

@@ -6,11 +6,14 @@ family; at most 16 for each of no more than two close trainable comparator famil
 ``register_run`` reserves an ID (and refuses to exceed a family's cap); ``log_run`` records the outcome of
 a reserved run — status, metrics, checkpoint, GPU hours — including FAILED runs, so the registry is a
 complete audit trail rather than a record of successes only.
-ponytail: single-process sequential read-modify-write, no file lock; add advisory locking before running
-the four real GPU lanes concurrently against one manifest.
+
+Both are read-modify-write over one manifest, and the screening campaign fans ONE PROCESS PER GPU against
+it, so both take an exclusive advisory lock (``_locked``).
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 from pathlib import Path
 
 import yaml
@@ -18,6 +21,33 @@ import yaml
 from tcell_pipeline import config
 
 _EGIPG_FAMILY = "egipg"
+
+
+@contextlib.contextmanager
+def _locked(path: Path):
+    """Serialise a read-modify-write of the manifest across processes.
+
+    The campaign runs one lane per GPU against one manifest. Unlocked, two lanes read the same run
+    list, both append, and the second ``_save`` overwrites the first's entry — dropping runs from
+    what is meant to be a COMPLETE audit trail and handing two lanes the same ``run-NNNN``, so a
+    later ``log_run`` writes the wrong row. It also crashes outright: ``write_text_atomic`` stages
+    through a fixed ``<name>.tmp``, so concurrent writers collide on that path and the loser's
+    rename raises FileNotFoundError.
+
+    The lock lives on a SIDECAR file, never the manifest itself: ``_save`` replaces the manifest via
+    rename, so its inode changes underneath any lock held on it and two processes would end up
+    holding locks on different inodes. flock is advisory and per-open-file-description, so it works
+    across processes and is released even if the holder is killed.
+    """
+    path = Path(path)
+    lock_path = path.with_name(path.name + ".lock")
+    config.ensure_dir(lock_path.parent)
+    with open(lock_path, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def _cap_for(family: str) -> int:
@@ -43,39 +73,45 @@ def register_run(config_id: str, hypothesis: str, inputs, split: str, seed: int,
     re-run or a retry after failure — always succeeds and never consumes a fresh slot, so repeatedly running
     the driver can't silently exhaust the 32 EG-IPG / 16 per-comparator budget. Only a NEW config beyond the
     cap raises ``ValueError`` — a hard ceiling on the frozen search surface. Every execution is still logged
-    (a new run ID appended), so the audit trail stays complete."""
-    runs = load_registry(path)
-    cap = _cap_for(family)
-    seen = {r["config_id"] for r in runs if r.get("family") == family}
-    if config_id not in seen and len(seen) >= cap:
-        raise ValueError(f"{family} family trial cap reached ({len(seen)}/{cap} distinct configs); "
-                         f"cannot register new config {config_id!r}")
-    if family != _EGIPG_FAMILY:  # "no more than two close trainable comparator families" (report §1291)
-        comp_families = {r["family"] for r in runs if r.get("family") != _EGIPG_FAMILY}
-        if family not in comp_families and len(comp_families) >= config.MAX_COMPARATOR_FAMILIES:
-            raise ValueError(f"comparator-family cap reached ({len(comp_families)}/"
-                             f"{config.MAX_COMPARATOR_FAMILIES}); cannot register new family {family!r}")
-    run_id = f"run-{len(runs) + 1:04d}"
-    runs.append({
-        "run_id": run_id, "config_id": config_id, "family": family, "hypothesis": hypothesis,
-        "inputs": inputs, "split": split, "seed": int(seed), "budget": budget,
-        "status": "registered", "metrics": {}, "checkpoint": None, "gpu_hours": None,
-    })
-    _save(runs, path)
-    return run_id
+    (a new run ID appended), so the audit trail stays complete.
+
+    The whole read-check-append-write runs under the lock: the cap is only a real ceiling if two
+    lanes cannot both read ``len(seen) == cap - 1`` and both append."""
+    with _locked(path):
+        runs = load_registry(path)
+        cap = _cap_for(family)
+        seen = {r["config_id"] for r in runs if r.get("family") == family}
+        if config_id not in seen and len(seen) >= cap:
+            raise ValueError(f"{family} family trial cap reached ({len(seen)}/{cap} distinct configs); "
+                             f"cannot register new config {config_id!r}")
+        if family != _EGIPG_FAMILY:  # "no more than two close trainable comparator families" (report §1291)
+            comp_families = {r["family"] for r in runs if r.get("family") != _EGIPG_FAMILY}
+            if family not in comp_families and len(comp_families) >= config.MAX_COMPARATOR_FAMILIES:
+                raise ValueError(f"comparator-family cap reached ({len(comp_families)}/"
+                                 f"{config.MAX_COMPARATOR_FAMILIES}); cannot register new family {family!r}")
+        run_id = f"run-{len(runs) + 1:04d}"
+        runs.append({
+            "run_id": run_id, "config_id": config_id, "family": family, "hypothesis": hypothesis,
+            "inputs": inputs, "split": split, "seed": int(seed), "budget": budget,
+            "status": "registered", "metrics": {}, "checkpoint": None, "gpu_hours": None,
+        })
+        _save(runs, path)
+        return run_id
 
 
 def log_run(run_id: str, status: str, metrics: dict | None = None, checkpoint: str | None = None,
             gpu_hours: float | None = None, path: Path = config.REGISTRY_PATH) -> dict:
     """Record the outcome of a reserved run (``completed`` / ``failed`` / any status). Raises if the ID was
-    never registered — an outcome can only attach to a reserved run."""
-    runs = load_registry(path)
-    for r in runs:
-        if r["run_id"] == run_id:
-            r["status"] = status
-            r["metrics"] = metrics or {}
-            r["checkpoint"] = checkpoint
-            r["gpu_hours"] = gpu_hours
-            _save(runs, path)
-            return r
+    never registered — an outcome can only attach to a reserved run. Locked: another lane's
+    concurrent append must not be lost by this one's read-modify-write."""
+    with _locked(path):
+        runs = load_registry(path)
+        for r in runs:
+            if r["run_id"] == run_id:
+                r["status"] = status
+                r["metrics"] = metrics or {}
+                r["checkpoint"] = checkpoint
+                r["gpu_hours"] = gpu_hours
+                _save(runs, path)
+                return r
     raise KeyError(f"run_id {run_id!r} not found in registry {path}")

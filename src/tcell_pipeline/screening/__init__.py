@@ -3,6 +3,7 @@ from tcell_pipeline.screening.experiment_registry import (
     log_run,
     register_run,
 )
+from tcell_pipeline.screening.promotion import promote
 from tcell_pipeline.screening.screening import (
     CONDITION_GATED,
     EXPRESSION_ONLY,
@@ -15,6 +16,7 @@ from tcell_pipeline.screening.screening import (
     collect_truth,
     compute_all_metrics,
     dataset_delta_z,
+    merge_lane_results,
     nested_family_configs,
     nested_family_factories,
     run_screening,
@@ -34,6 +36,8 @@ __all__ = [
     "collect_targets_truth",
     "dataset_delta_z",
     "compute_all_metrics",
+    "merge_lane_results",
+    "promote",
     "nested_family_factories",
     "nested_family_configs",
     "EXPRESSION_ONLY",

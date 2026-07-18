@@ -19,8 +19,15 @@ leftovers: original edge order is what the growth ranking ties on and what Modul
 edge position) pairs address. _PRIORITY_BONUS adds 1e6 to a float32 score, whose spacing at 1e6 is
 0.0625, so scores quantise into ties in bulk and the tie-break order decides which neighbours
 survive the cap. Delete either sort and the sampler silently returns a different neighbourhood.
+
+Sampling a target is a pure function of (graph, gene, hops, cap), and the donor-invariance training
+path re-forwards the SAME batch once per donor variant, so it re-samples identical subgraphs
+1+DONOR_INVARIANCE_SAMPLES times per step -- and targets repeat ~3x per epoch besides. So results are
+memoised per target (``_SubgraphCache``), bounded by ``config.SUBGRAPH_CACHE_SIZE``.
 """
 from __future__ import annotations
+
+from collections import OrderedDict
 
 import torch
 from torch_geometric.data import HeteroData
@@ -68,11 +75,73 @@ def _edge_stores(graph: HeteroData):
     yield _MEMBERSHIP, 0, graph[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index  # keyed on the protein endpoint
 
 
+def _stamp(t: torch.Tensor) -> tuple:
+    """Cheap identity of a tensor: storage address, shape, and autograd's in-place version counter.
+    Catches it being reassigned, resized, or edited in place -- the ways a graph actually changes."""
+    return (t.data_ptr(), tuple(t.shape), t._version)
+
+
 def _fingerprint(graph: HeteroData) -> tuple:
-    """Cheap identity of the edge_index tensors the index was built from: storage address, shape, and
-    autograd's in-place version counter. Catches a relation being reassigned, resized, or edited in
-    place -- the ways a graph actually changes."""
-    return tuple((ei.data_ptr(), tuple(ei.shape), ei._version) for _, _, ei in _edge_stores(graph))
+    """Identity of the edge_index tensors the CSR index is built from -- topology only, which is all
+    the index depends on."""
+    return tuple(_stamp(ei) for _, _, ei in _edge_stores(graph))
+
+
+def _content_fingerprint(graph: HeteroData) -> tuple:
+    """Identity of everything a SAMPLED SUBGRAPH is derived from -- strictly more than the topology
+    the CSR index needs. sample_subgraph copies node features (``graph[PROTEIN].x[sel]``) and edge
+    attributes (``ea[kept]``) into the subgraph it returns, and editing either leaves every
+    edge_index untouched, so ``_fingerprint`` would never notice and nothing else would force a
+    rebuild. A subgraph cache keyed on topology alone would then serve the old features forever,
+    silently -- the same staleness hazard the CSR index has, one level further out."""
+    stores = [graph[PROTEIN, rel, PROTEIN] for rel in _PP_RELATIONS]
+    stores.append(graph[PROTEIN, _MEMBERSHIP, COMPLEX])
+    return (_fingerprint(graph), _stamp(graph[PROTEIN].x), int(graph[COMPLEX].num_nodes),
+            tuple(_stamp(s.edge_attr) for s in stores))
+
+
+class _SubgraphCache:
+    """Bounded LRU memo of ``sample_subgraph``, cached on the graph like the CSR index.
+
+    Worth it because the same subgraph is sampled several times over: the donor-invariance training
+    path re-forwards each batch 1+DONOR_INVARIANCE_SAMPLES times per step (sampling is identical
+    every time -- it depends on neither the donor nor the model weights nor train/eval mode), and
+    targets recur ~3x per epoch and every epoch after.
+
+    A hit is ``clone()``d, NOT handed out directly: ``HeteroData.to(device)`` mutates in place and
+    returns the same object, so ``encode_subgraph``'s ``sub = sub.to(device)`` would migrate the
+    cached entry onto the GPU -- turning a ~32 GB host-side cache into a GPU allocation. The clone
+    costs ~0.5 ms against the ~28 ms it saves.
+    """
+
+    def __init__(self, fingerprint: tuple) -> None:
+        self.fingerprint = fingerprint
+        self.entries: OrderedDict = OrderedDict()
+
+    def get(self, key: tuple) -> HeteroData | None:
+        sub = self.entries.get(key)
+        if sub is None:
+            return None
+        self.entries.move_to_end(key)
+        return sub.clone()
+
+    def put(self, key: tuple, sub: HeteroData, size: int) -> None:
+        if size <= 0:  # 0 disables the cache
+            return
+        self.entries[key] = sub.clone()  # decouple from whatever the caller does to its copy
+        self.entries.move_to_end(key)
+        while len(self.entries) > size:
+            self.entries.popitem(last=False)
+
+
+def _cache_for(graph: HeteroData) -> _SubgraphCache:
+    """The graph's subgraph cache, dropped wholesale if anything it was derived from changed."""
+    cache = getattr(graph, "_subgraph_cache", None)
+    fingerprint = _content_fingerprint(graph)
+    if cache is None or cache.fingerprint != fingerprint:
+        cache = _SubgraphCache(fingerprint)
+        graph._subgraph_cache = cache
+    return cache
 
 
 class _NeighborIndex:
@@ -180,8 +249,24 @@ def sample_subgraph(
     cap: int = config.NEIGHBORHOOD_CAP,
     gene_to_idx: dict[str, int] | None = None,
 ) -> HeteroData:
-    """Return the induced ≤``cap``-node subgraph around ``target_gene`` (KeyError if unknown)."""
+    """Return the induced ≤``cap``-node subgraph around ``target_gene`` (KeyError if unknown).
+
+    Memoised per (gene, hops, cap) up to ``config.SUBGRAPH_CACHE_SIZE`` entries; the cache is
+    dropped whole if the graph it was derived from changes. Every caller gets its own copy.
+    """
     gene_to_idx = gene_to_idx if gene_to_idx is not None else graph.gene_to_idx
+    cache = _cache_for(graph)
+    key = (target_gene, hops, cap)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    sub = _sample_subgraph(graph, target_gene, hops, cap, gene_to_idx)
+    cache.put(key, sub, config.SUBGRAPH_CACHE_SIZE)
+    return sub
+
+
+def _sample_subgraph(graph, target_gene, hops, cap, gene_to_idx) -> HeteroData:
+    """The real sampler (cache miss path)."""
     index = _index_for(graph)
     seed = gene_to_idx[target_gene]
     selected = _grow(graph, seed, hops, cap, index)

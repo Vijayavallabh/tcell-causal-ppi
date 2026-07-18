@@ -108,6 +108,14 @@ EDGE_DROPOUT: float = 0.1        # DropEdge probability during training
 # ceiling. Costs ~8% throughput vs one big batch (bs=32 measured 15.2 vs 16.3 rows/s at bs=8) for a 3x
 # smaller footprint. 0/None disables chunking.
 GRAPH_ENCODE_CHUNK: int = int(os.environ.get("GRAPH_ENCODE_CHUNK", 8))
+# Sampling a target's subgraph costs ~28 ms and depends on neither the donor, the model weights, nor
+# train/eval mode — but DONOR_INVARIANCE re-forwards each batch 1+DONOR_INVARIANCE_SAMPLES times per
+# step, so it is paid 3x per row per step, and targets recur ~3x per epoch besides (7,079 unique over
+# 21,262 train rows). Memoising per target removes ~85 of condition_gated's ~183 ms/row. Real
+# subgraphs average 4.6 MB, so the default holds the batch (killing the within-step 3x for ~0.3 GB);
+# raise it toward the fold's unique-target count to also catch cross-row and cross-epoch reuse, at
+# ~4.6 MB each (~32 GB for a whole fold). 0 disables the cache.
+SUBGRAPH_CACHE_SIZE: int = int(os.environ.get("SUBGRAPH_CACHE_SIZE", 64))
 EDGE_FEATURE_DIM: int = 8        # source_onehot(5)+score(1)+is_direct_binary(1)+n_supporting(1)
 COMPLEX_EMBED_DIM: int = 256     # learned protein-complex node embedding dim
 CONDITION_EMBED_DIM: int = 64    # culture-condition embedding feeding the edge gate (Module 1 pattern)

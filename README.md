@@ -664,23 +664,55 @@ hours-long: the untyped GNN did not finish one epoch on the 21,262-row fold in ~
 `sample_subgraph`, at **95%**, because growing and inducing each subgraph scanned the whole ~8M-edge
 table *per row*. A CSR neighbour index (built once per graph) plus PyG mini-batching fixed it:
 
-| A100, forward+backward, bs=8 | before | after |
+| A100, **graph encoder only**, forward+backward, bs=8 | before | after |
 | --- | --- | --- |
 | per row | 667 ms | **61 ms** |
 | GPU utilisation | median 1% | median 46% |
 | 21,262-row epoch | 3.94 h | **0.36 h** |
 
 **10.9× end-to-end**, so the §10.6 nested family now runs on the full fold rather than a capped one.
+
+> ⚠ **Do not size a training run from the 0.36 h above** — it benchmarks the *encoder*, not a `Trainer`
+> step. `DONOR_INVARIANCE` is on by default and `Trainer._donor_variants` re-forwards the **whole
+> model** once per donor variant, so a real step is `1 + DONOR_INVARIANCE_SAMPLES` = **3 forwards**.
+> Measured on the real fold: `condition_gated` **183.4 ms/row = exactly 3.0×** the 61 ms bench. That
+> mistake sizes a 20-epoch campaign at ~7 h when it is really 22.7 h.
+
+A **per-target subgraph cache** (`config.SUBGRAPH_CACHE_SIZE`, default 64) closes most of that back.
+Sampling depends only on `(graph, gene)` — not the donor, the weights, or train/eval mode — so it is
+memoisable, and it is otherwise re-derived 3× per step and ~3× per epoch again:
+
+| real fold, bs=8, steady state | train ms/row | 20-epoch h |
+| --- | --- | --- |
+| condition_gated | 183.4 → **102.8** | 22.7 → **12.5** |
+| typed_static | 158.3 → **80.3** | → 9.8 |
+| untyped_gnn | 95.7 → **18.1** (5.3×) | → 2.3 |
+
+**1.8× end-to-end**; GPU utilisation median 46% → **99%**. Costs ~4.5 MB per cached target, so raise it
+toward the fold's unique-target count (a lane's 8,541 ≈ **38.6 GB RSS**) only when the RAM is there.
+
 Use `--batch-size 8` (bs=32 buys ~5% for 3× the memory). Evaluation may keep `BATCH_SIZE=64`: the
 encoders message-pass at most `config.GRAPH_ENCODE_CHUNK` (default 8) subgraphs at once and stitch, so
 peak eval memory is bounded (12.53 GB → 2.01 GB at batch 64 / `no_grad`) without changing results.
 Chunking does **not** reduce *training* memory — autograd retains every chunk until backward.
 
+**Keep `torch.set_num_threads(1)`** (the drivers do). `sample_subgraph` costs 28.3 ms/target at 1
+thread, 19.9 at 8, and **470.7 at this box's 64-thread default** — a 17× cliff that makes the sampler
+look hopeless if you call it without pinning threads.
+
 The old capped-fold numbers (H2a +0.001, H2b −0.006 on 1,000 rows / 1 epoch) were **noise in the
-near-null-signal regime and should not be cited**; the genuine H2a/H2b test needs convergent training on
-the full fold, which is now affordable and is the next compute task. `run_full_pipeline.sh` runs Modules
-1-7 unattended under nohup. Design + measurements: `docs/specs/2026-07-17-graph-throughput-minibatch.md`.
-Reviews: `docs/reviews/2026-07-16-code-review-module7.md`.
+near-null-signal regime and should not be cited**. The genuine H2a/H2b test — the §10.6 family on one
+shared full fold — is the **feat-011 campaign** (`./run_screening_campaign.sh`, ~12.5 h over three
+A100s), which fans one lane per GPU (`--only NAME`), recombines with `--merge`, and names the frozen H1
+with `--promote`. `run_full_pipeline.sh` runs Modules 1-7 unattended under nohup. Design +
+measurements: `docs/specs/2026-07-17-feat011-full-fold-campaign.md` and
+`docs/specs/2026-07-17-graph-throughput-minibatch.md`. Reviews:
+`docs/reviews/2026-07-16-code-review-module7.md`.
+
+Note when reading screening logs: **`best_val` is not comparable across the family.** `typed_static`
+pins its gates to 1.0, so its sparsity penalty is an irreducible constant — it scores val 490.4 where
+`condition_gated` scores 3.47 on the same fold. H2a/H2b and promotion rank on `systema` for this
+reason.
 
 ## Repository / data-mart layout
 

@@ -1,0 +1,225 @@
+# feat-011 — full-fold screening campaign: subgraph cache, concurrent lanes, promotion (2026-07-17)
+
+Runs the §10.6 nested confirmatory family to a 20-epoch budget on ONE shared FULL fold (21,262 train /
+4,400 val) and reports H2a/H2b on `systema_pert_specific_delta`, replacing the capped-fold numbers
+(H2a +0.0010 / H2b −0.0062) that were noise at 1 epoch on 1,000 rows.
+
+**Status: launched 2026-07-17 19:20 IST, ~12.5 h.** Results + the honest verdict land in the Results
+section below; until then this file documents the method and the infrastructure it needed.
+
+## The estimate the campaign was almost launched on was wrong
+
+The Module 7 RESOLVED note offered **0.36 h/epoch**. That number is an *encoder-only* benchmark
+(`bench.py`: forward+backward through the graph encoder). The real `Trainer` step is 3× larger, and
+the campaign is 4 lanes × 20 epochs, so launching on it would have missed by ~2.5×.
+
+Measured on the real fold (A100, bs=8), `condition_gated` is **183.4 ms/row**, and
+183.4 / 61 = **3.0** — exactly `1 + DONOR_INVARIANCE_SAMPLES`. `Trainer._donor_variants` re-forwards
+the WHOLE model once per donor variant, and the graph encoder samples + message-passes on every one.
+`trainer.py` had carried the marker since Module 5:
+
+> `ponytail: each variant re-runs the (donor-independent) graph message passing; cache node states +
+> re-run only readout+decoder per donor if Stage A throughput becomes graph-bound.`
+
+Stage A is now graph-bound, so the deferred note had become load-bearing.
+
+## What was cached — and what deliberately was not
+
+The obvious read of that marker is "cache node states across the variants". **That is wrong**, and the
+reason matters: `_donor_variants` calls `self.model.eval()`, so the variants run with **DropEdge off**
+while the main forward runs with it **on**. Their node states are not the same tensor and reusing one
+for the other would leak a DropEdge mask into the donor-invariance signal. Node states are also a
+function of the model WEIGHTS, so any cache of them that outlives a single optimiser step returns
+states from stale weights.
+
+What *is* safely reusable is the **sampled subgraph**: `sample_subgraph` is a pure function of
+`(graph, gene, hops, cap)` — independent of the donor, the weights, and train/eval mode. It is
+re-derived 3× per row per step and ~3× again per epoch (7,079 unique in-graph targets over 21,262
+train rows) and every epoch after. This is the per-target cache the throughput spec already named as
+the next ceiling.
+
+`_SubgraphCache` (bounded LRU, `config.SUBGRAPH_CACHE_SIZE`, cached on the graph like the CSR index):
+
+| condition_gated, real fold, bs=8 | train ms/row | val ms/row |
+| --- | --- | --- |
+| no cache | 183.4 | 42.2 |
+| cache = batch only | 127.5 | 23.5 |
+| **cache ≥ fold (9000)** | **102.8** | **13.0** |
+
+| lane | train ms/row before → after | h/epoch | 20-epoch h |
+| --- | --- | --- | --- |
+| expression_only | 2.7 → 2.6 | 0.018 | 0.35 |
+| untyped_gnn | 95.7 → **18.1** (5.3×) | 0.114 | 2.3 |
+| typed_static | 158.3 → **80.3** | 0.490 | 9.8 |
+| condition_gated | 183.4 → **102.8** | 0.623 | **12.5** |
+
+**1.8× end-to-end: 22.7 h → 12.5 h wall clock** fanned over three A100s (~25 GPU-hours). `untyped_gnn`
+gains 5.3× because its message passing is cheap — it was almost pure sampling. Cost: **38.6 GB RSS per
+graph lane** (8,541 unique targets — 7,079 train + 1,462 val, disjoint by construction — at ~4.5 MB
+each), ~116 GB for the three lanes against 440 GB free. Measured at 38.1 GB warm, against a 38.6 GB
+prediction.
+
+**Not done, deliberately:** the readout/decoder still re-run per donor variant (they are cheap and
+genuinely donor-dependent), and the sampler is still row-by-row. GPU utilisation went from a median
+46% to **99% / 84% / 43%** across the lanes, so sampling is no longer the floor.
+
+### Two traps the cache had to be built around
+
+- **`HeteroData.to(device)` mutates in place and returns the same object** (verified, not assumed).
+  `encode_subgraph` does `sub = sub.to(device)` on whatever the sampler hands it, so serving the cached
+  object itself would migrate a ~38 GB host cache onto the GPU. Hits are `clone()`d — ~0.5 ms against
+  the ~28 ms saved.
+- **A subgraph depends on strictly more than the CSR index does.** `_fingerprint` stamps only
+  `edge_index`, but a sampled subgraph embeds `graph[PROTEIN].x[sel]` and `edge_attr[kept]`. Editing
+  either leaves every `edge_index` untouched, so nothing would force a rebuild and the cache would
+  serve stale features forever. Hence `_content_fingerprint` (topology + `x` + `edge_attr` + complex
+  count) — the same staleness hazard the review already caught on the index, one level out.
+
+## The sampler's thread cliff (found in passing, and it is a live trap)
+
+`sample_subgraph` on the real graph, by `torch.get_num_threads()`:
+
+| threads | ms/target |
+| --- | --- |
+| 1 | 28.3 |
+| 8 | **19.9** |
+| **64 (this box's default)** | **470.7** |
+
+**17× slower at the default.** `run_screening` and `test_screening` already call
+`torch.set_num_threads(1)`, which is the only reason the measured numbers are sane — but any caller
+that forgets inherits a 470 ms/target sampler and will conclude the sampler is hopeless. This also
+reconciles the spec's 22 ms/row with a naive 505 ms/target reading. The driver's `1` is left as-is
+(known-safe, and the cache removes most sampling anyway); 8 is on the table if sampling ever matters
+again.
+
+## Infrastructure the campaign needed
+
+- **Registry advisory lock** (`experiment_registry._locked`). Its own marker said to add locking
+  "before running the four real GPU lanes concurrently against one manifest" — this campaign is that.
+  Unlocked it is worse than lossy: `write_text_atomic` stages through a **fixed** `<name>.tmp`, so
+  concurrent lanes collide on that path and the loser's rename raises `FileNotFoundError` — the
+  campaign would have crashed partway. The whole read-check-append-write is under the lock (the cap is
+  only a ceiling if two lanes cannot both read `cap - 1` and both append). Lock is on a sidecar file:
+  `_save` renames the manifest, so its inode changes under any lock held on it.
+- **`--only NAME`** — one config per process, so the wave fans one lane per GPU (12.5 h vs ~25 h
+  sequential). A lane writes its row + predictions + registry entry but **not** `summary.json`: a
+  lane's summary would claim the whole wave.
+- **`--merge`** — recombines the lanes' rows into `summary.json` + H2a/H2b once they all land. A lane
+  that never landed is recorded `status: missing` and drops out of the contrast; it exits non-zero.
+  Silently omitting it would leave a summary that reads like full coverage of a short wave.
+- **Stale-parquet guard.** `--merge` and `--promote` read `<root>/<name>/<seed>.parquet`, and the tree
+  accumulates parquets across runs — confirmed live: `condition_gated`/`typed_static` parquets were
+  from 15:44/15:49 (a prior run) while this campaign's lanes were still training, so a *manual* early
+  `--merge` would report last run's numbers as this result. Both now take the registry and force a
+  config whose latest run isn't `completed` to `missing`/skip (log_run flips status in place, so the
+  newest run per config is the truth). The guard only demotes configs the registry TRACKS — the
+  never-registered `network_propagation` reference falls back to parquet presence, or the guard would
+  silently drop it. The campaign script itself is safe by ordering (it merges only after every `wait`),
+  so this protects the human/next-session path.
+- **`--promote`** (`screening/promotion.py`) — nothing existed to name the frozen H1, yet feat-010,
+  feat-012 and feat-013 all consume "the promoted model" (`N_FINAL_SEEDS` was declared in config and
+  referenced nowhere). Ranks on `systema` — NOT `best_val`, which is not comparable across the family
+  at all: the graph members' totals carry regulariser terms expression_only has no equivalent of
+  (measured this run: typed_static val 490.4 vs expression_only 3.47). Refuses to promote a row with
+  no checkpoint on disk, excludes the non-neural `network_propagation` reference, breaks exact ties by
+  name (reachable, not hypothetical), and flags a first-vs-second margin inside `--noise-margin` as a
+  coin toss rather than a win. It is the single-seed screening promotion, **not** the report's
+  five-seed promotion — that remains a separate campaign, and `promoted.json` says so in `basis`.
+
+## Epoch budget and the early-stopping rule
+
+**20 epochs, and the budget IS the wall clock.** `Trainer` early-stops on val total with `patience=10`,
+but its min-delta is **1e-6** against improvements of ~1e-3/epoch, so patience never increments and it
+will not fire. Measured again on this very run: untyped_gnn val moved −0.0047 over 5 epochs.
+
+There was no convergence evidence to size the budget from — every prior graph run was 1 epoch, and M5
+expression-only was still descending when it stopped at epoch 3 (3.4726 → 3.4697). So **if val is
+still descending at epoch 20 the honest verdict is "not converged at budget", not convergence.**
+
+## Verification
+
+`./init.sh` green at **268** (252 + 16). Every new test was watched failing, and the diff was
+mutation-tested — which caught **two tests passing for the wrong reason**:
+
+- the edges-invalidation test appended to `edge_index` *and* `edge_attr`, so the `edge_attr` shape
+  change masked a missing topology stamp: dropping topology from the fingerprint left it green. Fixed
+  by adding an in-place **rewire** test (which is what an edge-ablation control actually does).
+- the cache-isolation test mutated the miss path's return value, which is the object the cache stored
+  a clone OF — so it was never the cached entry and dropping `.clone()` on hit stayed green. Fixed by
+  mutating a **hit**.
+
+That is the same lesson the throughput review paid for: a test can pass because it is pointed at the
+one thing that cannot fail. Mutations now caught: 10/10 (6 cache, 2 harness, 4 promotion).
+
+Fan-out smoke on real data before launch: 4 concurrent lanes + merge, all exit 0, registry holds 4 runs
+with 4 distinct ids and zero loss under genuine contention.
+
+The sealed challenge split (5,608 rows) was **not** touched and remains unopened; every lane scores
+`val`.
+
+## Results (2026-07-18, campaign finished 03:32 IST — 8.2 h wall clock)
+
+All 5 members completed on the shared full fold (21,262 train / 4,400 val). `summary.json` +
+`experiment_registry.yaml` written; every parquet verified fresh (post-launch mtime). **This is a
+negative result for the EG-IPG's central premise, reported as one — not tuned.**
+
+| rank on `systema` | model | systema | pearson | mae | rmse |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **untyped_gnn** (homogeneous GCN) | **0.0951** | 0.1191 | 0.8138 | 1.0335 |
+| 2 | expression_only (no graph) | 0.0861 | 0.1153 | 0.8147 | 1.0342 |
+| 3 | condition_gated (full EG-IPG) | 0.0834 | 0.1127 | 0.8155 | 1.0361 |
+| 4 | typed_static | 0.0786 | 0.1107 | 0.8309 | 1.0541 |
+| — | network_propagation (reference) | 0.0319 | 0.0880 | 0.8174 | 1.0369 |
+
+- **H2a (typed_static > expression_only): NOT supported, Δsystema = −0.0075.** Adding the typed PPI
+  graph *lowers* systema below the expression-only model. The graph structure does not help on this
+  fold; it hurts.
+- **H2b (condition_gated > typed_static): supported, Δsystema = +0.0048.** Condition gating recovers
+  part of what typing lost — but read it in context: condition_gated (0.0834) is **still below**
+  expression_only (0.0861), so the full typed+gated EG-IPG does **not** beat the no-graph baseline. H2b
+  is a within-family recovery, not evidence the graph pathway earns its place.
+- **The best screening score is the untyped diagnostic** (a plain GCN over all edges collapsed to one
+  type). The report anticipated this "untyped-graph diagnostic" as the outcome to watch for, and it is
+  what happened: whatever signal the PPI graph carries is captured better by an untyped GCN than by the
+  typed, provenance-aware, condition-gated architecture the project is built around.
+
+**Magnitudes / confidence.** All neural members sit within ~0.017 systema of each other on a ~0.086
+base; the promotion margin (untyped_gnn − expression_only = 0.0090) is **inside the 0.01 noise band**
+and was flagged a coin toss. This is single-seed screening, so there are no formal error bars — the
+report's 5-seed promotion would be needed for those. The direction, not the decimals, is the result.
+
+**Convergence — an asymmetry that matters.** expression_only ran the full 20 epochs and was **still
+descending** (best val @ep19): its 0.0861 is a NOT-converged model that would likely climb with more
+budget. The two typed graph models **overfit almost immediately** (typed_static best @ep2 then
+early-stopped @13; condition_gated best @ep1, early-stopped @12) — their best checkpoints are barely
+trained. untyped_gnn plateaued (best @ep13 of 20). So the comparison is between a still-improving
+no-graph model and graph models that stop learning at epoch 1–2. If anything, more budget widens the
+gap *against* the graph.
+
+**Compute.** 8.2 h wall clock over three A100s (early stopping ended the typed lanes before 20 epochs).
+Registry gpu_hours: condition_gated 8.17, typed_static 6.89, untyped_gnn 2.31, expression_only 0.359
+(network_propagation CPU, unregistered) → **17.7 GPU-hours**. GPU utilisation ran 79–99% on the graph
+lanes for the bulk of the run (median 46% → ~90% after the subgraph cache), confirming the cache moved
+the bottleneck off CPU sampling. Peak ~51 GB on condition_gated's A100.
+
+**Promotion (`promoted.json`).** The *mechanical* argmax pick (rank all trainable members on `systema`,
+exclude the non-neural reference) was FINAL = untyped_gnn, margin +0.0090 **within noise** — but
+untyped_gnn has no typed edges or condition gate, so it **cannot support the feat-012 rationale audit**
+and is not the confirmatory H1 the project defines. That made the choice a PI decision, not a
+mechanical one.
+
+**Decision taken (2026-07-18): freeze `condition_gated`, the pre-registered confirmatory H1** (via
+`--promote --pin condition_gated`). The confirmatory protocol commits to the typed+gated model as H1
+before seeing the fold; keeping it — rather than swapping in the argmax winner after the fact — is what
+makes the negative result honest, and it is the only choice under which feat-012's audit can run.
+`promoted.json` records this without dressing it up: `final = condition_gated`, `pinned_rank = 3/4`,
+`screening_winner = untyped_gnn`, `runner_up = untyped_gnn`, `margin = −0.0117` (the frozen H1 is
+**behind** the model that won screening), `margin_within_noise = False`. So the frozen H1 is the
+pre-committed model, and the record states plainly that it lost to an untyped GCN and to the no-graph
+baseline. Nothing here is tuned; the negative result stands and is carried forward intact.
+
+The `--pin` path is pinned by tests (freeze-over-winner, reject-a-config-that-didn't-complete) and the
+pin logic mutation-tested 3/3. `run_module8_real.py`'s `run_audit` still carries a stale line — "the
+graph model cannot converge until the mini-batch refactor lands" — that is now false (the refactor
+landed; `condition_gated/0/ckpt/stage_a_best.pt` is a trained graph checkpoint); it should be corrected
+when feat-012 is picked up.
