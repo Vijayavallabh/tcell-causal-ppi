@@ -275,3 +275,11 @@ still catches every reassignment and every normal in-place edit.
 
 The frozen H1 is unchanged by all of this: `--promote --pin condition_gated` still reproduces
 condition_gated at rank 3/4, margin −0.0117.
+
+## Follow-on: feat-010 comparator test (2026-07-18)
+
+With the H1 frozen, the external-comparator half of H1's definition was scored on this same dev fold: the
+frozen `condition_gated` (systema 0.0834) beats the strongest eligible public comparator `txpert_public`
+(0.0321) by +0.0513 — but the no-graph `expression_only` (0.0861) beats the comparators too, so it does not
+rescue the graph (H2a stays negative). Full record + the code-review hardening:
+`docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md` §A-results.

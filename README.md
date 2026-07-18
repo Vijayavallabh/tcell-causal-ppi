@@ -718,6 +718,17 @@ GPU (`--only NAME`), recombines with `--merge`, and names the H1 with `--promote
 `docs/specs/2026-07-17-graph-throughput-minibatch.md`; reviews:
 `docs/reviews/2026-07-16-code-review-module7.md`.
 
+**The external-comparator test has also run (feat-010, 2026-07-18).** On the SAME development fold, both
+public comparators were scored through the same suite as `network_propagation` (fit on train responses
+only, STRING-only topology; fold identity verified): `txpert_public` 0.0321, `stable_shift` 0.0217. The
+frozen H1 `condition_gated` (0.0834) **beats the strongest eligible comparator by +0.0513 systema** —
+outside the 0.01 noise band — so H1's "beyond the strongest comparator" clause holds on development. But
+this does **not** rescue the graph: the no-graph `expression_only` (0.0861) beats the comparators too, so
+the win is trained-predictor-over-public-smoother, not graph-over-no-graph (H2a stays −0.0075).
+Consistency check: `txpert_public` 0.0321 ≈ `network_propagation` 0.0319. Single-seed; CPU, ~0 GPU-hours.
+Record: `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md` §A-results (artifact
+`data/results/comparators/comparators_vs_h1.json`).
+
 Note when reading screening logs: **`best_val` is not comparable across the family.** `typed_static`
 pins its gates to 1.0, so its sparsity penalty is an irreducible constant — it scores val 490.4 where
 `condition_gated` scores 3.47 on the same fold. H2a/H2b and promotion rank on `systema` for this
