@@ -50,7 +50,11 @@ Key facts:
   result silently reports stale numbers as fact. This session, stale `stage_a_history.json` and
   screening parquets sat at the live paths and twice nearly produced a false status report. Gate on
   mtime-vs-launch or a run-id recorded IN the artifact (the `--merge`/`--promote` guard cross-checks the
-  registry), never on the file merely existing.
+  registry), never on the file merely existing. And **provenance is not comparability**: a metric read
+  from a frozen artifact (the full-fold H1 in `promoted.json`) is comparable to a freshly-scored one only
+  if they share the fold/basis. A `--n-max` comparator run scored a capped fold and would have published
+  its systema against the full-fold H1 as an authoritative same-fold verdict — apples-to-oranges. Gate the
+  A-vs-B on a fold/basis match (`fold_comparable`), not on both numbers merely existing.
 - **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
   `session-handoff.md` — all three must match committed reality (a structurally valid but stale
   state file silently misroutes the next session)
@@ -85,6 +89,11 @@ A feature is done only when ALL of the following are true:
       invalidation served a stale subgraph) — because no mutation of the code reaches an input the
       tests never construct. Before calling a correctness fix done, spend one adversarial pass whose
       job is to break it (or spawn agents to), especially on cache/staleness/concurrency invariants.
+      A value **guarded** to be `None`/sentinel on a degenerate input is only guarded if EVERY consumer
+      honors it: this session a verdict `print` did `None:+.4f` right after computing the guarded value,
+      crashing on the exact degeneracy the guard existed for — trace the value from guard to output/JSON/
+      downstream gate. And in a verdict, **`None` ≠ negative**: encoding "nothing to compare" as `False`
+      ("H1 lost") misreports a converging negative — keep undecidable distinct from decided-against.
 - [ ] Evidence recorded in `feature_list.json` or `progress.md`
 - [ ] Repository remains restartable from standard startup path
 
@@ -110,6 +119,11 @@ must change in the same commit. Structural validators pass on stale docs — con
   (feat-008 carried "feat-007 still not-started" for two days after feat-007 shipped.) Check with:
   every feature's HEAD evidence must remain a strict prefix of its new evidence —
   `git show HEAD:feature_list.json` and compare.
+- When you edit a tracked data file **programmatically**, match its existing serialization (encoding,
+  indent, trailing newline) and confirm the diff is minimal BEFORE staging. A `json.dump(..., ensure_ascii=
+  False)` rewrote every `\uXXXX` escape across the WHOLE `feature_list.json` — a 193 KB diff masquerading
+  as a one-line append, silently breaking append-only integrity even though the text was byte-identical in
+  meaning. `git diff --stat` is the tell: a data-file append should touch ~1 line, not the whole file.
 
 ## Verification Commands
 
