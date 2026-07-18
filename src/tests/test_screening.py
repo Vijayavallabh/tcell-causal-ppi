@@ -585,3 +585,61 @@ def test_promote_pin_rejects_a_config_that_did_not_complete(tmp_path):
     _lane(root, UNTYPED_GNN, 0.20)
     with pytest.raises(ValueError, match="pinned"):
         promote([EXPRESSION_ONLY, UNTYPED_GNN], screening_root=root, pin=CONDITION_GATED)
+
+
+# --------------------------------------------------------------------------------------------------
+# xhigh review 2026-07-18 (commit b875dfa): freshness + promotion robustness
+# --------------------------------------------------------------------------------------------------
+def test_merge_keeps_a_completed_lane_whose_later_rerun_failed(tmp_path):
+    """Finding 0: a lane that COMPLETED (parquet written) and was then re-run and FAILED still has its
+    valid completed parquet on disk (screen_config only overwrites on success). The freshness guard
+    must not mark it 'missing' — 'failed latest' with an earlier 'completed' means the last GOOD result
+    stands. Only a 'registered' latest (reserved, never executed) implies a stale/foreign parquet."""
+    from tcell_pipeline.screening.screening import merge_lane_results
+    root = tmp_path / "screening"; reg = tmp_path / "registry.yaml"
+    for name, s in ((EXPRESSION_ONLY, 0.10), (TYPED_STATIC, 0.30)):
+        (root / name).mkdir(parents=True)
+        pd.DataFrame([{"name": name, "seed": 0, "status": "completed", "primary": s, "systema": s}]
+                     ).to_parquet(root / name / "0.parquet")
+    for name in (EXPRESSION_ONLY, TYPED_STATIC):
+        rid = register_run(name, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+        log_run(rid, "completed", {"systema": 0.1}, path=reg)
+    # typed_static re-run that FAILED (no parquet overwrite): latest=failed, but an earlier completed exists
+    rid2 = register_run(TYPED_STATIC, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+    log_run(rid2, "failed", {"error": "OOM"}, path=reg)
+    summary = merge_lane_results([EXPRESSION_ONLY, TYPED_STATIC], seed=0, screening_root=root,
+                                 registry_path=reg)
+    by = {r["name"]: r for r in summary["results"]}
+    assert by[TYPED_STATIC]["status"] == "completed", "a completed lane was dropped after a failed re-run"
+    assert summary["h2a"]["supported"] is True and summary["h2a"]["delta"] == pytest.approx(0.20)
+
+
+def test_merge_still_excludes_registered_only_lane_with_a_prior_completed(tmp_path):
+    """The dual of finding 0: a config that a PRIOR run completed but THIS run only REGISTERED (not yet
+    executed) must stay excluded — its parquet is the prior run's, stale for the current campaign. The
+    guard keys on 'latest is registered', which is exactly the stale-provenance signal."""
+    from tcell_pipeline.screening.screening import merge_lane_results
+    root = tmp_path / "screening"; reg = tmp_path / "registry.yaml"
+    (root / TYPED_STATIC).mkdir(parents=True)
+    pd.DataFrame([{"name": TYPED_STATIC, "seed": 0, "status": "completed", "primary": 0.9, "systema": 0.9}]
+                 ).to_parquet(root / TYPED_STATIC / "0.parquet")     # a prior run's parquet
+    rid = register_run(TYPED_STATIC, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)
+    log_run(rid, "completed", {"systema": 0.9}, path=reg)            # prior run: completed
+    register_run(TYPED_STATIC, "H2a", "q_pre", "blocked_target_ood", 0, None, path=reg)  # this run: registered
+    summary = merge_lane_results([TYPED_STATIC], seed=0, screening_root=root, registry_path=reg)
+    assert summary["results"][0]["status"] == "missing", "a registered-only lane served its stale prior parquet"
+
+
+def test_promote_does_not_crash_on_a_non_finite_metric(tmp_path):
+    """Finding 1: a completed member whose systema diverged to NaN/Inf (the near-null-signal regime)
+    must not crash promotion — promote() dumps with allow_nan=False. A non-finite primary metric cannot
+    be the H1, so it is excluded from the ranking, and the dump is sanitized as a backstop."""
+    from tcell_pipeline.screening.promotion import promote
+    root = tmp_path / "screening"
+    _lane(root, EXPRESSION_ONLY, 0.10)
+    _lane(root, CONDITION_GATED, float("nan"))
+    got = promote([EXPRESSION_ONLY, CONDITION_GATED], screening_root=root)
+    assert got["final"]["name"] == EXPRESSION_ONLY, "a NaN-scoring model was promoted or crashed the run"
+    assert CONDITION_GATED not in [r["name"] for r in got["ranking"]], "a non-finite metric entered the ranking"
+    assert json.loads((root / "promoted.json").read_text())["final"]["name"] == EXPRESSION_ONLY
+

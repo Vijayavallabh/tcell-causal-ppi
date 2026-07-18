@@ -57,14 +57,16 @@ def promote(names: list[str], seed: int = 0, screening_root: Path = config.SCREE
     weights on disk — promotion hands downstream a path to LOAD, and failing here beats failing hours
     into feat-012/013.
     """
+    import math
+
     import pandas as pd
-    from tcell_pipeline.screening.screening import _is_stale, _latest_status
-    latest = _latest_status(registry_path, seed) if registry_path is not None else None
+    from tcell_pipeline.screening.screening import _config_statuses, _finite_or_none, _is_stale
+    statuses = _config_statuses(registry_path, seed) if registry_path is not None else None
     ranking = []
     for name in names:
         if name in _NOT_PROMOTABLE:
             continue
-        if _is_stale(name, latest):
+        if _is_stale(name, statuses):
             continue                                   # stale parquet from a prior run — not this result
         path = Path(screening_root) / name / f"{seed}.parquet"
         if not path.exists():
@@ -72,7 +74,10 @@ def promote(names: list[str], seed: int = 0, screening_root: Path = config.SCREE
         row = pd.read_parquet(path).iloc[0].to_dict()
         if row.get("status") != "completed" or PRIMARY_METRIC not in row:
             continue
-        ranking.append({"name": name, "seed": seed, PRIMARY_METRIC: float(row[PRIMARY_METRIC]),
+        metric = float(row[PRIMARY_METRIC])
+        if not math.isfinite(metric):
+            continue                                   # a NaN/Inf primary endpoint cannot be the H1
+        ranking.append({"name": name, "seed": seed, PRIMARY_METRIC: metric,
                         "gpu_hours": row.get("gpu_hours"),
                         "checkpoint": str(_checkpoint_for(screening_root, name, seed))})
     if not ranking:
@@ -117,6 +122,9 @@ def promote(names: list[str], seed: int = 0, screening_root: Path = config.SCREE
         "basis": (f"single-seed screening on {PRIMARY_METRIC} (seed {seed}); NOT the report's "
                   f"{config.N_FINAL_SEEDS}-seed promotion, which is a separate campaign"),
     }
-    config.write_text_atomic(json.dumps(out, indent=2, default=float, allow_nan=False),
+    # sanitize non-finite floats -> None before dumping (allow_nan=False rejects them): ranking metrics
+    # are already finite by the filter above, but gpu_hours/margin come straight off disk — a backstop,
+    # mirroring the merge/summary path so promoted.json is always valid JSON
+    config.write_text_atomic(json.dumps(_finite_or_none(out), indent=2, default=float, allow_nan=False),
                              Path(screening_root) / "promoted.json")
     return out

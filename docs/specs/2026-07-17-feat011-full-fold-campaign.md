@@ -223,3 +223,55 @@ pin logic mutation-tested 3/3. `run_module8_real.py`'s `run_audit` still carries
 graph model cannot converge until the mini-batch refactor lands" — that is now false (the refactor
 landed; `condition_gated/0/ckpt/stage_a_best.pt` is a trained graph checkpoint); it should be corrected
 when feat-012 is picked up.
+
+## xhigh `/code-review` of the campaign commit (2026-07-18, 19 agents) — 6 findings, all resolved
+
+A workflow-backed review of `b875dfa` (finders per correctness angle + a cleanup sweep, each candidate
+independently verified) surfaced 6 findings — 2 CONFIRMED, 4 PLAUSIBLE. All were reproduced before
+fixing and each fix was watched failing then mutation-tested (277 → 278; 6 new regression tests, 6
+mutations caught). The two confirmed bugs both compromised the campaign's final model selection.
+
+- **`promote()` crashed on a non-finite primary metric (CONFIRMED).** `json.dumps(..., allow_nan=False)`
+  raised on a NaN/Inf `systema` — reachable in the near-null-signal regime (a zero-variance correlation),
+  and it would block promotion after a full campaign. Fixed: a non-finite primary metric is filtered from
+  the ranking (a NaN-scoring model cannot be the H1) and the dump is sanitized through `_finite_or_none`,
+  mirroring the merge/summary path.
+- **Freshness guard discarded a completed-then-failed lane (CONFIRMED).** The guard keyed on "latest run
+  ≠ completed", so a config that completed (good parquet on disk) and was later re-run and failed was
+  marked `missing` — dropping it from the H2a/H2b contrast and from promotion, freezing a worse H1. The
+  registry distinguishes `registered` (reserved, never executed → any parquet is foreign/stale) from
+  `failed` (executed, so an earlier `completed` parquet is still this config's last good result). New
+  rule (`_config_statuses` + `_is_stale`): fresh iff `completed` appears AND the latest run is not a bare
+  `registered`. Pinned by BOTH the finding's regression test and its dual (a `registered`-latest with a
+  prior `completed` must stay excluded — the original stale-parquet case).
+- **Subgraph cache key omitted `gene_to_idx` (PLAUSIBLE, self-flagged).** The subgraph is a pure function
+  of `(seed, graph, hops, cap)`; the cache now keys on the RESOLVED seed index rather than the gene
+  string, so two mappings sending one gene to different seeds cannot collide on one cached subgraph. This
+  removes the footgun outright rather than documenting a precondition.
+- **`data_ptr` ABA in the cache/index fingerprint (PLAUSIBLE).** `(data_ptr, shape, _version)` can
+  collide if a freed tensor's address is reused by a new same-shape tensor. Closed STRUCTURALLY, not just
+  documented: `_TensorSet` holds the actual tensor OBJECTS and compares by `is` + `_version`. A live
+  reference keeps the old object (and its address) from being freed, so a replacement is always a distinct
+  object at a distinct address — `is` cannot false-match. Applied to both the subgraph cache and the CSR
+  index for consistency; the equivalence tests confirm sampling stays bit-identical.
+- **`promote_final` hard-coded `'systema'` (cleanup).** Now prints via the `PRIMARY_METRIC` constant.
+- **`--noise-margin` default 0.0 (PLAUSIBLE footgun).** Kept the default (0.0 = "report the raw margin",
+  an explicit choice) but the driver now prints a loud note when no noise band is set, so a rounding-size
+  gap is not misread as a decisive result. The campaign always passes `--noise-margin 0.01`.
+
+**Adversarial verification (5 agents, each trying to BREAK one fix with a runnable counterexample).**
+Four fixes survived — F1 stood up to 8 constructed non-finite fixtures, F0 to every reachable
+`register_run`/`log_run` status sequence, F4 to seed-collision attacks, F5/F3 to 10 driver scenarios. The
+fifth adversary (the object-identity anti-ABA fix) found a **real hole my own tests missed**: a write
+routed through `tensor.data` (`t.data.add_(...)`, `t.data[mask] = 0`) changes contents WITHOUT bumping
+`_version`, so neither `is` nor the version counter sees it and a stale subgraph is served. This is
+*pre-existing* — the old `data_ptr` stamp missed `.data` writes identically — and a collision-free
+content check would be O(edges) on the 6.9M-edge tables *per sample call*, defeating the cache. Resolved
+by making the contract explicit rather than over-claiming: the `_TensorSet` docstring now states the
+limit precisely, and `invalidate_graph_caches(graph)` is the escape hatch a `.data`-editing control (e.g.
+an edge-ablation using `.data[mask] = 0`) must call. Pinned by a test that shows the stale read without
+it and a fresh read with it. This is the honest ceiling of O(1)-per-call invalidation; the automatic path
+still catches every reassignment and every normal in-place edit.
+
+The frozen H1 is unchanged by all of this: `--promote --pin condition_gated` still reproduces
+condition_gated at rank 3/4, margin −0.0117.

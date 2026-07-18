@@ -23,7 +23,10 @@ survive the cap. Delete either sort and the sampler silently returns a different
 Sampling a target is a pure function of (graph, gene, hops, cap), and the donor-invariance training
 path re-forwards the SAME batch once per donor variant, so it re-samples identical subgraphs
 1+DONOR_INVARIANCE_SAMPLES times per step -- and targets repeat ~3x per epoch besides. So results are
-memoised per target (``_SubgraphCache``), bounded by ``config.SUBGRAPH_CACHE_SIZE``.
+memoised per target (``_SubgraphCache``), bounded by ``config.SUBGRAPH_CACHE_SIZE``. The memo (and the
+CSR index) invalidate automatically on tensor reassignment or a normal in-place edit; a mutation routed
+through ``tensor.data`` bypasses that (it does not bump ``_version``), so a control that edits the graph
+via ``.data`` must call ``invalidate_graph_caches(graph)`` -- see ``_TensorSet``.
 """
 from __future__ import annotations
 
@@ -75,29 +78,64 @@ def _edge_stores(graph: HeteroData):
     yield _MEMBERSHIP, 0, graph[PROTEIN, _MEMBERSHIP, COMPLEX].edge_index  # keyed on the protein endpoint
 
 
-def _stamp(t: torch.Tensor) -> tuple:
-    """Cheap identity of a tensor: storage address, shape, and autograd's in-place version counter.
-    Catches it being reassigned, resized, or edited in place -- the ways a graph actually changes."""
-    return (t.data_ptr(), tuple(t.shape), t._version)
+class _TensorSet:
+    """Identity of a set of graph tensors by OBJECT (via ``is``) plus each one's in-place version
+    counter -- NOT by ``data_ptr``.
+
+    Address-based identity ``(data_ptr, shape, _version)`` has a genuine ABA hole: free a tensor,
+    let the allocator hand a new same-shape tensor the freed address with ``_version`` 0, and the
+    stamp collides so the cache never drops. Holding the tensor OBJECTS closes it structurally: a
+    live reference keeps the old object (and its address) from being freed, so any replacement is a
+    distinct object at a distinct address -- ``a is b`` cannot false-match. A reassignment is caught
+    by ``is`` (different object); a normal in-place edit (``+=``, ``t[i] = ...``, any autograd-visible
+    op) is caught by ``_version`` (same object, bumped counter). The held references are ones the
+    graph already owns, retained only until the next rebuild, so there is no meaningful extra retention.
+
+    LIMIT: a write routed through ``tensor.data`` (``t.data.add_(...)``, ``t.data[m] = 0``) changes
+    contents WITHOUT bumping ``_version`` -- that is what ``.data`` is for, bypassing autograd -- so
+    neither ``is`` nor the version counter sees it and a stale subgraph is served. A collision-free
+    content check would be O(edges) on the 6.9M-edge tables *per sample call*, which defeats the cache
+    the invalidation exists to protect. So the contract is: mutate graph tensors by reassignment or
+    normal in-place ops (both caught), and if you must edit through ``.data``, call
+    ``invalidate_graph_caches(graph)`` afterwards. This limit is identical for the CSR index and
+    pre-dates the object-identity change (the old data_ptr stamp missed ``.data`` writes too).
+    """
+
+    def __init__(self, tensors) -> None:
+        self._tensors = tuple(tensors)
+        self._versions = tuple(t._version for t in self._tensors)
+
+    def matches(self, tensors) -> bool:
+        tensors = tuple(tensors)
+        return (len(tensors) == len(self._tensors)
+                and all(a is b for a, b in zip(tensors, self._tensors))
+                and tuple(t._version for t in tensors) == self._versions)
 
 
-def _fingerprint(graph: HeteroData) -> tuple:
-    """Identity of the edge_index tensors the CSR index is built from -- topology only, which is all
-    the index depends on."""
-    return tuple(_stamp(ei) for _, _, ei in _edge_stores(graph))
+def invalidate_graph_caches(graph: HeteroData) -> None:
+    """Drop the cached CSR neighbour index and subgraph memo so the next ``sample_subgraph`` rebuilds
+    from the current tensors. Automatic invalidation catches reassignment and normal in-place edits;
+    call this after editing a graph tensor through ``tensor.data`` (which bypasses version tracking),
+    e.g. an edge-ablation or feature-perturbation control that uses ``.data[mask] = 0``."""
+    for attr in ("_neighbor_index", "_subgraph_cache"):
+        if hasattr(graph, attr):
+            delattr(graph, attr)
 
 
-def _content_fingerprint(graph: HeteroData) -> tuple:
-    """Identity of everything a SAMPLED SUBGRAPH is derived from -- strictly more than the topology
-    the CSR index needs. sample_subgraph copies node features (``graph[PROTEIN].x[sel]``) and edge
-    attributes (``ea[kept]``) into the subgraph it returns, and editing either leaves every
-    edge_index untouched, so ``_fingerprint`` would never notice and nothing else would force a
-    rebuild. A subgraph cache keyed on topology alone would then serve the old features forever,
-    silently -- the same staleness hazard the CSR index has, one level further out."""
+def _edge_index_tensors(graph: HeteroData) -> list:
+    """The edge_index tensors the CSR index is built from -- topology only, which is all it depends on."""
+    return [ei for _, _, ei in _edge_stores(graph)]
+
+
+def _subgraph_tensors(graph: HeteroData) -> list:
+    """Every tensor a SAMPLED SUBGRAPH is derived from -- strictly more than the topology the CSR index
+    needs. sample_subgraph copies node features (``graph[PROTEIN].x[sel]``) and edge attributes
+    (``ea[kept]``) into the subgraph it returns, and editing either leaves every edge_index untouched,
+    so a topology-only identity would serve the old features/scores forever. Order is fixed so the
+    positional ``is`` comparison lines up."""
     stores = [graph[PROTEIN, rel, PROTEIN] for rel in _PP_RELATIONS]
     stores.append(graph[PROTEIN, _MEMBERSHIP, COMPLEX])
-    return (_fingerprint(graph), _stamp(graph[PROTEIN].x), int(graph[COMPLEX].num_nodes),
-            tuple(_stamp(s.edge_attr) for s in stores))
+    return [graph[PROTEIN].x, *_edge_index_tensors(graph), *(s.edge_attr for s in stores)]
 
 
 class _SubgraphCache:
@@ -114,8 +152,9 @@ class _SubgraphCache:
     costs ~0.5 ms against the ~28 ms it saves.
     """
 
-    def __init__(self, fingerprint: tuple) -> None:
-        self.fingerprint = fingerprint
+    def __init__(self, identity: "_TensorSet", num_complex: int) -> None:
+        self.identity = identity           # the tensors this cache's subgraphs were derived from
+        self.num_complex = num_complex     # complex-node count (a plain int, so not in the tensor set)
         self.entries: OrderedDict = OrderedDict()
 
     def get(self, key: tuple) -> HeteroData | None:
@@ -137,9 +176,10 @@ class _SubgraphCache:
 def _cache_for(graph: HeteroData) -> _SubgraphCache:
     """The graph's subgraph cache, dropped wholesale if anything it was derived from changed."""
     cache = getattr(graph, "_subgraph_cache", None)
-    fingerprint = _content_fingerprint(graph)
-    if cache is None or cache.fingerprint != fingerprint:
-        cache = _SubgraphCache(fingerprint)
+    num_complex = int(graph[COMPLEX].num_nodes)
+    if (cache is None or cache.num_complex != num_complex
+            or not cache.identity.matches(_subgraph_tensors(graph))):
+        cache = _SubgraphCache(_TensorSet(_subgraph_tensors(graph)), num_complex)
         graph._subgraph_cache = cache
     return cache
 
@@ -159,7 +199,7 @@ class _NeighborIndex:
         self._csr: dict[tuple[str, int], tuple[torch.Tensor, torch.Tensor]] = {
             (rel, key): _build_csr(ei[key], n_protein) for rel, key, ei in _edge_stores(graph)
         }
-        self.fingerprint = _fingerprint(graph)
+        self.identity = _TensorSet(_edge_index_tensors(graph))
 
     def incident(self, rel: str, key: int, nodes: torch.Tensor) -> torch.Tensor:
         """Ids of the edges whose ``key`` endpoint lies in ``nodes`` -- exactly the set
@@ -185,7 +225,7 @@ class _NeighborIndex:
 def _index_for(graph: HeteroData) -> _NeighborIndex:
     """The graph's cached CSR index, rebuilt if its edges changed since the index was built."""
     index = getattr(graph, "_neighbor_index", None)
-    if index is None or index.fingerprint != _fingerprint(graph):
+    if index is None or not index.identity.matches(_edge_index_tensors(graph)):
         index = _NeighborIndex(graph)
         graph._neighbor_index = index
     return index
@@ -251,24 +291,29 @@ def sample_subgraph(
 ) -> HeteroData:
     """Return the induced ≤``cap``-node subgraph around ``target_gene`` (KeyError if unknown).
 
-    Memoised per (gene, hops, cap) up to ``config.SUBGRAPH_CACHE_SIZE`` entries; the cache is
+    Memoised per (SEED index, hops, cap) up to ``config.SUBGRAPH_CACHE_SIZE`` entries; the cache is
     dropped whole if the graph it was derived from changes. Every caller gets its own copy.
+
+    The key is the RESOLVED seed index, not the gene string: the subgraph is a pure function of
+    (seed, graph, hops, cap), so ``gene_to_idx`` matters only through the seed it resolves to. Keying
+    on the string would collide two mappings that send one gene to different seeds (and would omit the
+    only wrapped input that is not a property of the graph the cache lives on) -- xhigh review finding 4.
     """
     gene_to_idx = gene_to_idx if gene_to_idx is not None else graph.gene_to_idx
+    seed = gene_to_idx[target_gene]  # resolve up-front (KeyError for unknown gene, as before)
     cache = _cache_for(graph)
-    key = (target_gene, hops, cap)
+    key = (seed, hops, cap)
     hit = cache.get(key)
     if hit is not None:
         return hit
-    sub = _sample_subgraph(graph, target_gene, hops, cap, gene_to_idx)
+    sub = _sample_subgraph(graph, seed, hops, cap)
     cache.put(key, sub, config.SUBGRAPH_CACHE_SIZE)
     return sub
 
 
-def _sample_subgraph(graph, target_gene, hops, cap, gene_to_idx) -> HeteroData:
-    """The real sampler (cache miss path)."""
+def _sample_subgraph(graph, seed: int, hops, cap) -> HeteroData:
+    """The real sampler (cache miss path); ``seed`` is the already-resolved protein node index."""
     index = _index_for(graph)
-    seed = gene_to_idx[target_gene]
     selected = _grow(graph, seed, hops, cap, index)
     sel = torch.tensor(sorted(selected))
 

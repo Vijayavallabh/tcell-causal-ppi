@@ -31,12 +31,20 @@ feat-010/012/013 are now UNBLOCKED (each is still a separate campaign — do not
 converge until the mini-batch refactor lands" — now false; correct it (the frozen H1 above is a trained
 graph checkpoint). The sealed split (5,608 rows) remains UNOPENED — feat-013 / test-steward only.
 
-**NOT COMMITTED** (user has not asked). Uncommitted, all with `./init.sh` green at **271**: subgraph
-cache (`neighborhood_sampler.py` + `config.SUBGRAPH_CACHE_SIZE`), registry advisory lock
-(`experiment_registry.py`), `--only`/`--merge`/`--promote` + `merge_lane_results` + stale-parquet guard
-(`run_screening.py`, `screening.py`, `promotion.py`, `screening/__init__.py`), `run_screening_campaign.sh`,
-the campaign spec, README/spec doc updates, the DoD triad, and the new tests (`test_graph.py`,
-`test_screening.py`). All of it lands in ONE commit when asked.
+Campaign committed `b875dfa`. Then an **xhigh `/code-review` of `b875dfa` (2026-07-18)** found 6 findings
+(2 confirmed, 4 plausible), all fixed test-first + mutation-tested + adversarially verified (5 agents), and
+committed separately (see below). Headlines: promote() no longer crashes on a non-finite metric; the
+freshness guard distinguishes `registered` from `failed` (a completed-then-failed lane is no longer
+dropped); the cache keys on the resolved seed; invalidation is by tensor OBJECT identity (`_TensorSet`,
+immune to data_ptr ABA) on both the subgraph cache and the CSR index. The adversarial pass surfaced a real
+`.data`-write staleness hole (a `tensor.data` edit bypasses `_version`) — closed by documenting the contract
+and adding `invalidate_graph_caches(graph)`; **a future edge-ablation / feature-perturbation control that
+edits the graph via `.data[mask] = 0` MUST call it** (a normal reassignment or in-place edit is caught
+automatically). `./init.sh` green at **280**.
+
+feat-012 will need a graph-mutating rationale control eventually; if it edits via `.data`, call
+`invalidate_graph_caches`. `run_module8_real.py`'s `run_audit` still has the STALE "graph model cannot
+converge" line — correct it. Sealed split (5,608 rows) remains UNOPENED.
 
 ## Current Objective
 

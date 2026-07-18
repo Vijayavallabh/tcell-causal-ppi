@@ -697,3 +697,68 @@ def test_subgraph_cache_hands_out_independent_copies():
     assert torch.equal(sample_subgraph(graph, "G000", hops=1, cap=512,
                                        gene_to_idx=gene_to_idx)[PROTEIN].x, baseline), \
         "an edit to the miss path's return value poisoned the cache"
+
+
+def test_subgraph_cache_keys_on_the_resolved_seed_not_the_gene_string():
+    """xhigh review finding 4: the subgraph is a pure function of (seed index, graph, hops, cap); the
+    cache must key on the RESOLVED seed, not the gene string, so two gene_to_idx mappings that send the
+    same gene to different seeds do not collide on one cached subgraph and silently return the
+    neighbourhood of the wrong protein."""
+    graph, gene_to_idx = _dense_random_graph()
+    sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=gene_to_idx)     # populates the cache
+    swapped = dict(gene_to_idx)
+    swapped["G000"], swapped["G001"] = gene_to_idx["G001"], gene_to_idx["G000"]  # G000 now seeds on G001's node
+    b = sample_subgraph(graph, "G000", hops=1, cap=512, gene_to_idx=swapped)
+    direct = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)  # the seed b resolves to
+    assert torch.equal(b[PROTEIN].orig_idx, direct[PROTEIN].orig_idx), \
+        "cache returned the gene-string's cached subgraph, ignoring the remapped seed"
+
+
+def test_index_and_cache_identity_hold_the_actual_tensor_objects():
+    """xhigh review finding 2: invalidation is by tensor OBJECT identity, not data_ptr, so it cannot
+    ABA-collide. The mechanism is that the CSR index and subgraph cache hold live references to the
+    exact tensors they were built from (a held reference keeps the address from being reused). Pin
+    that: the stored identity must be the graph's own tensor objects, and a reassignment to an
+    equal-valued tensor (same shape/content, so a data_ptr stamp could coincide) must still rebuild."""
+    from tcell_pipeline.graph import neighborhood_sampler as ns
+    graph, gene_to_idx = _dense_random_graph()
+    sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    idx, cache = graph._neighbor_index, graph._subgraph_cache
+    # the identities are the graph's OWN objects (is), so those objects cannot be freed/reused
+    assert graph[PROTEIN].x in cache.identity._tensors
+    assert all(any(ei is t for t in idx.identity._tensors)
+               for _, _, ei in ns._edge_stores(graph)), "index identity is not the graph's edge tensors"
+    # reassign edge_attr to an IDENTICAL-valued fresh tensor: a content-blind data_ptr stamp might
+    # coincide, but object identity must see a new object and rebuild both index and cache
+    store = graph[PROTEIN, "physical_ppi", PROTEIN]
+    store.edge_attr = store.edge_attr.clone()          # new object, same shape+values
+    assert not cache.identity.matches(ns._subgraph_tensors(graph)), "cache identity ABA-matched a new tensor"
+    sub_after = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert graph._subgraph_cache is not cache, "cache was not rebuilt after an edge_attr reassignment"
+
+
+def test_data_routed_edit_needs_explicit_invalidation():
+    """Adversarial finding (2026-07-18): a write through ``tensor.data`` changes contents WITHOUT
+    bumping ``_version`` (that is what .data is for), so automatic invalidation — object identity +
+    version — cannot see it and serves a stale subgraph. This is the documented contract, not a silent
+    surprise: ``invalidate_graph_caches`` is the escape hatch a .data-editing control must call. A
+    collision-free content check would be O(edges) per sample call and defeat the cache."""
+    from tcell_pipeline.graph.neighborhood_sampler import invalidate_graph_caches
+    graph, gene_to_idx = _dense_random_graph()
+    before = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    old_x = before[PROTEIN].x.clone()
+    graph[PROTEIN].x.data.add_(1.0)                       # .data edit: real change, _version NOT bumped
+    assert graph[PROTEIN].x._version == 0                 # confirms the bypass this test guards
+    stale = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert torch.equal(stale[PROTEIN].x, old_x), "expected the documented stale read without invalidation"
+    invalidate_graph_caches(graph)                        # the required escape hatch
+    fresh = sample_subgraph(graph, "G001", hops=1, cap=512, gene_to_idx=gene_to_idx)
+    assert torch.equal(fresh[PROTEIN].x, old_x + 1.0), "invalidate_graph_caches did not force a rebuild"
+
+
+def test_invalidate_graph_caches_is_a_noop_when_uncached():
+    """The escape hatch must be safe to call on a graph that was never sampled (no cache attrs yet)."""
+    from tcell_pipeline.graph.neighborhood_sampler import invalidate_graph_caches
+    graph, _ = _dense_random_graph()
+    invalidate_graph_caches(graph)                        # no _neighbor_index / _subgraph_cache yet
+    assert not hasattr(graph, "_neighbor_index") and not hasattr(graph, "_subgraph_cache")

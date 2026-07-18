@@ -70,11 +70,12 @@ def _print_contrasts(summary: dict) -> None:
 def promote_final(seed: int = config.SPLIT_SEED, noise_margin: float = 0.0, pin: str | None = None) -> int:
     """Name the frozen H1 (+ runner-up) from the screened rows — what feat-010/012/013 consume."""
     from tcell_pipeline.screening.promotion import promote
+    from tcell_pipeline.screening.screening import PRIMARY_METRIC
     p = promote(_TABLE, seed=seed, noise_margin=noise_margin, registry_path=config.REGISTRY_PATH, pin=pin)
-    print("[promote] ranking on systema_pert_specific_delta (the locked primary endpoint):")
+    print(f"[promote] ranking on {PRIMARY_METRIC}_pert_specific_delta (the locked primary endpoint):")
     for i, r in enumerate(p["ranking"], 1):
         mark = "  <- PINNED as H1" if r["name"] == p.get("pinned") else ""
-        print(f"    {i}. {r['name']:>16}  systema={r['systema']:+.4f}{mark}")
+        print(f"    {i}. {r['name']:>16}  {PRIMARY_METRIC}={r[PRIMARY_METRIC]:+.4f}{mark}")
     print(f"[promote] FINAL     : {p['final']['name']}  -> {p['final']['checkpoint']}")
     print(f"[promote] RUNNER-UP : {p['runner_up']['name'] if p['runner_up'] else '(none)'}")
     if p.get("pinned") is not None:
@@ -84,6 +85,9 @@ def promote_final(seed: int = config.SPLIT_SEED, noise_margin: float = 0.0, pin:
         note = ("  ** WITHIN NOISE **" if p["margin_within_noise"]
                 else ("  ** the frozen H1 is BEHIND the runner-up **" if p["margin"] < 0 else ""))
         print(f"[promote] margin    : {p['margin']:+.4f} (final − runner-up){note}")
+        if noise_margin == 0.0 and not p["tie"]:  # no noise band applied -> a rounding-size gap reads as a win
+            print("[promote] (no --noise-margin set: any nonzero margin above is reported as decisive; "
+                  "pass --noise-margin for a noise band in this near-null-signal regime)")
     if p["tie"]:
         print("[promote] ** EXACT TIE on the primary endpoint — broken by name, not by evidence **")
     print(f"[promote] basis     : {p['basis']}")

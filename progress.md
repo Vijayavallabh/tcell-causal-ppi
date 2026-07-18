@@ -21,7 +21,16 @@ condition_gated`). Not the argmax winner (untyped_gnn) — the confirmatory prot
 typed+gated model, and it's the only one feat-012's audit can run on. `promoted.json` records it honestly:
 pinned_rank 3/4, screening_winner untyped_gnn, margin −0.0117 (H1 behind the winner), within_noise False.
 Frozen checkpoint: `data/results/screening/condition_gated/0/ckpt/stage_a_best.pt`. feat-010/012/013 now
-unblocked (each a separate campaign — not started). **Not committed yet.** `./init.sh` green at 273.
+unblocked (each a separate campaign — not started). Campaign committed `b875dfa`.
+
+**xhigh `/code-review` of `b875dfa` (2026-07-18) — 6 findings, all resolved + adversarially verified.** Two
+confirmed bugs (promote() crashed on a non-finite metric; freshness guard dropped a completed-then-failed
+lane) + four plausible (cache key omitted gene_to_idx; data_ptr ABA; hard-coded 'systema'; noise-margin
+default). Fixed test-first, mutation-tested. Object-identity invalidation (`_TensorSet`, is + _version)
+replaced the data_ptr stamp on BOTH the subgraph cache and CSR index. A 5-agent adversarial pass found one
+real hole my tests missed — a `tensor.data` write bypasses `_version` → stale subgraph (pre-existing; a
+content check would be O(edges)/call) — closed by making the contract explicit + `invalidate_graph_caches()`
+escape hatch. `./init.sh` green at **280** (273 + 7). **Review fixes not committed yet.**
 
 Three things the next reader needs:
 

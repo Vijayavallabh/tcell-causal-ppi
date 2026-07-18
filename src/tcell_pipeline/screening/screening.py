@@ -318,24 +318,36 @@ def _write_summary(summary: dict, summary_path: Path) -> None:
         json.dumps(_finite_or_none(summary), indent=2, default=float, allow_nan=False), summary_path)
 
 
-def _latest_status(registry_path: Path, seed: int) -> dict:
-    """config_id -> its LATEST registry run's status (this seed). log_run flips a run's status in
-    place, so the newest run per config is the current truth. Used to reject a stale parquet left by a
-    prior run of a config this campaign only got as far as ``registered``. A config ABSENT from the
-    map is not tracked by the registry at all (e.g. the non-neural network_propagation reference, which
-    is never registered) — callers must fall back to parquet presence for those, not assume stale."""
+def _config_statuses(registry_path: Path, seed: int) -> dict:
+    """config_id -> the ordered list of its registry run statuses (this seed). Used to decide whether
+    the parquet on disk is a fresh result of this campaign or a stale one from a prior run. A config
+    ABSENT from the map is not tracked by the registry at all (e.g. the non-neural network_propagation
+    reference, which is never registered) — callers fall back to parquet presence for those."""
     from tcell_pipeline.screening.experiment_registry import load_registry
-    latest: dict = {}
-    for r in load_registry(registry_path):  # append order, so the last write per config_id wins
+    out: dict = {}
+    for r in load_registry(registry_path):  # append order preserved
         if int(r.get("seed", 0)) == seed:
-            latest[r["config_id"]] = r.get("status")
-    return latest
+            out.setdefault(r["config_id"], []).append(r.get("status"))
+    return out
 
 
-def _is_stale(name: str, latest: dict | None) -> bool:
-    """True only when the registry TRACKS ``name`` and its latest run is not completed — i.e. its
-    parquet (if any) is stale/incomplete. Untracked names return False (defer to parquet presence)."""
-    return latest is not None and name in latest and latest[name] != "completed"
+def _is_stale(name: str, statuses: dict | None) -> bool:
+    """True when the registry TRACKS ``name`` but its parquet is stale/incomplete for this campaign.
+
+    ``screen_config`` writes the parquet only on success, so the parquet on disk is the output of the
+    config's most recent COMPLETED run. Freshness therefore turns on two registry facts:
+      * ``completed`` never appears  -> the config never produced a result here; parquet (if any) is
+        foreign/absent -> stale.
+      * the LATEST run is a bare ``registered`` reservation -> this campaign reserved the slot but has
+        not run it, so whatever parquet is on disk is a PRIOR run's -> stale (the original guard case).
+    A ``failed`` latest with an earlier ``completed`` is NOT stale: the failed re-run wrote no parquet,
+    so the earlier completed one is still the config's last good result (xhigh review finding 0).
+    Untracked names return False — defer to parquet presence."""
+    if statuses is None or name not in statuses:
+        return False
+    s = statuses[name]
+    fresh = ("completed" in s) and (s[-1] != "registered")
+    return not fresh
 
 
 def merge_lane_results(names: list[str], seed: int = 0,
@@ -357,14 +369,14 @@ def merge_lane_results(names: list[str], seed: int = 0,
     missing even if a parquet exists — stale-wrong is worse than absent.
     """
     import pandas as pd
-    latest = _latest_status(registry_path, seed) if registry_path is not None else None
+    statuses = _config_statuses(registry_path, seed) if registry_path is not None else None
     results = []
     for name in names:
         path = Path(screening_root) / name / f"{seed}.parquet"
-        if _is_stale(name, latest):
+        if _is_stale(name, statuses):
             results.append({"name": name, "seed": seed, "status": "missing",
-                            "error": f"registry's latest run for {name!r} is {latest[name]!r}, not completed "
-                                     f"— its parquet, if any, is stale from a prior run"})
+                            "error": f"registry runs for {name!r} are {statuses[name]!r} — no fresh completed "
+                                     f"result; its parquet, if any, is stale from a prior run"})
         elif path.exists():
             results.append(pd.read_parquet(path).iloc[0].to_dict())
         else:
