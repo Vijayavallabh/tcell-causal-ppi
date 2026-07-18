@@ -41,7 +41,16 @@ Key facts:
   MEASURED and how you measured it — never the fix you guessed. A handoff that said "mini-batch the
   graph encoders" prescribed a cure for 5% of the real bottleneck (sampling was 95%); the measurement
   would have routed the next session correctly, the prescription sent it the wrong way. Measure again
-  before acting on an inherited diagnosis.
+  before acting on an inherited diagnosis. A **sub-component benchmark is not a whole-pipeline
+  estimate**: a 0.36 h/epoch encoder-only bench hid the real 3× per-step cost (donor-invariance
+  re-forwards the whole model), so a 22.7 h campaign nearly launched as ~7 h. Time the real end-to-end
+  path — one true step — before committing multi-hour compute.
+- **Presence is not freshness — check a results file's provenance before reading it as this run's.** A
+  parquet / log / checkpoint at the expected path may be a PRIOR run's; treating it as the current
+  result silently reports stale numbers as fact. This session, stale `stage_a_history.json` and
+  screening parquets sat at the live paths and twice nearly produced a false status report. Gate on
+  mtime-vs-launch or a run-id recorded IN the artifact (the `--merge`/`--promote` guard cross-checks the
+  registry), never on the file merely existing.
 - **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
   `session-handoff.md` — all three must match committed reality (a structurally valid but stale
   state file silently misroutes the next session)
@@ -68,6 +77,14 @@ A feature is done only when ALL of the following are true:
       `_grow` sort, deletable with all 237 tests green while the neighbourhood silently changed
       for 35 of 60 targets). Mutate the ONE line the claim rests on, not just the ones you
       thought of. Hand-picked probe cases are a way of choosing what the test cannot see.
+- [ ] **For a correctness-critical fix, try to CONSTRUCT an input that defeats it — mutation testing
+      is necessary, not sufficient.** Watching a test fail and mutating the guarded line prove your
+      test is load-bearing for the code you WROTE; neither can surface an input class your tests never
+      build. This session every fix was watched-failing AND mutation-tested 10/10, and a 5-agent
+      adversarial pass still found a real bug (a `tensor.data` write bypasses `_version`, so cache
+      invalidation served a stale subgraph) — because no mutation of the code reaches an input the
+      tests never construct. Before calling a correctness fix done, spend one adversarial pass whose
+      job is to break it (or spawn agents to), especially on cache/staleness/concurrency invariants.
 - [ ] Evidence recorded in `feature_list.json` or `progress.md`
 - [ ] Repository remains restartable from standard startup path
 
