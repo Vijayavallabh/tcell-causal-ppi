@@ -140,14 +140,80 @@ def test_summarize_vs_h1_ranks_margin_and_guards_bad_input():
     s3 = summarize_vs_h1(comps, {"name": "weak_h1", "systema": 0.010})
     assert s3["h1_beats_strongest"] is False and s3["margin_h1_minus_strongest"] < 0
 
-    # No frozen H1 on disk (promoted.json absent) -> still ranks comparators, margin is undefined not a crash.
+    # No frozen H1 on disk (promoted.json absent) -> still ranks comparators; NO comparison was made, so the
+    # verdict is None ("no H1 to compare"), NOT False ("H1 lost").
     s4 = summarize_vs_h1(comps, None)
-    assert s4["margin_h1_minus_strongest"] is None and s4["h1_beats_strongest"] is False
+    assert s4["margin_h1_minus_strongest"] is None and s4["h1_beats_strongest"] is None
     assert {e["name"] for e in s4["ranked"]} == {"stable_shift", "txpert_public"}
 
     # No comparator landed -> nothing to beat, no crash.
     s5 = summarize_vs_h1([], h1)
     assert s5["strongest_comparator"] is None and s5["margin_h1_minus_strongest"] is None
+
+
+def test_summarize_vs_h1_beats_none_when_no_eligible_comparator_and_noise_band():
+    from tcell_pipeline.run_module8_real import summarize_vs_h1
+
+    h1 = {"name": "h1", "systema": 0.08}
+    # every comparator non-finite -> no eligible bar; beats/within_noise are None (undefined), NOT a loss.
+    s = summarize_vs_h1([{"name": "a", "systema": float("nan")}], h1)
+    assert s["h1_beats_strongest"] is None and s["margin_within_noise"] is None
+    assert s["strongest_comparator"] is None
+    # a hairline win inside the noise band is FLAGGED, not reported as a decisive beat.
+    s2 = summarize_vs_h1([{"name": "c", "systema": 0.0319}], {"name": "h1", "systema": 0.0321}, noise_margin=0.01)
+    assert s2["h1_beats_strongest"] is True and s2["margin_within_noise"] is True
+    # a real margin sits outside the band.
+    s3 = summarize_vs_h1([{"name": "c", "systema": 0.0321}], {"name": "h1", "systema": 0.0834}, noise_margin=0.01)
+    assert s3["h1_beats_strongest"] is True and s3["margin_within_noise"] is False
+
+
+def test_summarize_vs_h1_fold_incomparable_skips_verdict():
+    from tcell_pipeline.run_module8_real import summarize_vs_h1
+
+    comps = [{"name": "c", "systema": 0.03}]
+    h1 = {"name": "h1", "systema": 0.08}
+    s = summarize_vs_h1(comps, h1, fold_comparable=False)   # e.g. a --n-max capped run vs the full-fold H1
+    # a frozen H1 exists but the comparators are on a different fold -> NO verdict, and it records why.
+    assert s["h1_beats_strongest"] is None and s["h1_systema"] is None and s["frozen_h1"] is None
+    assert s["frozen_h1_available"] is True and s["fold_comparable"] is False and "h1_comparison_skipped" in s
+    assert {e["name"] for e in s["ranked"]} == {"c"}       # comparators still ranked, no H1 entry
+
+
+def test_summarize_vs_h1_no_typeerror_on_none_h1_name_and_numpy_finite():
+    from tcell_pipeline.run_module8_real import _finite, summarize_vs_h1
+
+    assert _finite(np.float32(0.05)) is True               # numpy scalar counts as finite (mirror _finite_or_none)
+    # CONSTRUCTED breaker: partial promoted.json -> h1 dict with no 'name' and non-finite systema, plus a
+    # non-finite comparator, so both tie at -inf and the tie-break would compare None < str.
+    s = summarize_vs_h1([{"name": "c", "systema": float("nan")}], {"systema": float("nan")})
+    assert isinstance(s["ranked"], list)                   # must NOT raise TypeError
+    # a numpy-typed finite comparator is eligible and a numpy-typed H1 win is detected.
+    s2 = summarize_vs_h1([{"name": "c", "systema": np.float32(0.03)}], {"name": "h1", "systema": np.float32(0.08)})
+    assert s2["strongest_comparator"] == "c" and s2["h1_beats_strongest"] is True
+
+
+def test_load_promoted_final_distinguishes_absent_corrupt_partial_valid(tmp_path):
+    from tcell_pipeline.run_module8_real import _load_promoted_final
+
+    p = tmp_path / "promoted.json"
+    assert _load_promoted_final(p) == (None, "absent")                       # no file
+    p.write_text("{ this is not json")
+    h1, st = _load_promoted_final(p)
+    assert h1 is None and st.startswith("unreadable")                        # corrupt/truncated
+    p.write_text('{"runner_up": {"name": "x"}}')                            # parses, no 'final'
+    assert _load_promoted_final(p) == (None, "present but no valid 'final' dict")
+    p.write_text('{"final": "condition_gated"}')                            # 'final' is a bare string, not a dict
+    assert _load_promoted_final(p) == (None, "present but no valid 'final' dict")
+    p.write_text('{"final": {"name": "condition_gated", "systema": 0.0834}}')  # valid
+    h1, st = _load_promoted_final(p)
+    assert st == "ok" and h1["systema"] == 0.0834
+
+
+def test_fmt_signed_is_none_safe():
+    from tcell_pipeline.run_module8_real import _fmt_signed
+
+    assert _fmt_signed(0.0834) == "+0.0834"
+    assert _fmt_signed(None) == "n/a" and _fmt_signed(float("nan")) == "n/a"
 
 
 def test_comparators_register_as_distinct_families(tmp_path):

@@ -12,8 +12,13 @@ BUT no-graph `expression_only` (0.0861) and `untyped_gnn` (0.0951) beat the comp
 does not rescue the graph. `txpert_public` 0.0321 ≈ `network_propagation` 0.0319 cross-checks the path.
 Single-seed (no error bars; 5-seed promotion still owed). Deterministic (~65 s CPU, 0 GPU-hours). Cap: 2
 configs / 2 families, 1/16 trials each — at the family ceiling; 15 slots/family unused. New
-`summarize_vs_h1()` + red-green adversarial test; `./init.sh` green at **281**. Artifacts under
-`data/results/comparators/` (`comparators_vs_h1.json` is the H1-vs-comparators table). **Not committed yet.**
+`summarize_vs_h1()` + red-green adversarial test. Artifacts under `data/results/comparators/`
+(`comparators_vs_h1.json` is the H1-vs-comparators table). Committed `92ad4e8`; then an xhigh `/code-review`
+found **9 robustness findings (all fixed, reported result unchanged)** — a fold guard (`--n-max` no longer
+compares a capped fold to the full-fold H1), a None-safe verdict print, `h1_beats_strongest=None` when
+there's nothing to compare, robust `promoted.json` loading, a None-safe ranking tie-break, `_finite`
+widened to numpy, a `margin_within_noise` flag, and an import hoist (+5 red-green tests). `./init.sh` green
+at **286**. **Fixes not committed yet.**
 
 **Still owed on feat-010 / next:** the comparators are single-hop public reimplementations (1/16 slots each) —
 a stronger sweep (more hops / learned propagation / multi-head) within the 16-trial budget is available but

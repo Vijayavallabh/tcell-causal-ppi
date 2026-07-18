@@ -22,8 +22,19 @@ reference. **Single-seed, no error bars** (the report's 5-seed promotion, `N_FIN
 Cap: 2 distinct comparator configs across 2 families = 1/16 trials each, **2/2 families (at the ceiling)**; the
 other 15 slots/family (a hyperparameter sweep) are unused. New: `summarize_vs_h1()` + a red-green,
 adversarial-input test. Artifacts under `data/results/comparators/` (`comparators_val.parquet`,
-`comparators_vs_h1.json`, per-family `compatibility_report.yaml`). `./init.sh` green at **281**. feat-010 → **done**.
-**Not yet committed** (awaiting the commit ask).
+`comparators_vs_h1.json`, per-family `compatibility_report.yaml`). feat-010 → **done**. Committed `92ad4e8`.
+
+**xhigh `/code-review` of `92ad4e8` (2026-07-18) — 9 findings, all fixed; reported result UNCHANGED.** Every
+finding was degenerate/misused-input robustness, not the campaign numbers. Fixed test-first (+5 tests watched
+failing, constructed breakers per the adversarial-input gate): a **fold guard** (a `--n-max` run no longer
+compares a capped fold to the full-fold H1 — verified live, the verdict is now skipped); a **None-safe
+verdict print** (`_fmt_signed`, the old `None:+.4f` crashed *after* the JSON was written); `h1_beats_strongest`
+is **None not False** when there's nothing to compare (≠ a loss); robust `promoted.json` loading
+(`_load_promoted_final` — corrupt/partial/bare-string no longer crash or mislabel provenance); a **None-safe
+ranking tie-break**; `_finite` widened to `np.floating`; a **`margin_within_noise` flag** (0.01 band,
+mirroring `promotion.py`); and an import hoist. Full-fold rerun reproduces H1 0.0834 beats txpert_public
+0.0321 (+0.0513, outside noise). `./init.sh` green at **286** (281 + 5). 2 candidates refuted. **Fixes not
+committed yet.**
 
 ## ✅ DONE: the feat-011 full-fold screening campaign (finished 2026-07-18 03:32 IST, 8.2 h) — NEGATIVE result
 

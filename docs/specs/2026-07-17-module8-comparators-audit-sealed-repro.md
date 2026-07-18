@@ -103,7 +103,37 @@ bit-for-bit; ~65 s CPU per run, **0 GPU-hours**.
   <family>/compatibility_report.yaml}`, `data/results/predictions/<family>/val/0.parquet`. New:
   `summarize_vs_h1()` + `test_summarize_vs_h1_ranks_margin_and_guards_bad_input` (watched failing;
   constructed breakers — NaN-systema comparator can't be strongest, H1-below-comparator reports a loss,
-  missing `promoted.json`, empty comparator set). `./init.sh` green at **281**.
+  missing `promoted.json`, empty comparator set). `./init.sh` green at **281**. Committed `92ad4e8`.
+
+**xhigh `/code-review` of `92ad4e8` (2026-07-18, 22 agents) — 9 findings, all fixed; the reported result is
+UNCHANGED.** Every finding was robustness on a degenerate or misused input, not the campaign numbers. Fixed
+test-first (+5 tests, constructed breakers per the adversarial-input gate; `./init.sh` green at **286**):
+
+- **Fold guard.** A `--n-max` run scores comparators on a capped fold but read the full-fold H1 from
+  `promoted.json` and wrote an authoritative `basis: "SAME fold"` verdict — a silent cross-fold comparison.
+  `summarize_vs_h1(..., fold_comparable=(n_max is None))` now suppresses the H1 verdict on a subsampled fold
+  (records `fold_comparable` + `h1_comparison_skipped` + a loud WARNING). Verified live: `--n-max 60` skips it.
+- **None-safe verdict print.** The verdict line did `None:+.4f` and crashed *after* `comparators_vs_h1.json`
+  was already written, on exactly the non-finite degeneracy `summarize_vs_h1`'s guards exist for. `_fmt_signed`
+  prints `n/a`.
+- **`h1_beats_strongest` is `None`, not `False`, when there is nothing to compare** (no eligible comparator,
+  or no comparable H1) — "nothing to compare" ≠ "H1 lost". A real negative margin still reports `False`.
+- **Robust `promoted.json` loading** (`_load_promoted_final`): a corrupt/truncated file, or a `final` that is
+  not a dict (a bare name string), no longer crashes the run after the table landed; a present-but-partial
+  file is no longer mislabeled "absent" (`promoted_json` keyed on the FILE, `promoted_json_status` carries the
+  distinction).
+- **None-safe ranking tie-break** (`str(e["name"])`) so a `None` H1 name from a partial `promoted.json` cannot
+  raise `None < str` inside the sort.
+- **`_finite` widened to `np.floating`** (mirrors `_finite_or_none`) so a numpy-typed systema is not silently
+  dropped from the ranking.
+- **`margin_within_noise` flag** (0.01 systema band, `_NOISE_MARGIN`, mirroring `promotion.py`'s
+  `--noise-margin`) so a hairline single-seed win prints `[WITHIN NOISE]`, not a decisive beat. The real
+  +0.0513 is correctly `margin_within_noise=False`.
+- **Import hoist** — `_finite_or_none` moved to the module top block.
+
+Two candidates were refuted (a numpy-serialization crash and a duplicate `_finite` claim, both unreachable in
+the current `float()`-wrapped metric flow). The full-fold rerun reproduces H1 `condition_gated` 0.0834 beats
+`txpert_public` 0.0321 (+0.0513) unchanged.
 
 ## B) Rationale audit (feat-012) — `rationale/rationale_audit.py`
 
