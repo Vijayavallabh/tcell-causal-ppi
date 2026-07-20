@@ -1,5 +1,48 @@
 # Session Handoff
 
+## ✅ 5-SEED ROBUSTNESS CAMPAIGN — DONE (2026-07-20 04:22 IST): the negative is now statistically RESOLVED
+
+The "5-seed promotion still owed" debt noted below is **paid**. Built `screening/multiseed.py` (paired
+aggregation) and ran seeds 1-4 over the §10.6 family on the SAME frozen fold (`blocked_target_ood`,
+21,262/4,400, reused not redrawn), one A100 per seed, 20-epoch budget, ~30.9 h wall / 102.3 `gpu_hours`.
+
+**n=5, coverage 20/20 (zero dropped / non-finite / stale), `single_frozen_fold=True`:**
+H2a `typed_static − expression_only` = **−0.0131** CI[−0.0190,−0.0072] p=0.0036 (**CI excludes zero — the
+typed graph is reliably WORSE than no-graph**); H2b `condition_gated − typed_static` = **+0.0112**
+CI[+0.0046,+0.0177] p=0.0092; promotion margin `untyped_gnn − expression_only` = **+0.0045**
+CI[+0.0011,+0.0079] p=0.0208. Per-config mean systema: `untyped_gnn` 0.0902 > `expression_only` 0.0857 >
+`condition_gated` 0.0838 > `typed_static` 0.0726.
+
+**All three single-seed coin tosses are resolved.** The negative holds and sharpens: the frozen H1
+`condition_gated` (0.0838) still sits BELOW no-graph `expression_only` (0.0857); H2b only means gating
+*repairs* the damage typing did (0.0726 → 0.0838, still short of 0.0857); the ONLY graph variant that
+reliably beats no-graph is the plain **untyped** GNN (+0.0045) — no typed biology, no evidence gating.
+
+**Convergence favours the negative:** `expression_only`/`untyped_gnn` 5/5 **capped** at 20/20 epochs (still
+improving); `typed_static`/`condition_gated` 0/5 capped, early-stopped at 11-13 epochs → with patience=10
+their best val was **epoch 1-3**. The graph models plateaued early at a worse optimum and still lost.
+
+`promoted.json` is **UNCHANGED** (frozen H1 still `condition_gated` seed 0 @ 0.08340652613564893, basis
+still single-seed) — the deliverable is the SEPARATE `data/results/screening/robustness_5seed.{json,md}`.
+Caveat: `gpu_hours` is a *contended* wall-time proxy on the shared box, not clean compute. Development fold
+only — the sealed challenge split remains SEQUESTERED and UNOPENED.
+
+**Open / next:** decide whether feat-011 flips to `done` (the screening + promotion + 5-seed robustness are
+all landed; status left `in-progress` pending your call on any remaining ablations). The untyped-GNN edge
+(+0.0045) is the one live thread if anyone wants to chase graph value — it is generic message passing, not
+the EG-IPG typed/gated thesis. `run_multiseed_campaign.sh` + `multiseed.py --seeds ...` re-run the whole
+thing; the aggregator is safe to re-run any time (read-only, writes only the robustness report).
+
+## ✅ feat-006 elastic-net + H1 tabular comparator bar — DONE (2026-07-20)
+
+`ElasticNetBaseline` added (per-output `MultiOutputRegressor(ElasticNet)`, parallel — multitask L21 ground
+for >17 min; per-output fits in 65 s). `run_module8_real.py --part baselines` scores every simple baseline
+on the frozen fold through the same `response_metric_suite` as feat-010, X = the target's static graph node
+feature (1412-d). **H1 0.0834 beats the strongest tabular baseline (`elastic_net` 0.0342) by +0.0492** —
+again a trained-predictor win, not graph value (no-graph `expression_only` 0.0861 beats the bar too).
+Consumes NO comparator-family cap. **Still deferred for feat-006 done:** CatBoost/gradient-boosting (new
+dependency) and TabPFN (dependency + pretrained-weight download) — ask before adding either.
+
 ## ✅ feat-010 external comparators — DONE (2026-07-18): H1 clears the comparators, graph premise still fails
 
 Scored `StableShiftAdapter` + `TxPertPublicAdapter` on the SAME dev val fold the campaign used (4,400 rows,

@@ -1,5 +1,57 @@
 # Session Progress Log
 
+## ✅ DONE: the 5-seed robustness campaign (finished 2026-07-20 04:22 IST, ~30.9 h) — the negative is RESOLVED, not a coin toss
+
+`config.N_FINAL_SEEDS=5` was declared for exactly this and referenced nowhere but a `promotion.py` note.
+Built the paired aggregation (`screening/multiseed.py`) and ran seeds 1-4 (seed 0 already on disk) over the
+§10.6 family on the **same frozen fold** (`blocked_target_ood`, 21,262/4,400 — reused, never redrawn;
+`--seed` reseeds init + data order only), one A100 per seed, 20-epoch budget.
+
+**Paired t on per-seed Δsystema (n=5; coverage 20/20 cells, zero dropped / non-finite / stale):**
+
+| contrast | mean Δ | 95% CI | p |
+|---|---:|---|---:|
+| H2a `typed_static − expression_only` | **−0.0131** | [−0.0190, −0.0072] | 0.0036 |
+| H2b `condition_gated − typed_static` | **+0.0112** | [+0.0046, +0.0177] | 0.0092 |
+| promotion `untyped_gnn − expression_only` | **+0.0045** | [+0.0011, +0.0079] | 0.0208 |
+
+Per-config mean systema: `untyped_gnn` 0.0902 > `expression_only` 0.0857 > `condition_gated` 0.0838 >
+`typed_static` 0.0726.
+
+**All three single-seed coin tosses (−0.0075 / +0.0048 / +0.0090, each inside the 0.01 band) are now
+statistically resolved.** The negative **holds and sharpens**: the frozen H1 `condition_gated` (0.0838)
+still sits *below* no-graph `expression_only` (0.0857); `typed_static` is reliably *worse* than no-graph;
+H2b only means gating **repairs** the damage typing did (0.0726 → 0.0838, still short of 0.0857). The only
+graph variant that reliably beats no-graph is the plain **untyped** GNN (+0.0045) — the one with no typed
+biology and no evidence gating.
+
+**Convergence favours the negative:** `expression_only`/`untyped_gnn` were 5/5 **capped** at 20/20 epochs
+(still improving at the budget), while `typed_static`/`condition_gated` were 0/5 capped, early-stopping at
+11-13 epochs — with patience=10 their best val was **epoch 1-3**. The graph models plateaued early at a
+worse optimum; the no-graph models were still climbing and still won. More epochs would widen the gap.
+
+**Cost:** ~30.9 h wall (vs ~17.7 h est) and 102.3 `gpu_hours` over 20 lanes — but `gpu_hours` is a
+*contended* wall-time proxy on the shared box (`typed_static` seed 1 = 11.88 h vs seed 4 = 5.34 h for the
+SAME 11 epochs), not clean compute. `promoted.json` **unchanged**; the deliverable is the separate
+`data/results/screening/robustness_5seed.{json,md}`.
+
+## ✅ DONE: feat-006 elastic-net + the H1 tabular comparator bar (2026-07-20)
+
+`ElasticNetBaseline` uses a per-output `MultiOutputRegressor(ElasticNet)` parallel across the K programs —
+the coupled-L21 `MultiTaskElasticNet` ground for >17 min without converging on 1412 features × 128
+programs, while the per-output form fits the full train fold in 65 s (alpha/tol set for *convergence*, not
+the score; more regularisation only weakens the model, so it cannot flatter it vs H1).
+
+New `run_module8_real.py --part baselines` fits every simple baseline on the train fold predicting Δz from
+the target's **static graph node feature** (1412-d) and scores val through the same `response_metric_suite`
+as feat-010, ranked vs the frozen H1 by the shared `summarize_vs_h1`. Val targets are disjoint from train,
+so it is a genuine generalisation bar; no comparator-family cap is consumed.
+
+`elastic_net` +0.0342 > `ridge` +0.0206 > `zero` +0.0197 > `low_rank` +0.0169 > `perturbed_mean` +0.0123 >
+`nearest_neighbor` +0.0042 — **H1 (0.0834) beats the strongest by +0.0492**, outside the noise band. Same
+honest caveat as feat-010: a *trained-predictor* win, not graph value (no-graph `expression_only` 0.0861
+beats the tabular bar too). CatBoost/TabPFN remain deferred (new dependency + weight download).
+
 ## ✅ DONE: feat-010 external-comparator campaign (2026-07-18) — H1 beats the comparators, but the graph premise still fails
 
 Scored the two public comparators on the SAME development val fold the feat-011 campaign used (21,262 train /

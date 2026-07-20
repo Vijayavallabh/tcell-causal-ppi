@@ -224,6 +224,94 @@ def run_comparators(n_max=None, seed: int = 0, register: bool = True) -> int:
     return 0
 
 
+_TABULAR = ("zero", "perturbed_mean", "ridge", "elastic_net", "nearest_neighbor", "low_rank")
+
+
+def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
+    """feat-006 tabular baselines as an ADDITIONAL H1 comparator bar (like feat-010, CPU/minutes): fit each
+    simple baseline on the REAL train fold — predicting Δz from the target gene's static graph node feature —
+    score the REAL val fold through the SAME response_metric_suite, and rank vs the frozen H1 on systema.
+
+    Same leakage fence as feat-010: models see TRAIN (feature, response) only; val features are the FROZEN
+    static node features (no val response leaks); ``train_mean`` is the train perturbed mean. blocked-target
+    OOD means val targets are DISJOINT from train, so this is a genuine generalisation bar, not memorisation.
+    These are NOT external comparators: they consume no feat-010 comparator-family cap and are not registered
+    in the experiment registry — the deliverable is predictions + the H1-vs-baselines report."""
+    from tcell_pipeline.baselines import BASELINES
+
+    graph, g2i = build_hetero_graph()
+    train, val = _folds(n_max)
+    tr, va = collect_targets_truth(train), collect_targets_truth(val)
+    train_mean = dataset_delta_z(train).mean(0)
+    B = train.B.numpy()
+    Xg = graph["protein"].x.numpy()
+
+    def feats(genes):
+        F = np.zeros((len(genes), Xg.shape[1]), dtype=np.float64)
+        cov = 0
+        for i, g in enumerate(genes):
+            j = g2i.get(g)
+            if j is not None:
+                F[i] = Xg[j]
+                cov += 1
+        return F, cov
+
+    Xtr, ctr = feats(tr["genes"])
+    Xva, cva = feats(va["genes"])
+    print(f"[m8-base] {len(tr['genes'])} train / {len(va['genes'])} val rows; target-in-graph "
+          f"{ctr}/{len(Xtr)} train, {cva}/{len(Xva)} val; feat_dim={Xg.shape[1]}; "
+          f"K={B.shape[1]} G={B.shape[0]}", flush=True)
+
+    rows = []
+    for name in _TABULAR:
+        model = BASELINES[name](basis=B)
+        model.fit(Xtr, tr["delta_z"])          # feature-free baselines ignore X content, use its row count
+        dz, dx = model.predict(Xva)
+        metrics = compute_all_metrics(dz, dx, va["delta_z"], va["delta_x"], train_mean)
+        write_predictions(va["row_index"], dz, dx, None, model=f"baseline_{name}", split="val", seed=seed,
+                          root=config.PREDICTIONS_ROOT)
+        rows.append({"name": name, **metrics})
+        print(f"[m8-base] {name:16s} systema={metrics['systema']:+.4f} pearson={metrics['pearson']:+.4f}",
+              flush=True)
+
+    out = Path(config.COMPARATORS_ROOT) / "tabular_baselines_val.parquet"
+    config.write_parquet_atomic(pd.DataFrame(rows), out)
+    print("\n" + " ".join(f"{c:>16}" if c == "name" else f"{c:>9}" for c in _COLS))
+    for r in rows:
+        print(" ".join(f"{r['name']:>16}" if c == "name" else f"{r[c]:>9.4f}" for c in _COLS))
+    print(f"[m8-base] table -> {out}")
+
+    fold_comparable = n_max is None
+    promo_path = Path(config.SCREENING_ROOT) / "promoted.json"
+    h1, promo_status = _load_promoted_final(promo_path)
+    if promo_status not in ("ok", "absent"):
+        print(f"[m8-base] WARNING: promoted.json {promo_status} — H1 verdict skipped", flush=True)
+    if h1 and not fold_comparable:
+        print(f"[m8-base] WARNING: --n-max={n_max} subsamples the fold; the H1-vs-baseline verdict is "
+              f"SKIPPED (not comparable to the full-fold H1)", flush=True)
+    summary = summarize_vs_h1(rows, h1, noise_margin=_NOISE_MARGIN, fold_comparable=fold_comparable)
+    summary["tabular_baselines_val_parquet"] = str(out)
+    summary["promoted_json"] = str(promo_path) if promo_path.exists() else None
+    summary["promoted_json_status"] = promo_status
+    summary["bar"] = ("feat-006 tabular baselines (target static node-feature -> Δz); NOT external "
+                      "comparators, no comparator-family cap consumed")
+    summ_path = Path(config.COMPARATORS_ROOT) / "tabular_baselines_vs_h1.json"
+    config.write_text_atomic(json.dumps(_finite_or_none(summary), indent=2, allow_nan=False), summ_path)
+    if summary["h1_beats_strongest"] is not None:
+        verdict = "beats" if summary["h1_beats_strongest"] else "does NOT beat"
+        noise = " [WITHIN NOISE — single-seed, treat as a tie]" if summary["margin_within_noise"] else ""
+        print(f"[m8-base] H1 {summary['frozen_h1']} systema={_fmt_signed(summary['h1_systema'])} {verdict} "
+              f"strongest baseline {summary['strongest_comparator']} "
+              f"systema={_fmt_signed(summary['strongest_comparator_systema'])} "
+              f"(margin {_fmt_signed(summary['margin_h1_minus_strongest'])}){noise}")
+    elif h1 and fold_comparable:
+        print("[m8-base] frozen H1 present but no eligible (finite-systema) baseline to compare against")
+    else:
+        print("[m8-base] no H1 verdict emitted — baselines ranked without a comparable frozen H1")
+    print(f"[m8-base] H1-vs-tabular-baselines summary -> {summ_path}")
+    return 0
+
+
 # --------------------------------------------------------------------------------------------------
 def run_audit(n_cases: int, n_controls: int, device: str, n_max=None, untrained: bool = True) -> int:
     """feat-012 machinery over the REAL graph. Honest framing: without the frozen promoted H1 the numbers
@@ -322,7 +410,8 @@ def run_repro() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--part", default="all", choices=["comparators", "audit", "repro", "all"])
+    ap.add_argument("--part", default="all",
+                    choices=["comparators", "baselines", "audit", "repro", "all"])
     ap.add_argument("--n-max", type=int, default=None, help="cap rows per split (quick runs)")
     ap.add_argument("--n-cases", type=int, default=config.N_RATIONALE_AUDIT_CASES)
     ap.add_argument("--n-controls", type=int, default=10, help="matched-random controls per audited case")
@@ -333,6 +422,8 @@ def main() -> int:
     rc = 0
     if a.part in ("comparators", "all"):
         rc |= run_comparators(a.n_max, register=not a.no_register)
+    if a.part in ("baselines", "all"):
+        rc |= run_tabular_baselines(a.n_max)
     if a.part in ("audit", "all"):
         rc |= run_audit(a.n_cases, a.n_controls, a.device, a.n_max, a.untrained)
     if a.part in ("repro", "all"):

@@ -14,8 +14,11 @@ q_pre context features (ridge) or a target profile (kNN); the baselines stay agn
 from __future__ import annotations
 
 import numpy as np
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import ElasticNet, Ridge
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.neighbors import NearestNeighbors
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from tcell_pipeline import config
 
@@ -126,6 +129,34 @@ class RidgeBaseline(BaseBaseline):
         return _as_columns(self._model.predict(X))
 
 
+class ElasticNetBaseline(BaseBaseline):
+    """Per-output ElasticNet (L1+L2) from context features X to program Δz, one fit per program in parallel.
+
+    Standardises X on the TRAINING fold before the coordinate-descent fit — an L1 penalty is scale-sensitive,
+    so unstandardised features let large-scale columns dominate the sparsity. The scaler is fit on train only
+    (inside the pipeline), so no val statistics leak. Uses ``MultiOutputRegressor`` (K independent single-task
+    fits across cores) rather than ``MultiTaskElasticNet``: the coupled-L21 multitask descent is
+    O(iters × features × samples × K) and grinds for many minutes on 1412 features × 128 programs, while the
+    parallel per-output form converges in minutes. ``alpha``/``tol`` are set for CONVERGENCE, not the score —
+    more regularisation only weakens the linear model, so it cannot flatter elastic-net vs H1."""
+
+    requires_features = True
+
+    def __init__(self, basis=None, alpha: float = 0.1, l1_ratio: float = 0.5, max_iter: int = 2000,
+                 tol: float = 1e-3, n_jobs: int = -1) -> None:
+        super().__init__(basis)
+        self._model = make_pipeline(
+            StandardScaler(),
+            MultiOutputRegressor(ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=max_iter, tol=tol),
+                                 n_jobs=n_jobs))
+
+    def _fit(self, X, z, conditions) -> None:
+        self._model.fit(X, z)
+
+    def _predict_z(self, X, conditions) -> np.ndarray:
+        return _as_columns(self._model.predict(X))
+
+
 class NearestNeighborBaseline(BaseBaseline):
     """kNN by target/context profile: predict the mean program delta of the k nearest training rows."""
 
@@ -189,6 +220,7 @@ BASELINES: dict = {
     "perturbed_mean": PerturbedMeanBaseline,
     "condition_mean": ConditionMeanBaseline,
     "ridge": RidgeBaseline,
+    "elastic_net": ElasticNetBaseline,
     "nearest_neighbor": NearestNeighborBaseline,
     "low_rank": LowRankBaseline,
 }

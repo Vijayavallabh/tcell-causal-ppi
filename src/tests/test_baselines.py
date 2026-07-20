@@ -12,6 +12,7 @@ import pytest
 from tcell_pipeline.baselines import (
     BASELINES,
     ConditionMeanBaseline,
+    ElasticNetBaseline,
     LowRankBaseline,
     NearestNeighborBaseline,
     PerturbedMeanBaseline,
@@ -112,7 +113,18 @@ def test_nearest_neighbor_returns_neighbor_values():
     assert np.allclose(dz, z)
 
 
-@pytest.mark.parametrize("name", ["ridge", "nearest_neighbor", "low_rank"])
+def test_elastic_net_learns_linear_signal():
+    X, z, B, Xt, conds, conds_t = _data()
+    en = ElasticNetBaseline(basis=B).fit(X, z)
+    zero = ZeroBaseline(basis=B).fit(X, z)
+    dz_en, _ = en.predict(X)
+    dz_zero, _ = zero.predict(X)
+    err_en = np.mean((dz_en - z) ** 2)
+    err_zero = np.mean((dz_zero - z) ** 2)
+    assert err_en < 0.5 * err_zero          # standardised elastic-net recovers most of the linear signal
+
+
+@pytest.mark.parametrize("name", ["ridge", "elastic_net", "nearest_neighbor", "low_rank"])
 def test_feature_requiring_baselines_reject_none_features(name):
     X, z, B, _, conds, conds_t = _data()
     with pytest.raises(ValueError, match="requires a feature matrix X"):
