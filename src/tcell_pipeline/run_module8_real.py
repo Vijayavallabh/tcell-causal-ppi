@@ -95,8 +95,15 @@ def _load_promoted_final(promo_path: Path) -> tuple[dict | None, str]:
     return final, "ok"
 
 
+_EXTERNAL_BASIS = (
+    "development val fold (blocked_target_ood); single-seed; H1 systema read from promoted.json "
+    "(frozen campaign artifact, NOT retrained). A comparator win does NOT rescue the graph premise — "
+    "the no-graph expression_only model beats these comparators too (see campaign spec).")
+
+
 def summarize_vs_h1(comparator_rows: list[dict], h1: dict | None, *, noise_margin: float = 0.0,
-                    fold_comparable: bool = True) -> dict:
+                    fold_comparable: bool = True, kind: str = "comparator",
+                    basis: str | None = None) -> dict:
     """H1-vs-comparators on the primary endpoint (report §Comparators: H1 must beat "the strongest eligible
     comparator"). Ranks the external comparators + the frozen H1 on ``systema`` and records H1's margin over
     the strongest ELIGIBLE comparator — a finite-systema one, so a NaN/Inf metric (a near-null-signal
@@ -119,7 +126,10 @@ def summarize_vs_h1(comparator_rows: list[dict], h1: dict | None, *, noise_margi
     beats = None if margin is None else bool(margin > 0)   # None = nothing to compare, NOT a loss
     within_noise = None if margin is None else bool(abs(margin) <= noise_margin)
 
-    entries = [{"name": r["name"], "systema": r.get("systema"), "kind": "comparator"} for r in comparator_rows]
+    # `kind`/`basis` are parameterised: the feat-006 tabular baselines reuse this summarizer but are
+    # explicitly NOT external comparators, and hardcoding both mislabelled them in the emitted JSON that
+    # a later comparator-family-cap audit would scan.
+    entries = [{"name": r["name"], "systema": r.get("systema"), "kind": kind} for r in comparator_rows]
     if compare:
         entries.append({"name": h1.get("name"), "systema": h1_sys, "kind": "frozen_h1"})
     # non-finite systema sinks to the bottom; str() on the name tie-break so a None H1 name never hits None < str
@@ -138,9 +148,8 @@ def summarize_vs_h1(comparator_rows: list[dict], h1: dict | None, *, noise_margi
         "h1_beats_strongest": beats,
         "margin_within_noise": within_noise,
         "ranked": ranked,
-        "basis": "development val fold (blocked_target_ood); single-seed; H1 systema read from promoted.json "
-                 "(frozen campaign artifact, NOT retrained). A comparator win does NOT rescue the graph "
-                 "premise — the no-graph expression_only model beats these comparators too (see campaign spec).",
+        "kind": kind,
+        "basis": basis if basis is not None else _EXTERNAL_BASIS,
     }
     if bool(h1) and not fold_comparable:
         out["h1_comparison_skipped"] = ("comparators scored on a subsampled/other fold; the frozen H1 systema "
@@ -262,7 +271,7 @@ def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
           f"{ctr}/{len(Xtr)} train, {cva}/{len(Xva)} val; feat_dim={Xg.shape[1]}; "
           f"K={B.shape[1]} G={B.shape[0]}", flush=True)
 
-    rows = []
+    rows, diagnostics = [], {}
     for name in _TABULAR:
         model = BASELINES[name](basis=B)
         model.fit(Xtr, tr["delta_z"])          # feature-free baselines ignore X content, use its row count
@@ -271,6 +280,9 @@ def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
         write_predictions(va["row_index"], dz, dx, None, model=f"baseline_{name}", split="val", seed=seed,
                           root=config.PREDICTIONS_ROOT)
         rows.append({"name": name, **metrics})
+        if hasattr(model, "fit_diagnostics"):  # an under-fit bar would INFLATE the H1 margin — record it
+            diagnostics[name] = model.fit_diagnostics()
+            print(f"[m8-base] {name} fit: {diagnostics[name]}", flush=True)
         print(f"[m8-base] {name:16s} systema={metrics['systema']:+.4f} pearson={metrics['pearson']:+.4f}",
               flush=True)
 
@@ -289,12 +301,24 @@ def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
     if h1 and not fold_comparable:
         print(f"[m8-base] WARNING: --n-max={n_max} subsamples the fold; the H1-vs-baseline verdict is "
               f"SKIPPED (not comparable to the full-fold H1)", flush=True)
-    summary = summarize_vs_h1(rows, h1, noise_margin=_NOISE_MARGIN, fold_comparable=fold_comparable)
+    summary = summarize_vs_h1(
+        rows, h1, noise_margin=_NOISE_MARGIN, fold_comparable=fold_comparable, kind="baseline",
+        basis="feat-006 tabular baselines (target STATIC graph node-feature -> Δz) on the development "
+              "val fold (blocked_target_ood); single-seed; H1 systema read from promoted.json (frozen, "
+              "NOT retrained). These are NOT feat-010 external comparators and consume no "
+              "comparator-family cap. Beating this bar is a trained-predictor win, NOT graph value — the "
+              "no-graph expression_only model beats it too.")
     summary["tabular_baselines_val_parquet"] = str(out)
     summary["promoted_json"] = str(promo_path) if promo_path.exists() else None
     summary["promoted_json_status"] = promo_status
-    summary["bar"] = ("feat-006 tabular baselines (target static node-feature -> Δz); NOT external "
-                      "comparators, no comparator-family cap consumed")
+    summary["fit_diagnostics"] = diagnostics
+    # off-graph targets get an all-zero feature row indistinguishable from real data; every such val row
+    # gets the SAME constant prediction, depressing the feature-regressing baselines and inflating the H1
+    # margin. Persist the counts so the margin can be audited from the artifact, not a lost stdout line.
+    summary["feature_coverage"] = {
+        "train_rows": int(len(Xtr)), "train_in_graph": int(ctr), "train_off_graph": int(len(Xtr) - ctr),
+        "val_rows": int(len(Xva)), "val_in_graph": int(cva), "val_off_graph": int(len(Xva) - cva),
+        "note": "off-graph targets receive an all-zero feature vector (no node features available)"}
     summ_path = Path(config.COMPARATORS_ROOT) / "tabular_baselines_vs_h1.json"
     config.write_text_atomic(json.dumps(_finite_or_none(summary), indent=2, allow_nan=False), summ_path)
     if summary["h1_beats_strongest"] is not None:

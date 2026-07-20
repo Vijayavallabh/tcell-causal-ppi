@@ -1,5 +1,50 @@
 # Session Progress Log
 
+## ⚠️ CORRECTION (2026-07-20) — two claims below were OVERSTATED; the numbers stand, the conclusions change
+
+An xhigh workflow `/code-review` of `f1a00dd` returned 15 verified findings, two of them claim-level. The
+paired-t math was **verified correct** (every "the statistic is wrong" candidate was refuted) and **no
+number below changes** — but two published *conclusions* did not follow from those numbers. The section
+below is left intact (append-only); this block supersedes it.
+
+**(1) The headline H1-vs-no-graph claim was never actually tested.** "The frozen H1 `condition_gated`
+(0.0838) still sits *below* no-graph `expression_only` (0.0857)" was read off two marginal per-config
+means — that pair was **not in `CONTRASTS`**. Run as a proper paired contrast:
+
+| contrast | mean Δ | 95% CI | p |
+|---|---:|---|---:|
+| `condition_gated − expression_only` | **−0.0019** | [−0.0042, **+0.0004**] | **0.0847** |
+
+The CI **crosses zero**. The honest statement is that the frozen H1 is at **statistical parity** with
+no-graph on this fold: it does **not** beat no-graph, and it cannot be said to sit *below* it either.
+`h1_vs_no_graph` is now a first-class entry in `CONTRASTS`, so this claim can never again be read off
+marginal means.
+
+**(2) No multiplicity control.** The contrasts were each tested at raw alpha=0.05. With family-wise
+correction over the (now four) simultaneous contrasts:
+
+| contrast | raw p | Bonferroni | Holm | survives FWER |
+|---|---:|---:|---:|---|
+| h2a `typed_static − expression_only` | 0.0036 | 0.0142 | 0.0142 | **yes** |
+| h2b `condition_gated − typed_static` | 0.0092 | 0.0369 | 0.0277 | **yes** |
+| promotion `untyped_gnn − expression_only` | 0.0208 | **0.0832** | 0.0416 | **NO** |
+| h1_vs_no_graph | 0.0847 | 0.3389 | 0.0847 | **NO** |
+
+`survives_family_wise` requires **both** methods (the conservative call, so the correction method cannot
+be chosen after seeing which one rescues a claim). The claim "**the only graph variant that reliably
+beats no-graph is the plain untyped GNN (+0.0045)**" is therefore **RETRACTED**: that margin is nominally
+positive but **not robust to multiplicity**.
+
+**CORRECTED BOTTOM LINE.** After multiplicity control, **no graph variant reliably beats no-graph**. The
+typed variant is reliably **worse** (h2a, survives correction). The frozen H1 is at **parity**. H2b
+(survives) only means gating *repairs* the damage typing did. The core negative for the EG-IPG premise
+**stands, and is cleaner than what was first published** — the overstatement was in claiming more
+resolution than the data supports, in both directions.
+
+`robustness_5seed.{json,md}` were regenerated and now carry raw + Bonferroni + Holm p,
+`survives_family_wise`, the `h1_vs_no_graph` contrast, fold-size evidence, and a non-zero exit path.
+13 further guard defects were fixed (see the feat-011 evidence block). `./init.sh` green at 314.
+
 ## ✅ DONE: the 5-seed robustness campaign (finished 2026-07-20 04:22 IST, ~30.9 h) — the negative is RESOLVED, not a coin toss
 
 `config.N_FINAL_SEEDS=5` was declared for exactly this and referenced nowhere but a `promotion.py` note.

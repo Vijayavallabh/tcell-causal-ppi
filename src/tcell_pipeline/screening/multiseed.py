@@ -35,11 +35,15 @@ from tcell_pipeline.screening.screening import (
 
 FROZEN_SPLIT = "blocked_target_ood"
 FAMILY = (EXPRESSION_ONLY, UNTYPED_GNN, TYPED_STATIC, CONDITION_GATED)
-# pre-registered contrasts on systema + the promotion margin the seed-0 fold turned on (untyped − expr):
+# pre-registered contrasts on systema + the promotion margin the seed-0 fold turned on (untyped − expr).
+# h1_vs_no_graph is the headline pair the campaign exists to settle: it was ORIGINALLY MISSING here and
+# the claim was read off two marginal per-config means instead — an undecidable pair published as decided
+# (xhigh review, 2026-07-20). Every claim about a pair must come from a contrast in this tuple.
 CONTRASTS = (
     ("h2a", TYPED_STATIC, EXPRESSION_ONLY),          # does typed static beat expression-only?
     ("h2b", CONDITION_GATED, TYPED_STATIC),          # does condition gating beat typed static?
     ("promotion_margin", UNTYPED_GNN, EXPRESSION_ONLY),  # does ANY graph beat no-graph?
+    ("h1_vs_no_graph", CONDITION_GATED, EXPRESSION_ONLY),  # does the FROZEN H1 beat no-graph?
 )
 
 
@@ -50,21 +54,59 @@ def _finite(x) -> bool:
     return isinstance(x, (int, float, np.floating)) and not isinstance(x, bool) and math.isfinite(x)
 
 
-def _verdict(mean: float, ci_excludes_zero: bool, n: int) -> str:
+def _verdict(mean, ci_excludes_zero, n: int, *, fold_comparable: bool = True) -> str:
+    if not fold_comparable:
+        return (f"NOT comparable (n={n}): the seeds were not shown to be scored on one frozen fold, so "
+                f"the paired assumption is void — no verdict is emitted")
+    if ci_excludes_zero is None:
+        return (f"degenerate at n={n}: zero variance across seeds (identical deltas) — there is no "
+                f"spread to infer from, and this is the signature of seeds that did NOT propagate, "
+                f"NOT evidence of an effect")
     if not ci_excludes_zero:
         return (f"indistinguishable at n={n}: the paired CI crosses zero — underpowered / no effect at "
                 f"this budget, NOT support for the better arm")
     return f"CI excludes zero (n={n}) — favors the {'better' if mean > 0 else 'worse'} arm by Δ={mean:+.4f}"
 
 
-def paired_delta_summary(better_by_seed, worse_by_seed, *, alpha: float = 0.05) -> dict:
+def _apply_family_wise(contrasts: dict, alpha: float) -> int:
+    """Multiplicity control over the SIMULTANEOUS contrasts, in place; returns the family size.
+
+    Both Bonferroni and Holm adjusted p are recorded, and ``survives_family_wise`` requires BOTH — the
+    conservative call. Reporting a single method chosen after seeing which one rescues a claim is
+    exactly the look-elsewhere effect ``reproducibility/fallacy_scan.py`` exists to catch, so the method
+    cannot be shopped here: the numbers for both are always on the record."""
+    testable = [(k, c) for k, c in contrasts.items() if c.get("p_value") is not None]
+    m = len(testable)
+    for c in contrasts.values():
+        c["family_size"] = m
+        c.setdefault("p_bonferroni", None)
+        c.setdefault("p_holm", None)
+        c.setdefault("survives_family_wise", None)
+    if not m:
+        return 0
+    for _, c in testable:
+        c["p_bonferroni"] = min(1.0, c["p_value"] * m)
+    running = 0.0                                     # Holm step-down, monotonic in ascending p
+    for i, (_, c) in enumerate(sorted(testable, key=lambda kc: kc[1]["p_value"])):
+        running = max(running, min(1.0, c["p_value"] * (m - i)))
+        c["p_holm"] = running
+    for _, c in testable:
+        c["survives_family_wise"] = bool(c["p_holm"] <= alpha and c["p_bonferroni"] <= alpha)
+    return m
+
+
+def paired_delta_summary(better_by_seed, worse_by_seed, *, alpha: float = 0.05, seeds=None) -> dict:
     """One-sample (paired) t on ``d_s = better_s − worse_s`` against 0. Never raises, never NaN-poisons:
     a seed missing from either arm, or non-finite in either, is DROPPED (named in ``dropped``) and
     shrinks n. ``n<2`` -> mean only, no CI (a single seed is not a paired result). Honest verdict: a CI
-    crossing zero is "indistinguishable at this budget", not support for the better arm."""
-    seeds = sorted(set(better_by_seed) | set(worse_by_seed))
+    crossing zero is "indistinguishable at this budget", not support for the better arm.
+
+    ``seeds`` is the REQUESTED seed set. Pass it: without it the loop only visits the union of the two
+    arms, so a seed missing from BOTH (an OOMed or wholly-stale seed) silently vanishes — n shrinks with
+    an empty ``dropped`` list and a 4-seed result reads as the intended 5-seed design."""
+    universe = sorted(set(better_by_seed) | set(worse_by_seed)) if seeds is None else sorted(set(seeds))
     deltas, used, dropped = [], [], []
-    for s in seeds:
+    for s in universe:
         b, w = better_by_seed.get(s), worse_by_seed.get(s)
         if _finite(b) and _finite(w):
             deltas.append(float(b) - float(w))
@@ -92,18 +134,20 @@ def paired_delta_summary(better_by_seed, worse_by_seed, *, alpha: float = 0.05) 
     sd = float(d.std(ddof=1))
     se = sd / math.sqrt(n)
     out["sd"], out["se"] = sd, se
-    if se == 0.0:  # identical deltas across seeds — a real edge; no t/p, zero-width CI parked at the mean
-        out["ci_low"] = out["ci_high"] = mean
-        out["p_value"] = 0.0 if mean != 0.0 else 1.0
-        out["ci_excludes_zero"] = bool(mean != 0.0)
-    else:
-        tcrit = float(stats.t.ppf(1 - alpha / 2, df=n - 1))
-        t = mean / se
-        out["t"] = t
-        out["p_value"] = float(2 * stats.t.sf(abs(t), df=n - 1))
-        out["ci_low"] = mean - tcrit * se
-        out["ci_high"] = mean + tcrit * se
-        out["ci_excludes_zero"] = bool(out["ci_low"] > 0 or out["ci_high"] < 0)
+    if se == 0.0:
+        # Zero variance is UNDECIDABLE, not maximally significant. Publishing p=0.0 / "CI excludes zero"
+        # here would report the one condition that proves the seeds carry no information (identical
+        # deltas -> the seed never propagated, or one parquet backs every seed) as the strongest
+        # possible evidence. Leave p/CI/ci_excludes_zero as None and say so.
+        out["verdict"] = _verdict(mean, None, n)
+        return out
+    tcrit = float(stats.t.ppf(1 - alpha / 2, df=n - 1))
+    t = mean / se
+    out["t"] = t
+    out["p_value"] = float(2 * stats.t.sf(abs(t), df=n - 1))
+    out["ci_low"] = mean - tcrit * se
+    out["ci_high"] = mean + tcrit * se
+    out["ci_excludes_zero"] = bool(out["ci_low"] > 0 or out["ci_high"] < 0)
     out["verdict"] = _verdict(mean, out["ci_excludes_zero"], n)
     return out
 
@@ -140,21 +184,25 @@ def _read_seed_metrics(names, seed: int, *, screening_root: Path, registry_path:
         metrics[name] = float(val)
         status[name] = "ok"
         meta[name] = {"gpu_hours": row.get("gpu_hours"), "epochs_run": row.get("epochs_run"),
-                      "n_epochs": row.get("n_epochs"), "mtime": path.stat().st_mtime}
+                      "n_epochs": row.get("n_epochs"), "mtime": path.stat().st_mtime,
+                      "n_train": row.get("n_train"), "n_val": row.get("n_val")}
     return metrics, status, meta
 
 
-def _splits_by_config_seed(names, seeds, registry_path: Path | None) -> set:
-    """Distinct ``split`` values the registry recorded for these (name, seed) COMPLETED runs — the
-    fold-identity evidence. All must be the one frozen split; a second value means seeds were scored on
-    different folds (provenance is not comparability). Empty when no registry is given."""
+def _splits_by_config_seed(names, seeds, registry_path: Path | None) -> tuple[set, bool]:
+    """``(distinct split values, registry_evidence)`` for these (name, seed) COMPLETED runs.
+
+    The second element matters as much as the first: ``load_registry`` degrades a missing, truncated or
+    null registry to ``[]``, so an EMPTY split set means "no evidence", never "one fold". Reporting the
+    empty case as a pass is the provenance-is-not-comparability failure inverted into a false all-clear."""
     if registry_path is None:
-        return set()
+        return set(), False
     from tcell_pipeline.screening.experiment_registry import load_registry
-    want_names, want_seeds = set(names), set(seeds)
-    return {r.get("split") for r in load_registry(registry_path)
-            if r.get("config_id") in want_names and int(r.get("seed", 0)) in want_seeds
-            and r.get("status") == "completed"}
+    want_names, want_seeds = set(names), {int(s) for s in seeds}
+    matched = [r for r in load_registry(registry_path)
+               if r.get("config_id") in want_names and int(r.get("seed", 0)) in want_seeds
+               and r.get("status") == "completed"]
+    return {r.get("split") for r in matched}, bool(matched)
 
 
 def _mean_ci(values_by_seed, *, alpha: float = 0.05) -> dict:
@@ -173,10 +221,11 @@ def aggregate_seeds(seeds, *, names=FAMILY, screening_root: Path = config.SCREEN
     ``{name: {seed: metric}}``, and runs ``paired_delta_summary`` per contrast. Every non-ok (name,
     seed) is surfaced in ``coverage`` and named in each affected contrast's ``dropped`` — a dropped seed
     shrinks n, it is never silently ignored."""
-    seeds = list(seeds)
-    by_config = {n: {} for n in names}   # name -> {seed: metric}
+    seeds = [int(s) for s in seeds]      # str / numpy seed keys resolve the parquet path but defeat
+    by_config = {n: {} for n in names}   # both int-keyed guards, yielding a fully-numbered unguarded run
     coverage = {}                        # seed -> {name: status}
     run_meta = {}                        # "name@seed" -> run meta
+    fold_sizes = set()                   # observed (n_train, n_val) — the REAL fold signal
     for s in seeds:
         m, st, mt = _read_seed_metrics(names, s, screening_root=screening_root,
                                        registry_path=registry_path, primary=primary)
@@ -185,23 +234,64 @@ def aggregate_seeds(seeds, *, names=FAMILY, screening_root: Path = config.SCREEN
             by_config[n][s] = v
         for n, d in mt.items():
             run_meta[f"{n}@{s}"] = d
+            if d.get("n_train") is not None and d.get("n_val") is not None:
+                fold_sizes.add((int(d["n_train"]), int(d["n_val"])))
 
-    contrasts = {}
+    # Fold identity. The registry `split` label is filled from cfg.get("split", "blocked_target_ood") by
+    # screen_config while nested_family_configs never sets it, so it is a hardcoded literal that can only
+    # ever CONFIRM and never refute (a --n-max capped run still reports blocked_target_ood). The recorded
+    # row sizes are the signal that actually catches a capped or redrawn fold. Absence of BOTH is
+    # UNKNOWN (None) — never a pass.
+    splits, registry_evidence = _splits_by_config_seed(names, seeds, registry_path)
+    sizes_consistent = (len(fold_sizes) == 1) if fold_sizes else None
+    splits_ok = (bool(splits) and splits <= {FROZEN_SPLIT}) if registry_evidence else None
+    if sizes_consistent is False or splits_ok is False:
+        single_fold = False
+    elif sizes_consistent is True or splits_ok is True:
+        single_fold = True
+    else:
+        single_fold = None
+    fold_comparable = single_fold is True
+
+    contrasts, skipped = {}, []
     for key, better, worse in CONTRASTS:
         if better not in by_config or worse not in by_config:
-            continue  # a contrast whose member is outside the requested family cannot be formed
-        contrasts[key] = {"better": better, "worse": worse,
-                          **paired_delta_summary(by_config[better], by_config[worse], alpha=alpha)}
+            skipped.append(key)      # recorded, never silent: "not computed" != "not significant"
+            continue
+        c = paired_delta_summary(by_config[better], by_config[worse], alpha=alpha, seeds=seeds)
+        c.update({"better": better, "worse": worse, "fold_comparable": fold_comparable})
+        if not fold_comparable:      # qualify like summarize_vs_h1's fold gate, don't publish bare CIs
+            c["verdict"] = _verdict(c["mean"], c["ci_excludes_zero"], c["n"], fold_comparable=False)
+        contrasts[key] = c
+    family_size = _apply_family_wise(contrasts, alpha)
 
     per_config = {n: _mean_ci(by_config[n], alpha=alpha) for n in names}
+    covered = [set(by_config[n]) for n in names if by_config[n]]
+    common = sorted(set.intersection(*covered)) if covered else []
+    balanced = bool(covered) and all(set(by_config[n]) == set(common) for n in names if by_config[n])
     ranked = sorted(per_config.items(),
                     key=lambda kv: (-(kv[1]["mean"] if kv[1]["mean"] is not None else -math.inf), kv[0]))
-    splits = _splits_by_config_seed(names, seeds, registry_path)
     return {"seeds": seeds, "primary": primary, "alpha": alpha, "family": list(names),
             "coverage": coverage, "run_meta": run_meta,
             "fold": {"expected_split": FROZEN_SPLIT, "observed_splits": sorted(s for s in splits if s),
-                     "single_frozen_fold": bool(splits <= {FROZEN_SPLIT})},
-            "contrasts": contrasts, "per_config": per_config, "ranking": [n for n, _ in ranked]}
+                     "registry_evidence": registry_evidence,
+                     "observed_fold_sizes": sorted(fold_sizes),
+                     "fold_sizes_consistent": sizes_consistent,
+                     "single_frozen_fold": single_fold},
+            "contrasts": contrasts, "contrasts_skipped": skipped, "family_size": family_size,
+            "per_config": per_config, "common_seeds": common, "balanced": balanced,
+            "ranking": [n for n, _ in ranked]}
+
+
+def _exit_code(agg: dict) -> int:
+    """Non-zero when the report is not a clean, comparable result.
+
+    ``main()`` previously returned 0 unconditionally — even straight after printing FOLD MISMATCH — so an
+    unattended campaign script, or any CI/init.sh gate keyed on exit status, recorded a green run while
+    the JSON held CIs the code itself had just declared incomparable."""
+    incomplete = any(st != "ok" for cov in agg["coverage"].values() for st in cov.values())
+    return 1 if (incomplete or agg["fold"]["single_frozen_fold"] is not True
+                 or agg["contrasts_skipped"] or not agg["balanced"]) else 0
 
 
 # --------------------------------------------------------------------------------------------------
@@ -211,16 +301,29 @@ def _render_md(agg: dict) -> str:
     fold = agg["fold"]
     L = [f"# 5-seed robustness — paired {agg['primary']} across seeds {agg['seeds']}", "",
          "_Separate from `promoted.json`: the frozen H1 (condition_gated seed 0) is untouched._", "",
-         f"**Fold:** expected `{fold['expected_split']}`, observed "
-         f"{fold['observed_splits'] or '(no registry)'} — single frozen fold: "
-         f"{fold['single_frozen_fold']}", "",
+         f"**Fold:** expected `{fold['expected_split']}`, observed splits "
+         f"{fold['observed_splits'] or '(none)'} (registry evidence: {fold['registry_evidence']}), "
+         f"observed fold sizes {fold['observed_fold_sizes'] or '(none recorded)'} "
+         f"(consistent: {fold['fold_sizes_consistent']}) — **single frozen fold: "
+         f"{fold['single_frozen_fold']}** (`None` = no evidence either way, NOT a pass)", "",
+         f"**Multiplicity:** {agg['family_size']} simultaneous contrasts at alpha={agg['alpha']}; "
+         f"`survives_family_wise` requires BOTH Bonferroni and Holm (the conservative call, so the "
+         f"correction method cannot be chosen after seeing which one rescues a claim).", "",
          "## Paired contrasts", "",
-         "| contrast | better − worse | n | mean Δsystema | 95% CI | verdict |",
-         "|---|---|---:|---:|---|---|"]
+         "| contrast | better − worse | n | mean Δsystema | 95% CI | raw p | Bonferroni | Holm | "
+         "survives FWER | verdict |",
+         "|---|---|---:|---:|---|---:|---:|---:|---|---|"]
     for key, c in agg["contrasts"].items():
         ci = f"[{c['ci_low']:+.4f}, {c['ci_high']:+.4f}]" if c["ci_low"] is not None else "n/a"
         mean = f"{c['mean']:+.4f}" if c["mean"] is not None else "n/a"
-        L.append(f"| {key} | {c['better']} − {c['worse']} | {c['n']} | {mean} | {ci} | {c['verdict']} |")
+        pr = f"{c['p_value']:.4f}" if c.get("p_value") is not None else "n/a"
+        pb = f"{c['p_bonferroni']:.4f}" if c.get("p_bonferroni") is not None else "n/a"
+        ph = f"{c['p_holm']:.4f}" if c.get("p_holm") is not None else "n/a"
+        L.append(f"| {key} | {c['better']} − {c['worse']} | {c['n']} | {mean} | {ci} | {pr} | {pb} | "
+                 f"{ph} | {c.get('survives_family_wise')} | {c['verdict']} |")
+    if agg["contrasts_skipped"]:
+        L += ["", f"**Contrasts NOT computed** (a member was outside the requested family — this is "
+                  f"'not computed', NOT 'not significant'): {agg['contrasts_skipped']}"]
     L += ["", "## Per-config systema (mean ± 95% CI)", "",
           "| rank | config | n | mean systema | 95% CI |", "|---:|---|---:|---:|---|"]
     for i, n in enumerate(agg["ranking"], 1):
@@ -228,6 +331,9 @@ def _render_md(agg: dict) -> str:
         ci = f"[{pc['ci_low']:+.4f}, {pc['ci_high']:+.4f}]" if pc["ci_low"] is not None else "n/a"
         mean = f"{pc['mean']:+.4f}" if pc["mean"] is not None else "n/a"
         L.append(f"| {i} | {n} | {pc['n']} | {mean} | {ci} |")
+    L += ["", f"_Ranking bases: common seeds {agg['common_seeds']}, balanced={agg['balanced']}. Each "
+              f"per-config mean is over that config's OWN completed seeds, so when `balanced` is False "
+              f"the ranking compares different seed bases — read the paired contrasts above instead._"]
     bad = {s: {n: st for n, st in cov.items() if st != "ok"} for s, cov in agg["coverage"].items()}
     bad = {s: v for s, v in bad.items() if v}
     if bad:
@@ -254,8 +360,13 @@ def _print_agg(agg: dict) -> None:
     for key, c in agg["contrasts"].items():
         ci = f"[{c['ci_low']:+.4f},{c['ci_high']:+.4f}]" if c["ci_low"] is not None else "n/a"
         mean = f"{c['mean']:+.4f}" if c["mean"] is not None else "n/a"
+        pr = f"{c['p_value']:.4f}" if c.get("p_value") is not None else "n/a"
+        ph = f"{c['p_holm']:.4f}" if c.get("p_holm") is not None else "n/a"
+        pb = f"{c['p_bonferroni']:.4f}" if c.get("p_bonferroni") is not None else "n/a"
         print(f"[robust] {key:16s} {c['better']} - {c['worse']}: n={c['n']} mean={mean} CI={ci} "
-              f":: {c['verdict']}")
+              f"p={pr} bonf={pb} holm={ph} fwer={c.get('survives_family_wise')} :: {c['verdict']}")
+    if agg["contrasts_skipped"]:
+        print(f"[robust] contrasts NOT computed (member outside the family): {agg['contrasts_skipped']}")
     print("[robust] per-config systema (mean ± CI):")
     for i, n in enumerate(agg["ranking"], 1):
         pc = agg["per_config"][n]
@@ -284,10 +395,19 @@ def main(argv=None) -> int:
     incomplete = {s: v for s, v in incomplete.items() if v}
     if incomplete:
         print(f"[robust] ** INCOMPLETE COVERAGE **: {incomplete}")
-    if not agg["fold"]["single_frozen_fold"]:
-        print(f"[robust] ** FOLD MISMATCH **: observed splits {agg['fold']['observed_splits']} — "
-              f"seeds are NOT comparable")
-    return 0
+    if agg["fold"]["single_frozen_fold"] is False:
+        print(f"[robust] ** FOLD MISMATCH **: splits {agg['fold']['observed_splits']} sizes "
+              f"{agg['fold']['observed_fold_sizes']} — seeds are NOT comparable")
+    elif agg["fold"]["single_frozen_fold"] is None:
+        print("[robust] ** NO FOLD EVIDENCE **: neither a registry split nor recorded fold sizes — "
+              "comparability is UNVERIFIED (absence of evidence is not a pass)")
+    if not agg["balanced"]:
+        print(f"[robust] ** UNBALANCED **: per-config seed bases differ; common seeds "
+              f"{agg['common_seeds']} — the ranking compares different bases")
+    rc = _exit_code(agg)
+    if rc:
+        print(f"[robust] exiting {rc}: this report is not a clean comparable result")
+    return rc
 
 
 if __name__ == "__main__":

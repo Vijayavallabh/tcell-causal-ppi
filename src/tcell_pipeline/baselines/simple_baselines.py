@@ -156,6 +156,23 @@ class ElasticNetBaseline(BaseBaseline):
     def _predict_z(self, X, conditions) -> np.ndarray:
         return _as_columns(self._model.predict(X))
 
+    def fit_diagnostics(self) -> dict:
+        """Convergence + sparsity evidence for the fitted bar.
+
+        This baseline is published as a floor the H1 must CLEAR, so the dangerous direction is an
+        UNDER-fit: a non-converged or all-zero-coefficient solution silently inflates the H1 margin it
+        is supposed to bound. Regularisation-makes-it-weaker is the safe direction for a competitor, not
+        for a bar — so the evidence is recorded rather than assumed."""
+        head = self._model[-1]
+        est = getattr(head, "estimators_", [])
+        iters = [int(e.n_iter_) for e in est if getattr(e, "n_iter_", None) is not None]
+        nonzero = sum(int((e.coef_ != 0).sum()) for e in est)
+        total = sum(int(e.coef_.size) for e in est)
+        max_iter = int(head.estimator.max_iter)
+        return {"n_outputs": len(est), "n_iter_max": max(iters) if iters else None,
+                "max_iter": max_iter, "converged": bool(iters and max(iters) < max_iter),
+                "nonzero_coef_frac": (nonzero / total) if total else 0.0}
+
 
 class NearestNeighborBaseline(BaseBaseline):
     """kNN by target/context profile: predict the mean program delta of the k nearest training rows."""

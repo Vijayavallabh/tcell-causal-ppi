@@ -124,6 +124,18 @@ def test_elastic_net_learns_linear_signal():
     assert err_en < 0.5 * err_zero          # standardised elastic-net recovers most of the linear signal
 
 
+def test_elastic_net_records_fit_diagnostics():
+    """elastic_net is published as THE strongest tabular baseline backing an H1 margin, so an under-fit
+    (non-converged / all-zero-coefficient) bar would INFLATE that margin. The fit must expose evidence."""
+    X, z, B, Xt, conds, conds_t = _data()
+    m = ElasticNetBaseline(basis=B).fit(X, z)
+    d = m.fit_diagnostics()
+    assert d["n_iter_max"] is not None and d["n_iter_max"] >= 1
+    assert 0.0 <= d["nonzero_coef_frac"] <= 1.0
+    assert d["nonzero_coef_frac"] > 0.0, "an all-zero-coefficient fit is a degenerate bar, not a baseline"
+    assert isinstance(d["converged"], bool)
+
+
 @pytest.mark.parametrize("name", ["ridge", "elastic_net", "nearest_neighbor", "low_rank"])
 def test_feature_requiring_baselines_reject_none_features(name):
     X, z, B, _, conds, conds_t = _data()

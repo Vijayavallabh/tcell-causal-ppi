@@ -192,8 +192,14 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
         write_predictions(pred["row_index"], pred["delta_z"], pred["delta_x"], pred["sigma"],
                           model=name, split=split, seed=seed, root=predictions_root)
         gpu_hours = (time.perf_counter() - start) / 3600.0
+        # n_train/n_val are the REAL fold signal: the registry `split` label comes from
+        # cfg.get("split", "blocked_target_ood") and nested_family_configs never sets it, so that label is
+        # a hardcoded literal that can only CONFIRM, never refute — a --n-max capped run still records
+        # "blocked_target_ood". Recording the row counts lets the multi-seed aggregator actually catch
+        # seeds scored on different folds instead of differencing incomparable numbers.
         results = {"name": name, "seed": seed, "n_epochs": cfg["n_epochs"], "status": "completed",
                    "best_val": result["best_val"], "epochs_run": result["epochs_run"],
+                   "n_train": len(train_ds), "n_val": len(val_ds),
                    "gpu_hours": gpu_hours, "primary": metrics[PRIMARY_METRIC], **metrics}
         _write_result_row(results, screening_root, name, seed)
         if run_id is not None:

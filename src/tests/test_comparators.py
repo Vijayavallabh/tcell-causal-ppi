@@ -119,6 +119,18 @@ def test_public_only_is_explicit_flag_not_substring():
     assert compatibility(_Proprietary)["public_only"] is False
 
 
+def test_summarize_vs_h1_kind_and_basis_are_parameterisable():
+    """The tabular baselines reuse this summarizer but are explicitly NOT feat-010 external comparators;
+    hardcoding kind='comparator' and the external-comparator basis string mislabels them in the JSON a
+    later comparator-family-cap audit would scan."""
+    from tcell_pipeline.run_module8_real import summarize_vs_h1
+    rows = [{"name": "elastic_net", "systema": 0.0342}]
+    out = summarize_vs_h1(rows, {"name": "condition_gated", "systema": 0.0834},
+                          kind="baseline", basis="feat-006 tabular baselines; NOT external comparators")
+    assert [e["kind"] for e in out["ranked"] if e["name"] == "elastic_net"] == ["baseline"]
+    assert out["basis"].startswith("feat-006 tabular baselines")
+
+
 def test_summarize_vs_h1_ranks_margin_and_guards_bad_input():
     from tcell_pipeline.run_module8_real import summarize_vs_h1
 

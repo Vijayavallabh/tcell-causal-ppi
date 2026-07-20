@@ -1,5 +1,33 @@
 # Session Handoff
 
+## ⚠️ CORRECTION (2026-07-20) — READ THIS BEFORE THE SECTION BELOW: two claims were overstated
+
+An xhigh workflow `/code-review` of `f1a00dd` returned 15 verified findings, two claim-level. The
+paired-t math was verified CORRECT and **no reported number changed**; two *conclusions* did not follow.
+
+1. **"The frozen H1 sits BELOW no-graph" was never tested.** That pair was not in `CONTRASTS` — it was
+   read off two marginal per-config means. As a proper paired contrast: `condition_gated −
+   expression_only` = **−0.0019, CI [−0.0042, +0.0004], p=0.0847** → the CI crosses zero. The honest
+   statement: the frozen H1 is at **statistical parity** with no-graph — it does not beat it, and it
+   cannot be called *below* it. `h1_vs_no_graph` is now a first-class contrast.
+2. **No multiplicity control.** With family-wise correction over the four simultaneous contrasts:
+   h2a 0.0036→Bonf 0.0142 **survives**; h2b 0.0092→0.0369 **survives**; promotion_margin 0.0208→**0.0832
+   FAILS** (Holm 0.0416; `survives_family_wise` requires both, so the method cannot be shopped).
+   The claim "the only graph variant that reliably beats no-graph is the untyped GNN" is **RETRACTED**.
+
+**CORRECTED BOTTOM LINE:** after multiplicity control **no graph variant reliably beats no-graph**; the
+typed variant is reliably **worse** (survives correction); the frozen H1 is at **parity**; h2b only means
+gating repairs the damage typing did. The core negative **stands and is cleaner** than first published —
+the error was claiming more resolution than the data supports, in both directions.
+
+Also fixed (13 guard defects, all red-first): the fold gate now keys on recorded `n_train`/`n_val` (the
+registry `split` label is a hardcoded literal that can only confirm, never refute); absent fold evidence
+reports `None`, never a pass; zero variance is **undecidable**, not p=0.0; seeds missing from BOTH arms
+are named in `dropped`; a failed fold check qualifies every contrast; unformable contrasts are recorded;
+str/numpy seed keys are coerced so the guards cannot be silently disabled; `main()` now exits non-zero on
+an incomparable report; the tabular baselines are no longer labelled `kind: "comparator"`; off-graph
+feature coverage and ElasticNet convergence/sparsity are persisted. `./init.sh` green at **314**.
+
 ## ✅ 5-SEED ROBUSTNESS CAMPAIGN — DONE (2026-07-20 04:22 IST): the negative is now statistically RESOLVED
 
 The "5-seed promotion still owed" debt noted below is **paid**. Built `screening/multiseed.py` (paired
