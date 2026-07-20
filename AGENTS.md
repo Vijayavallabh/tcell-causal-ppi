@@ -55,6 +55,20 @@ Key facts:
   if they share the fold/basis. A `--n-max` comparator run scored a capped fold and would have published
   its systema against the full-fold H1 as an authoritative same-fold verdict — apples-to-oranges. Gate the
   A-vs-B on a fold/basis match (`fold_comparable`), not on both numbers merely existing.
+- **A comparison you did not compute is not a result — and simultaneous tests need a multiplicity
+  correction.** This session published "the frozen H1 sits BELOW no-graph" by reading two marginal
+  per-config means off a ranking table. That pair was never in `CONTRASTS`; run as an actual paired
+  contrast it was p=0.085 with the CI crossing zero — *indistinguishable*, not below. If you state "A
+  beats / trails B", a test of A-vs-B must exist in the code that produced the report: overlapping
+  summary intervals are not a substitute, and every honest-frame guard is silent on a comparison that
+  was never made. Then, when several contrasts are tested at once, raw alpha inflates the family-wise
+  error — report the corrected p and require it before calling anything "reliable" (a raw p=0.0208 hit
+  here failed Bonferroni yet had been published as a resolved positive). Record BOTH correction methods:
+  picking the one that rescues the claim after seeing the numbers is the look-elsewhere effect in a lab
+  coat. Related: a baseline published as a floor the result must CLEAR is bounded by its own fit
+  quality — "more regularisation only weakens it" is the safe direction for a *competitor* and the wrong
+  one for a *floor*, because an under-fit bar inflates the very margin it exists to bound. Record its
+  convergence/sparsity evidence instead of arguing the direction.
 - **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
   `session-handoff.md` — all three must match committed reality (a structurally valid but stale
   state file silently misroutes the next session)
@@ -92,8 +106,19 @@ A feature is done only when ALL of the following are true:
       A value **guarded** to be `None`/sentinel on a degenerate input is only guarded if EVERY consumer
       honors it: this session a verdict `print` did `None:+.4f` right after computing the guarded value,
       crashing on the exact degeneracy the guard existed for — trace the value from guard to output/JSON/
-      downstream gate. And in a verdict, **`None` ≠ negative**: encoding "nothing to compare" as `False`
+      downstream gate **and to the process exit code** (`main()` later printed `FOLD MISMATCH … NOT
+      comparable` and then `return 0`, so an unattended campaign and any exit-status CI gate recorded it
+      green). And in a verdict, **`None` ≠ negative**: encoding "nothing to compare" as `False`
       ("H1 lost") misreports a converging negative — keep undecidable distinct from decided-against.
+- [ ] **A guard whose input is a CONSTANT can only confirm, and absence of evidence must never read as
+      a pass.** Ask of every fence: *what input would make this FIRE?* If none can exist, it is
+      decoration — the fold gate here compared a registry `split` field that the producer hardcodes, so
+      no fold change could ever trip it, and a `--n-max` capped seed sailed through (the fix keyed it on
+      recorded `n_train`/`n_val`, a value that actually varies). Then check the empty case: `set() <=
+      {expected}` is vacuously true, so a missing registry published "single frozen fold: True" with
+      zero evidence — unknown must be `None`, never green. The same inversion at the statistics layer is
+      worse than a crash: zero variance across seeds was reported as `p=0.0, "CI excludes zero"`, turning
+      the one condition that proves the inputs carry no information into the strongest possible evidence.
 - [ ] Evidence recorded in `feature_list.json` or `progress.md`
 - [ ] Repository remains restartable from standard startup path
 
