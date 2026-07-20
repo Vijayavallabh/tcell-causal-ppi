@@ -20,6 +20,10 @@ on `bool(None) == bool(None)`, a config check that defaulted to a clean "skip". 
   manifest emit an explicit ``missing`` check.
 * Malformed manifest entries yield ``missing`` (→ CANNOT_VERIFY), not a traceback: the module's contract is to
   return a verdict.
+* A hash entry must declare WHERE its expected value came from (``provenance``). Only an independently frozen
+  record makes a match a reproduction test; a self-derived expected hash can only ever match, so it is
+  downgraded to ``incomplete`` and can never certify. Unlabelled counts as self-derived — unknown provenance
+  is not evidence. See ``INDEPENDENT`` below and ``manifest.build_hashes``.
 * The caller-supplied ``decision.tolerance`` is capped (``MAX_DECISION_TOLERANCE``) — a manifest that
   self-declares a huge tolerance could otherwise wave any drift through its own check.
 """
@@ -46,6 +50,31 @@ DEFAULT_DECISION_TOLERANCE: float = 1e-6
 MAX_DECISION_TOLERANCE: float = 0.01
 
 _PASS, _FAIL, _MISSING, _INCOMPLETE = "pass", "fail", "missing", "incomplete"
+
+# Where a hash entry's EXPECTED value came from. Only ``INDEPENDENT`` — a hash published when the artifact
+# was frozen, by a run other than this one — makes a match a reproduction test. A self-derived expected hash
+# (hash the file now, "check" it against itself) can only ever match, so it proves the file is readable and
+# nothing more; it is downgraded to ``incomplete`` so it cannot be read as a passed check. An entry that does
+# not SAY where its expected hash came from is treated as self-derived: unknown provenance is not evidence.
+INDEPENDENT, SELF_DERIVED = "independent-frozen", "self-derived"
+_SELF_DERIVED_REASON = ("expected hash is not from an independently frozen record, so the artifact was "
+                        "compared against itself — this shows it is readable and internally stable, NOT "
+                        "that it reproduced")
+# The same rule for the confirmatory decision, which is the single most load-bearing check here. ``decision``
+# and ``observed.decision`` both arrive inside one manifest and nothing structural stops them being the SAME
+# record — pointing one at the other passed as a reproduced decision. ``observed`` must therefore attest that
+# it came from an independent re-run; unattested, the comparison is ``incomplete``, never a pass.
+INDEPENDENT_RERUN = "independent-rerun"
+_UNATTESTED_DECISION = ("observed.decision does not declare provenance 'independent-rerun', so nothing "
+                        "establishes it came from a re-run rather than from the frozen record itself — a "
+                        "decision compared against itself is not a reproduced decision")
+
+
+def _as_dict(value) -> dict:
+    """``value`` if it is a dict, else ``{}``. ``(x or {}).get(...)`` guards a FALSY x but not a wrong-typed
+    one, so a list or string in a manifest slot raised AttributeError straight out of the verifier — which
+    breaks this module's contract to always return a verdict."""
+    return value if isinstance(value, dict) else {}
 
 
 def _sha256_file(path: Path) -> str | None:
@@ -106,14 +135,20 @@ def _check_hashes(checkout: Path, entries) -> list[dict]:
                                      f"cannot attribute it to this checkout"})
             continue
         actual = _sha256_file(path)
+        provenance = spec.get("provenance") if spec.get("provenance") == INDEPENDENT else SELF_DERIVED
         if actual is None:
             status = _MISSING
-        elif actual == spec["sha256"]:
+        elif actual != spec["sha256"]:
+            status = _FAIL        # a mismatch is decisive whatever the expected hash's provenance
+        elif provenance == INDEPENDENT:
             status = _PASS
         else:
-            status = _FAIL
-        checks.append({"check": f"hash:{name}", "category": category, "status": status,
-                       "expected": spec["sha256"], "actual": actual})
+            status = _INCOMPLETE  # matched, but against itself — coverage, not reproduction
+        check = {"check": f"hash:{name}", "category": category, "status": status,
+                 "expected": spec["sha256"], "actual": actual, "provenance": provenance}
+        if status == _INCOMPLETE:
+            check["reason"] = _SELF_DERIVED_REASON
+        checks.append(check)
     return checks
 
 
@@ -144,18 +179,35 @@ def _check_predictions(checkout: Path, entries) -> list[dict]:
             continue
         cols = list(frame.columns)
         prefixes = spec.get("columns_prefixes", ["row_index", "delta_z_", "delta_x_", "sigma_"])
+        # `all()` over an EMPTY prefix list is vacuously true, so `columns_prefixes: []` passed a parquet
+        # with entirely unrelated columns — and a non-string prefix crashed `startswith`
+        if (not isinstance(prefixes, (list, tuple)) or not prefixes
+                or not all(isinstance(p, str) and p for p in prefixes)):
+            checks.append({"check": f"schema:{name}", "category": "schema", "status": _MISSING,
+                           "reason": "columns_prefixes must be a non-empty list of non-empty strings — an "
+                                     "empty list satisfies the column check vacuously"})
+            continue
         have = all(any(c == p or c.startswith(p) for c in cols) for p in prefixes)
-        rows_ok = spec.get("n_rows") is None or len(frame) == spec["n_rows"]
-        checks.append({"check": f"schema:{name}", "category": "schema",
-                       "status": _PASS if (have and rows_ok) else _FAIL,
-                       "n_rows": len(frame), "expected_rows": spec.get("n_rows"), "columns_ok": have})
+        expected_rows = spec.get("n_rows")
+        if not have:
+            status = _FAIL
+        elif expected_rows is None:
+            # the row comparison was SKIPPED, not satisfied: unknown must never read as green
+            status = _INCOMPLETE
+        else:
+            status = _PASS if len(frame) == expected_rows else _FAIL
+        check = {"check": f"schema:{name}", "category": "schema", "status": status,
+                 "n_rows": len(frame), "expected_rows": expected_rows, "columns_ok": have}
+        if status == _INCOMPLETE:
+            check["reason"] = "manifest declares no n_rows, so the row count was not checked at all"
+        checks.append(check)
     return checks
 
 
 def _check_config(manifest: dict, config_snapshot: dict | None) -> list[dict]:
     """The config the frozen run used is part of what must reproduce (a changed DELTA_PRED alone can flip the
     H1 call), so an unverifiable config is 'missing', never a silent clean skip."""
-    expected = (manifest.get("config_hashes") or {}).get("config_snapshot")
+    expected = _as_dict(manifest.get("config_hashes")).get("config_snapshot")
     if expected is None:
         return [{"check": "config_hash", "category": "critical", "status": _MISSING,
                  "reason": "manifest declares no config_hashes.config_snapshot"}]
@@ -179,15 +231,16 @@ def _check_decision(manifest: dict) -> list[dict]:
                  "reason": reason}]
 
     frozen = manifest.get("decision")
-    observed = (manifest.get("observed") or {}).get("decision")
+    observed = _as_dict(manifest.get("observed")).get("decision")
     if not isinstance(frozen, dict) or not isinstance(observed, dict):
         return miss("manifest lacks a decision and/or observed.decision object")
     if not isinstance(frozen.get("h1_confirmed"), bool) or not isinstance(observed.get("h1_confirmed"), bool):
         return miss("h1_confirmed must be a boolean in BOTH the frozen and observed decision — a null or "
                     "string value is not a comparison (bool(None)==bool(None), bool('false') is True)")
+    # bool was excluded on the frozen side only, so `observed.lcb_95: true` compared as the number 1.0
     compared = [k for k in ("lcb_95", "rho_egipg", "delta_vs_best")
                 if isinstance(frozen.get(k), (int, float)) and isinstance(observed.get(k), (int, float))
-                and not isinstance(frozen.get(k), bool)]
+                and not isinstance(frozen.get(k), bool) and not isinstance(observed.get(k), bool)]
     if not compared:
         return miss("no numeric decision field (lcb_95/rho_egipg/delta_vs_best) present as a number in both")
     raw_tol = frozen.get("tolerance", DEFAULT_DECISION_TOLERANCE)
@@ -199,17 +252,26 @@ def _check_decision(manifest: dict) -> list[dict]:
                     f"widen its own bar past the scale of the endpoints it certifies")
     same_call = frozen["h1_confirmed"] == observed["h1_confirmed"]
     within = all(abs(float(frozen[k]) - float(observed[k])) <= tol for k in compared)
-    return [{"check": "confirmatory_decision", "category": "critical",
-             "status": _PASS if (same_call and within) else _FAIL,
+    attested = _as_dict(manifest.get("observed")).get("provenance") == INDEPENDENT_RERUN
+    if not (same_call and within):
+        status = _FAIL                              # a genuine drift is decisive whatever the provenance
+    elif attested:
+        status = _PASS
+    else:
+        status = _INCOMPLETE                        # matched, but nothing says against WHAT
+    check = {"check": "confirmatory_decision", "category": "critical", "status": status,
              "frozen": frozen, "observed": observed, "same_call": same_call, "within_tolerance": within,
-             "compared_fields": compared, "tolerance": tol}]
+             "compared_fields": compared, "tolerance": tol, "attested_rerun": attested}
+    if status == _INCOMPLETE:
+        check["reason"] = _UNATTESTED_DECISION
+    return [check]
 
 
 def _check_fallacies(manifest: dict) -> tuple[list[dict], dict]:
-    inputs = manifest.get("fallacy_inputs")
+    inputs = _as_dict(manifest.get("fallacy_inputs"))
     if not inputs:
         return [{"check": "fallacy_scan", "category": "critical", "status": _MISSING,
-                 "reason": "manifest carries no fallacy_inputs"}], {}
+                 "reason": "manifest carries no fallacy_inputs (or they are not an object)"}], {}
     scan = run_fallacy_scan(inputs)
     if scan["flagged"]:
         status = _FAIL           # a detected inference trap invalidates the claim
@@ -229,8 +291,15 @@ def _verdict(checks: list[dict]) -> str:
 
     A blacklist ('bad unless the status is in {fail, missing, incomplete}') is what let a 'skip' status
     certify; any status a future check author invents would silently do the same. ``incomplete`` is the one
-    non-pass status that still permits PARTIALLY — it means the scan ran but its coverage was short."""
+    non-pass status that still permits PARTIALLY — it means the scan ran but its coverage was short.
+
+    **Zero checks is CANNOT_VERIFY, not REPRODUCIBLE.** Each of the three tests below is an ``any()``, and
+    ``any([])`` is False, so an empty list fell straight through to the certifying return: absence of ALL
+    evidence read as the cleanest possible pass. That is reachable — every early return in
+    ``verify_reproducibility`` (missing checkout, empty manifest) sets ``checks: []``."""
     critical = [c for c in checks if c["category"] == "critical"]
+    if not critical:
+        return "CANNOT_VERIFY"
     if any(c["status"] == _FAIL for c in critical):
         return "NOT_REPRODUCIBLE"
     if any(c["status"] not in (_PASS, _INCOMPLETE) for c in critical):
@@ -246,16 +315,19 @@ def verify_reproducibility(checkout, manifest, *, config_snapshot: dict | None =
     ``{verdict, checks, fallacy_scan}`` and writes ``reproducibility_report.json``. A missing checkout, an
     empty manifest, or a manifest too malformed to read yields CANNOT_VERIFY — this function returns a
     verdict rather than raising, so an unattended verification always produces a report."""
+    report = None
     if isinstance(manifest, (str, Path)):
         try:
             manifest = json.loads(Path(manifest).read_text())
         except Exception as exc:
-            manifest = None
             report = {"verdict": "CANNOT_VERIFY", "reason": f"unreadable manifest: {exc}", "checks": []}
     checkout = Path(checkout)
 
-    if manifest is None:
-        pass  # report already set above
+    # keyed on ``report``, not on ``manifest is None``: a truncated write landing on the VALID json document
+    # `null` (and a caller passing manifest=None) took the success path and left ``report`` unbound, so the
+    # one case that crashed was a corrupt-but-parseable manifest, while pure garbage was handled
+    if report is not None:
+        pass
     elif not checkout.exists():
         report = {"verdict": "CANNOT_VERIFY", "reason": f"checkout {checkout} does not exist", "checks": []}
     elif not isinstance(manifest, dict) or not manifest:

@@ -7,12 +7,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sys
 
 import numpy as np
 import pytest
 
+from tcell_pipeline import config
 from tcell_pipeline.evaluation.output_schema import predictions_to_frame
 from tcell_pipeline.reproducibility import FALLACIES, VERDICTS, run_fallacy_scan, verify_reproducibility
+from tcell_pipeline.reproducibility import manifest as mf
+from tcell_pipeline.reproducibility import run_repro_real
+from tcell_pipeline.reproducibility.verify import INDEPENDENT, INDEPENDENT_RERUN, SELF_DERIVED
 
 
 def _clean_fallacy_inputs() -> dict:
@@ -212,7 +218,9 @@ def _build_checkout(tmp_path, *, rows=4):
     for name, rel in files.items():
         (ck / rel).write_text(f"deterministic-{name}")
         h = hashlib.sha256(f"deterministic-{name}".encode()).hexdigest()
-        hashes[name] = {"path": rel, "sha256": h}
+        # INDEPENDENT: these fixtures stand in for an expected hash published by the ORIGINAL run, which is
+        # the only kind of match that is a reproduction test (see test_self_derived_hash_* below).
+        hashes[name] = {"path": rel, "sha256": h, "provenance": INDEPENDENT}
     frame = predictions_to_frame(np.arange(rows), np.zeros((rows, 3)), np.zeros((rows, 6)))
     frame.to_parquet(ck / "pred.parquet", index=False)
     return ck, hashes
@@ -232,7 +240,10 @@ def _manifest(hashes, *, rows=4):
                                             "columns_prefixes": ["row_index", "delta_z_", "delta_x_", "sigma_"]}},
         "config_hashes": {"config_snapshot": _config_hash(_SNAPSHOT)},
         "decision": {"h1_confirmed": True, "lcb_95": 0.07, "tolerance": 0.01},
-        "observed": {"decision": {"h1_confirmed": True, "lcb_95": 0.068}},
+        # the fixture models a genuine RE-RUN, so it attests provenance; without that attestation the
+        # decision comparison is `incomplete` (see test_a_decision_compared_against_itself_never_certifies)
+        "observed": {"provenance": INDEPENDENT_RERUN,
+                     "decision": {"h1_confirmed": True, "lcb_95": 0.068}},
         "fallacy_inputs": _clean_fallacy_inputs(),
     }
 
@@ -362,7 +373,8 @@ def test_verify_caps_a_self_declared_tolerance(tmp_path):
     # a tolerance within the credible ceiling still applies
     manifest = _manifest(hashes)
     manifest["decision"] = {"h1_confirmed": True, "lcb_95": 0.07, "tolerance": 0.001}
-    manifest["observed"] = {"decision": {"h1_confirmed": True, "lcb_95": 0.0701}}
+    manifest["observed"] = {"provenance": INDEPENDENT_RERUN,
+                            "decision": {"h1_confirmed": True, "lcb_95": 0.0701}}
     assert _verify(ck, manifest, tmp_path)["verdict"] == "REPRODUCIBLE"
 
 
@@ -404,7 +416,573 @@ def test_verify_decision_tolerance_defaults_to_float_noise(tmp_path):
     ck, hashes = _build_checkout(tmp_path)
     manifest = _manifest(hashes)
     manifest["decision"] = {"h1_confirmed": True, "lcb_95": 0.07}          # no tolerance key
-    manifest["observed"] = {"decision": {"h1_confirmed": True, "lcb_95": 0.07 + 6e-16}}
+    manifest["observed"] = {"provenance": INDEPENDENT_RERUN,
+                            "decision": {"h1_confirmed": True, "lcb_95": 0.07 + 6e-16}}
     assert _verify(ck, manifest, tmp_path)["verdict"] == "REPRODUCIBLE"    # float noise tolerated
     manifest["observed"] = {"decision": {"h1_confirmed": True, "lcb_95": 0.09}}
     assert _verify(ck, manifest, tmp_path)["verdict"] == "NOT_REPRODUCIBLE"  # a real drift is not
+
+
+# ---------------------------------------------------------------------------------------------------
+# feat-013 part 2: a manifest built from THIS checkout's REAL frozen artifacts, and the 11 fallacy
+# probes authored from REAL diagnostics. The governing distinction throughout: a hash compared against
+# an INDEPENDENTLY frozen record is a reproduction test; a hash compared against itself is not, and must
+# never read as a passed check.
+# ---------------------------------------------------------------------------------------------------
+
+def test_self_derived_hash_match_reads_as_incomplete_not_pass(tmp_path):
+    """Hashing today's file and 'checking' it against itself proves only that the file is READABLE."""
+    ck, hashes = _build_checkout(tmp_path)
+    hashes["de_layers"]["provenance"] = SELF_DERIVED            # matches, but against its own hash
+    report = _verify(ck, _manifest(hashes), tmp_path)
+    check = next(c for c in report["checks"] if c["check"] == "hash:de_layers")
+    assert check["status"] == "incomplete", check
+    assert check["provenance"] == SELF_DERIVED and check["reason"]
+    assert report["verdict"] == "PARTIALLY_REPRODUCIBLE"        # never REPRODUCIBLE on a self-hash
+
+
+def test_unlabelled_hash_provenance_is_not_trusted(tmp_path):
+    """An entry that does not SAY where its expected hash came from cannot be known to be independent."""
+    ck, hashes = _build_checkout(tmp_path)
+    del hashes["splits"]["provenance"]
+    report = _verify(ck, _manifest(hashes), tmp_path)
+    assert next(c for c in report["checks"] if c["check"] == "hash:splits")["status"] == "incomplete"
+    assert report["verdict"] == "PARTIALLY_REPRODUCIBLE"
+
+
+def test_independently_frozen_hash_match_passes(tmp_path):
+    """The downgrade is not blanket: an independently frozen expected hash that matches still certifies."""
+    ck, hashes = _build_checkout(tmp_path)
+    report = _verify(ck, _manifest(hashes), tmp_path)
+    assert all(c["status"] == "pass" for c in report["checks"] if c["check"].startswith("hash:"))
+    assert report["verdict"] == "REPRODUCIBLE"
+
+
+def test_independently_frozen_hash_mismatch_still_fails(tmp_path):
+    """The fire path survives the provenance change — a real drift is still NOT_REPRODUCIBLE, not partial."""
+    ck, hashes = _build_checkout(tmp_path)
+    hashes["splits"]["sha256"] = "0" * 64
+    report = _verify(ck, _manifest(hashes), tmp_path)
+    assert next(c for c in report["checks"] if c["check"] == "hash:splits")["status"] == "fail"
+    assert report["verdict"] == "NOT_REPRODUCIBLE"
+
+
+# --- the manifest, built from the real checkout -----------------------------------------------------
+
+def test_build_manifest_declares_every_deterministic_artifact_with_a_relative_path():
+    m = mf.build_manifest()
+    for name in ("id_mapping", "splits", "de_layers"):
+        spec = m["hashes"][name]
+        assert not os.path.isabs(spec["path"]), spec           # absolute -> would hash the ORIGINAL run
+        assert (config.PROJECT_ROOT / spec["path"]).is_file()
+        assert len(spec["sha256"]) == 64 and spec["provenance"] in (INDEPENDENT, SELF_DERIVED)
+
+
+def test_build_manifest_marks_only_the_frozen_split_independent():
+    """data/splits/manifest.json published sha256 at freeze time -> splits is a genuine reproduction test.
+    Nothing else in this checkout has a frozen record, so nothing else may claim independence."""
+    m = mf.build_manifest()
+    prov = {k: v["provenance"] for k, v in m["hashes"].items()}
+    assert prov["splits"] == INDEPENDENT
+    assert prov["id_mapping"] == SELF_DERIVED and prov["de_layers"] == SELF_DERIVED
+    assert m["hashes"]["splits"]["source"]                     # names WHERE the expected hash came from
+
+
+def test_frozen_config_snapshot_matches_todays_config_and_can_still_drift(monkeypatch):
+    """The config check is only a check if its input can VARY. Its expected value is read from the
+    independently frozen data/splits/manifest.json, so editing config.py makes it disagree."""
+    frozen = mf.frozen_config_snapshot()
+    assert frozen and mf.live_config_snapshot() == frozen      # today's config still matches the freeze
+    monkeypatch.setattr(config, "SPLIT_SEED", config.SPLIT_SEED + 1)
+    assert mf.live_config_snapshot() != frozen                 # ...and a drift is visible
+
+
+def test_config_check_fires_when_live_config_drifts_from_the_freeze(tmp_path, monkeypatch):
+    """Trace it all the way to the verdict: a drifted config must FAIL, not silently skip."""
+    ck, hashes = _build_checkout(tmp_path)
+    manifest = _manifest(hashes)
+    manifest["config_hashes"] = {"config_snapshot": mf.config_hash(mf.frozen_config_snapshot())}
+    assert _verify(ck, manifest, tmp_path,
+                   config_snapshot=mf.live_config_snapshot())["verdict"] == "REPRODUCIBLE"
+    monkeypatch.setattr(config, "SEQ_SIM_COSINE_THRESHOLD", 0.9)
+    report = _verify(ck, manifest, tmp_path, config_snapshot=mf.live_config_snapshot())
+    assert next(c for c in report["checks"] if c["check"] == "config_hash")["status"] == "fail"
+    assert report["verdict"] == "NOT_REPRODUCIBLE"
+
+
+def test_manifest_records_the_steward_only_remainder():
+    """The one step an agent session cannot take must be NAMED, with who must take it."""
+    m = mf.build_manifest()
+    assert "decision" not in m and "observed" not in m         # no sealed decision may be invented
+    rem = m["unverified"]["confirmatory_decision"]
+    assert "steward" in rem["who"].lower() and rem["reason"] and rem["how"]
+
+
+# --- the eleven probes, authored from real diagnostics ----------------------------------------------
+
+def test_every_fallacy_is_authored_or_explicitly_unevaluable():
+    """A probe that is merely ABSENT loses its reason. Every one of the eleven must be accounted for."""
+    inputs, unevaluable = mf.build_fallacy_inputs(mf.load_diagnostics())
+    assert set(inputs) | set(unevaluable) == set(FALLACIES)
+    assert not (set(inputs) & set(unevaluable))
+    assert inputs, "no probe could be authored from this checkout's real diagnostics"
+
+
+def test_unevaluable_reasons_name_what_is_missing():
+    _, unevaluable = mf.build_fallacy_inputs(mf.load_diagnostics())
+    for name, reason in unevaluable.items():
+        assert len(reason) > 40 and name not in ("",), f"{name}: {reason!r}"
+
+
+def test_authored_probes_run_on_real_diagnostics_without_a_detector_bug():
+    """Real inputs must reach the detectors cleanly: no crash, and nothing authored may turn out to be
+    Unevaluable at runtime (that would be an input that only LOOKED real)."""
+    inputs, unevaluable = mf.build_fallacy_inputs(mf.load_diagnostics())
+    scan = run_fallacy_scan(inputs)
+    assert scan["crashed"] == [], scan["results"]
+    assert scan["errored"] == [], scan["results"]
+    assert scan["n_evaluated"] == len(inputs)
+    assert scan["complete"] is False and scan["n_evaluated"] == len(FALLACIES) - len(unevaluable)
+
+
+def test_look_elsewhere_uses_the_whole_preregistered_family():
+    """Feeding ONE p-value would make the detector arithmetically incapable of flagging (alpha/1 == alpha)
+    — a guard whose input is a constant. It must carry every simultaneously-tested contrast."""
+    diag = mf.load_diagnostics()
+    inputs, _ = mf.build_fallacy_inputs(diag)
+    assert len(inputs["look_elsewhere"]["pvalues"]) == diag["family_size"] >= 2
+
+
+def test_look_elsewhere_is_dropped_rather_than_understating_the_family():
+    """If a contrast is untestable its p is missing; scoring the survivors against a SMALLER m would
+    understate the correction. Better no probe than a lenient one."""
+    diag = mf.load_diagnostics()
+    diag["contrasts"] = dict(list(diag["contrasts"].items())[:-1])     # one contrast lost its p-value
+    inputs, unevaluable = mf.build_fallacy_inputs(diag)
+    assert "look_elsewhere" not in inputs and "family" in unevaluable["look_elsewhere"]
+
+
+def test_regression_to_mean_retests_on_seeds_excluded_from_the_selection():
+    """The retest must exclude the seed the winner was SELECTED on, or it is not a retest at all."""
+    def diag(retest_systema):
+        runs = [{"name": n, "seed": s, "systema": v, "pearson": 0.1, "epochs_run": 20.0, "n_epochs": 20.0}
+                for n, vals in retest_systema.items() for s, v in enumerate(vals)]
+        return {"runs": runs, "contrasts": {}, "family_size": 0, "h1_systema": 0.08,
+                "selection_seed": 0, "sources": {}}
+
+    # 'winner' is extreme ONLY on the selection seed -> its retest deviation must shrink -> flagged
+    shrinks = diag({"winner": [0.20, 0.09, 0.09, 0.09, 0.09], "a": [0.08, 0.08, 0.08, 0.08, 0.08],
+                    "b": [0.07, 0.07, 0.07, 0.07, 0.07], "c": [0.06, 0.06, 0.06, 0.06, 0.06]})
+    probe = mf.build_fallacy_inputs(shrinks)[0]["regression_to_mean"]
+    assert probe["baseline"][probe["baseline"].index(max(probe["baseline"]))] == 0.20
+    assert 0.20 not in probe["followup"]                       # the selection seed is NOT in the retest
+    assert run_fallacy_scan({"regression_to_mean": probe})["flagged"] == ["regression_to_mean"]
+
+    # a winner that stays extreme on the retest is NOT regression to the mean
+    holds = diag({"winner": [0.20, 0.20, 0.20, 0.20, 0.20], "a": [0.08, 0.08, 0.08, 0.08, 0.08],
+                  "b": [0.07, 0.07, 0.07, 0.07, 0.07], "c": [0.06, 0.06, 0.06, 0.06, 0.06]})
+    assert run_fallacy_scan({"regression_to_mean": mf.build_fallacy_inputs(holds)[0]
+                             ["regression_to_mean"]})["flagged"] == []
+
+
+def test_survivorship_survivors_are_the_runs_that_used_their_full_budget():
+    diag = mf.load_diagnostics()
+    probe = mf.build_fallacy_inputs(diag)[0]["survivorship"]
+    expected = [r["epochs_run"] == r["n_epochs"] for r in mf.usable_runs(diag["runs"])]
+    assert probe["survived"] == expected and any(expected) and not all(expected)
+
+
+# --- the driver: verdict -> report -> JSON -> exit code ---------------------------------------------
+
+def test_exit_code_is_zero_only_for_the_reproducible_verdict():
+    assert run_repro_real.exit_code("REPRODUCIBLE") == 0
+    for verdict in [v for v in VERDICTS if v != "REPRODUCIBLE"] + [None, "", "definitely fine"]:
+        assert run_repro_real.exit_code(verdict) != 0, verdict
+
+
+def test_real_run_reports_cannot_verify_on_the_reproduction_axis_and_exits_nonzero(tmp_path):
+    """The whole point of the feature: no sealed decision exists, so the REPRODUCTION axis is
+    CANNOT_VERIFY — and an unattended run must not exit 0 pretending success."""
+    rc = run_repro_real.main(["--out-dir", str(tmp_path)])
+    assert rc != 0
+    report = json.loads((tmp_path / "repro_real_report.json").read_text())
+    assert report["reproduction_verdict"] == "CANNOT_VERIFY"
+    assert report["reproduction_cause"]["check"] == "confirmatory_decision"
+    assert set(report["fallacy_unevaluable"]) | set(report["fallacy_scan"]["results"]) == set(FALLACIES)
+    assert report["unverified"]["confirmatory_decision"]["who"]
+    # self-derived hashes must be visible AS such in the written report, not just in the manifest
+    assert {c["check"] for c in report["checks"] if c.get("provenance") == SELF_DERIVED}
+
+
+# --- input classes the code above cannot reach by mutation: constructed by hand ----------------------
+
+def test_garden_of_forks_needs_both_arm_choices_not_one():
+    """One estimate has no spread to assess, so a lone fork must be REFUSED, not authored. Real data
+    carries both, so no mutation of the builder can surface this — the input has to be constructed."""
+    diag = mf.load_diagnostics()
+    diag["contrasts"] = {k: v for k, v in diag["contrasts"].items() if k != "h1_vs_no_graph"}
+    inputs, unevaluable = mf.build_fallacy_inputs(diag)
+    assert "garden_of_forks" not in inputs
+    assert "h1_vs_no_graph" in unevaluable["garden_of_forks"]
+
+
+def test_survivorship_is_refused_when_every_run_survived():
+    """With no non-survivors the survivor-only metric IS the full-population metric: the check could only
+    ever confirm, which is decoration, not a guard."""
+    diag = mf.load_diagnostics()
+    for run in diag["runs"]:
+        run["epochs_run"] = run["n_epochs"]
+    inputs, unevaluable = mf.build_fallacy_inputs(diag)
+    assert "survivorship" not in inputs and "could only ever confirm" in unevaluable["survivorship"]
+
+
+def test_empty_checkout_verifies_nothing_and_claims_nothing(tmp_path):
+    """Absence of evidence is never a pass. An empty checkout must declare no hashes, no predictions and no
+    config hash — and every critical check must come back `missing`, not vacuously green."""
+    m = mf.build_manifest(tmp_path)
+    assert m["hashes"] == {} and m["predictions"] == {} and "config_hashes" not in m
+    assert m["fallacy_inputs"] == {} and set(m["fallacy_unevaluable"]) == set(FALLACIES)
+    report = verify_reproducibility(tmp_path, m, config_snapshot=mf.live_config_snapshot(),
+                                    out_path=tmp_path / "r.json")
+    assert {c["status"] for c in report["checks"] if c["category"] == "critical"} == {"missing"}
+    assert report["verdict"] == "CANNOT_VERIFY"
+
+
+def test_a_prediction_table_with_no_independent_row_count_is_not_declared(tmp_path):
+    """verify reads `n_rows: None` as vacuously satisfied, so declaring the table without a count would
+    emit `pass` for a row check that never ran. The count's authority is the FROZEN split; with no split
+    to derive it from, the entry must not be declared at all — not declared with an unchecked count."""
+    (tmp_path / "data/results/predictions/perturbed_mean/val").mkdir(parents=True)
+    (tmp_path / "data/results/predictions/perturbed_mean/val/0.parquet").write_bytes(b"x")
+    assert mf._predictions(tmp_path) == {}                      # no frozen split -> no claim
+    (tmp_path / "data/results/comparators").mkdir(parents=True)
+    (tmp_path / "data/results/comparators/tabular_baselines_vs_h1.json").write_text(
+        json.dumps({"feature_coverage": {"val_rows": 4400}}))
+    assert mf._predictions(tmp_path) == {}                      # another session's number is NOT authority
+
+
+def test_manifest_hashes_the_checkout_it_is_pointed_at(tmp_path):
+    """A clean-checkout verification must hash the CHECKOUT's files. config's roots are absolute, so a
+    builder that passed them through would hash the ORIGINAL run and certify a checkout it never read —
+    and it would do so INVISIBLY, because every hash would still match."""
+    rels = {name: os.path.relpath(path, config.PROJECT_ROOT) for name, path in
+            (("id_mapping", config.ID_MAPPING_PATH), ("splits", config.BLOCKED_SPLIT_PATH),
+             ("de_layers", config.DE_LAYERS_DIR / "zscore.npz"))}
+    assert not any(r.startswith("..") for r in rels.values()), rels    # else the roots were env-overridden
+    for name, rel in rels.items():
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f"other-checkout-{name}".encode())
+    (tmp_path / rels["splits"]).parent.joinpath("manifest.json").write_text(json.dumps(
+        {"sha256": {os.path.basename(rels["splits"]): hashlib.sha256(b"other-checkout-splits").hexdigest()}}))
+
+    hashes = mf.build_manifest(tmp_path)["hashes"]
+    assert set(hashes) == set(rels)
+    for name in rels:                                   # THIS checkout's bytes, not the running repo's
+        assert hashes[name]["sha256"] == hashlib.sha256(f"other-checkout-{name}".encode()).hexdigest()
+    assert hashes["splits"]["provenance"] == INDEPENDENT           # its own frozen record was honoured
+    report = verify_reproducibility(tmp_path, mf.build_manifest(tmp_path),
+                                    config_snapshot=mf.live_config_snapshot(), out_path=tmp_path / "r.json")
+    assert next(c for c in report["checks"] if c["check"] == "hash:splits")["status"] == "pass"
+
+
+def test_numpy_scalars_from_parquet_are_not_silently_dropped():
+    """Diagnostics are READ FROM PARQUET, so they arrive as numpy scalars. np.float64 subclasses float but
+    np.int64 does NOT subclass int — a numeric guard that missed that would empty the run table and report
+    every run-level probe as "no data" instead of as a defect (the exact bug screening/multiseed.py records).
+    And an np.bool_ mask serialises into the manifest as the STRING "True"."""
+    runs = [{"name": f"cfg{i % 2}", "seed": np.int64(i // 2), "systema": np.float64(0.08 + 0.001 * i),
+             "epochs_run": np.float64(20 - i), "n_epochs": np.float64(20)} for i in range(6)]
+    assert len(mf.usable_runs(runs)) == 6
+    # correlation_not_causation is never authored (see
+    # test_correlation_not_causation_can_never_be_authored_in_this_study), so h1_systema only has to be a
+    # numpy scalar that survives _num
+    diag = {"runs": runs, "contrasts": {}, "family_size": 0, "h1_systema": np.float64(0.55),
+            "selection_seed": 0, "blocked_target_fold": True, "sources": {}}
+    inputs, _ = mf.build_fallacy_inputs(diag)
+    assert {"simpson", "survivorship", "regression_to_mean"} <= set(inputs)
+    assert run_fallacy_scan(inputs)["crashed"] == []
+    # and the probe survives a manifest round-trip: JSON must hold real booleans/numbers, not their reprs
+    reloaded = json.loads(json.dumps(inputs, default=str))
+    assert reloaded == inputs and run_fallacy_scan(reloaded)["crashed"] == []
+
+
+# ---------------------------------------------------------------------------------------------------
+# Adversarial pass (2026-07-20): inputs the tests above never constructed. Every one of these was a real
+# defect found by an agent whose only job was to break this module.
+# ---------------------------------------------------------------------------------------------------
+
+def test_zero_checks_is_never_reproducible():
+    """S1. `any()` over an empty list is False three times over, so _verdict([]) fell through to the
+    certifying return: absence of ALL evidence read as the cleanest possible pass."""
+    from tcell_pipeline.reproducibility.verify import _verdict
+    assert _verdict([]) == "CANNOT_VERIFY"
+    assert _verdict([{"check": "x", "category": "schema", "status": "pass"}]) == "CANNOT_VERIFY"
+
+
+def test_reproduction_axis_of_a_nonexistent_checkout_is_not_reproducible(tmp_path):
+    """S1, end to end: verify short-circuits with `checks: []`, and the driver stamped the JSON that a
+    checkout which does not exist had REPRODUCIBLE on the reproduction axis."""
+    rc = run_repro_real.main(["--root", str(tmp_path / "absent"), "--out-dir", str(tmp_path)])
+    report = json.loads((tmp_path / "repro_real_report.json").read_text())
+    assert report["reproduction_verdict"] == "CANNOT_VERIFY" and rc != 0
+
+
+@pytest.mark.parametrize("manifest", [None, "null"])
+def test_a_null_manifest_returns_a_verdict_rather_than_crashing(tmp_path, manifest):
+    """S6a. A truncated write landing on the valid JSON document `null` took the SUCCESS path, left
+    `report` unbound and crashed — while genuinely unparseable garbage was handled."""
+    ck, _ = _build_checkout(tmp_path)
+    if manifest == "null":
+        (tmp_path / "m.json").write_text("null")
+        manifest = tmp_path / "m.json"
+    assert _verify(ck, manifest, tmp_path)["verdict"] == "CANNOT_VERIFY"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("config_hashes", [1]), ("observed", [1]), ("fallacy_inputs", [1]), ("fallacy_inputs", "x"),
+    ("predictions", {"p": {"path": "pred.parquet", "columns_prefixes": [None]}}),
+    ("predictions", {"p": {"path": "pred.parquet", "columns_prefixes": 5}}),
+    ("predictions", {"p": {"path": "pred.parquet", "columns_prefixes": []}}),
+])
+def test_a_malformed_manifest_yields_a_verdict_not_a_traceback(tmp_path, field, value):
+    """S6b/S6c/S7. `(x or {}).get(...)` guards a FALSY value, not a wrong-typed one; and an EMPTY
+    columns_prefixes made `all(...)` vacuously true, passing a parquet with unrelated columns."""
+    ck, hashes = _build_checkout(tmp_path)
+    manifest = _manifest(hashes) | {field: value}
+    assert _verify(ck, manifest, tmp_path)["verdict"] in VERDICTS      # returns, never raises
+
+
+def test_an_empty_parquet_does_not_pass_the_schema_check(tmp_path):
+    """S7. columns_prefixes: [] over any frame is vacuously satisfied."""
+    ck, hashes = _build_checkout(tmp_path)
+    manifest = _manifest(hashes)
+    manifest["predictions"] = {"p": {"path": "pred.parquet", "columns_prefixes": [], "n_rows": 4}}
+    report = _verify(ck, manifest, tmp_path)
+    assert next(c for c in report["checks"] if c["check"].startswith("schema"))["status"] != "pass"
+    assert report["verdict"] != "REPRODUCIBLE"
+
+
+def test_an_unchecked_row_count_does_not_read_as_a_passed_schema_check(tmp_path):
+    """S7. `n_rows is None or ...` skips the row comparison, but the check still said `pass`."""
+    ck, hashes = _build_checkout(tmp_path)
+    manifest = _manifest(hashes)
+    del manifest["predictions"]["egipg_challenge"]["n_rows"]
+    report = _verify(ck, manifest, tmp_path)
+    assert next(c for c in report["checks"] if c["check"].startswith("schema"))["status"] == "incomplete"
+    assert report["verdict"] == "PARTIALLY_REPRODUCIBLE"
+
+
+def test_a_decision_compared_against_itself_never_certifies(tmp_path):
+    """S2. The hash check refuses a self-derived expected value; the CONFIRMATORY DECISION — the most
+    load-bearing check in the module — had no such guard, so pointing `observed` at the very same record
+    passed. The observed decision must declare that it came from an independent re-run."""
+    ck, hashes = _build_checkout(tmp_path)
+    manifest = _manifest(hashes)
+    same = {"h1_confirmed": True, "lcb_95": 0.07, "tolerance": 0.01}
+    manifest["decision"], manifest["observed"] = same, {"decision": same}   # literally the same dict
+    report = _verify(ck, manifest, tmp_path)
+    check = next(c for c in report["checks"] if c["check"] == "confirmatory_decision")
+    assert check["status"] == "incomplete" and check["reason"]
+    assert report["verdict"] == "PARTIALLY_REPRODUCIBLE"
+    manifest["observed"]["provenance"] = INDEPENDENT_RERUN                 # attested re-run
+    assert _verify(ck, manifest, tmp_path)["verdict"] == "REPRODUCIBLE"
+
+
+def test_a_boolean_observed_endpoint_is_not_a_numeric_comparison(tmp_path):
+    """S11. bool was excluded on the frozen side only, so observed lcb_95 == True compared as 1.0."""
+    ck, hashes = _build_checkout(tmp_path)
+    manifest = _manifest(hashes)
+    manifest["decision"] = {"h1_confirmed": True, "lcb_95": 1.0, "tolerance": 0.01}
+    manifest["observed"] = {"decision": {"h1_confirmed": True, "lcb_95": True}}
+    assert _verify(ck, manifest, tmp_path)["verdict"] == "CANNOT_VERIFY"
+
+
+def test_a_probe_that_dies_inside_the_detector_keeps_its_reason():
+    """S4. Probes were authored on a SHAPE precondition (enough arms, enough seeds) but the detectors
+    enforce a VARIANCE one. When they disagreed the probe was authored, raised Unevaluable inside the
+    scan, and vanished from BOTH lists — the operator saw '2/11 evaluated' with nothing named."""
+    runs = [{"name": f"cfg{c}", "seed": s, "systema": 0.08 + 0.001 * c,   # constant epochs_run: no trend
+             "epochs_run": 20.0, "n_epochs": 20.0} for c in range(3) for s in range(5)]
+    inputs, unevaluable = mf.build_fallacy_inputs(
+        {"runs": runs, "contrasts": {}, "family_size": 0, "h1_systema": 0.08,
+         "selection_seed": 0, "blocked_target_fold": True, "sources": {}})
+    assert set(inputs) | set(unevaluable) == set(FALLACIES)
+    assert not (set(inputs) & set(unevaluable))
+    for name in ("simpson", "ecological"):
+        assert name in unevaluable and "constant" in unevaluable[name]
+    assert run_fallacy_scan(inputs)["errored"] == []          # nothing authored is dead on arrival
+
+
+def test_an_out_of_range_pvalue_does_not_survive_as_an_authored_probe():
+    """S4. _num accepts any finite float, so p=1.7 was authored and then rejected by look_elsewhere."""
+    diag = mf.load_diagnostics()
+    for contrast in diag["contrasts"].values():
+        contrast["p_value"] = 1.7
+    inputs, unevaluable = mf.build_fallacy_inputs(diag)
+    assert "look_elsewhere" not in inputs and "look_elsewhere" in unevaluable
+
+
+@pytest.mark.parametrize("diag", [{"runs": [5]}, {"contrasts": [1]}, {"contrasts": {"a": 5}},
+                                  {"runs": "x"}, {"contrasts": {"a": {"p_value": "0.3"}}}])
+def test_build_fallacy_inputs_partitions_even_on_wrong_typed_diagnostics(diag):
+    """S8. Documented as pure and callable with a constructed diagnostic set — so it must not raise."""
+    inputs, unevaluable = mf.build_fallacy_inputs({"h1_systema": 0.08, "sources": {}} | diag)
+    assert set(inputs) | set(unevaluable) == set(FALLACIES)
+    assert not (set(inputs) & set(unevaluable))
+
+
+def test_manifest_never_emits_a_path_that_escapes_the_checkout(tmp_path, monkeypatch):
+    """S3a. relative_to() is purely LEXICAL and does not normalise `..`, so an env-overridden root of the
+    form <project>/../<project>/data/splits emitted `../<project>/data/splits/...` into the manifest —
+    a published record whose hash is of a file outside the declared checkout."""
+    sneaky = config.PROJECT_ROOT / ".." / config.PROJECT_ROOT.name / "data" / "splits"
+    monkeypatch.setattr(config, "BLOCKED_SPLIT_PATH", sneaky / "blocked_target_ood.csv")
+    for spec in mf.build_manifest().get("hashes", {}).values():
+        assert not spec["path"].startswith("..") and not os.path.isabs(spec["path"]), spec
+
+
+def test_cnc_threshold_tracks_the_detector():
+    """The refusal below is keyed on the detector's own threshold; pin them so they cannot drift apart."""
+    import inspect
+    from tcell_pipeline.reproducibility.fallacy_scan import correlation_not_causation
+    assert inspect.signature(correlation_not_causation).parameters["threshold"].default == mf.CNC_THRESHOLD
+
+
+def test_correlation_not_causation_can_never_be_authored_in_this_study():
+    """It flags only on |corr| >= 0.3 AND absent interventional support. BOTH conditions are unreachable
+    here, so there is no headline association that makes it a live check — an earlier version authored it
+    above the threshold, which would have re-created the decoration it was refused for."""
+    from tcell_pipeline.reproducibility.fallacy_scan import correlation_not_causation as cnc
+    # support is structural: the endpoint IS a target-blocked CRISPR fold, and with support present the
+    # detector cannot flag for ANY correlation
+    assert not any(cnc(corr=c, has_interventional_support=True)["flagged"]
+                   for c in (0.3, 0.55, 0.9, 1.0, -1.0))
+    diag = mf.load_diagnostics()
+    assert abs(diag["h1_systema"]) < mf.CNC_THRESHOLD
+    for h1 in (diag["h1_systema"], 0.55, 0.99, -0.99):     # below AND far above the threshold
+        _, unevaluable = mf.build_fallacy_inputs(dict(diag, h1_systema=h1))
+        assert "correlation_not_causation" in unevaluable, h1
+        assert "cannot fire in this study" in unevaluable["correlation_not_causation"]
+
+
+def test_a_detector_bug_is_not_laundered_into_inadequate_input(monkeypatch):
+    """Demotion must trigger on Unevaluable ONLY. Catching every exception would quietly reclassify a real
+    defect in a detector as 'the input was degenerate' — and the scan separates those two deliberately."""
+    from tcell_pipeline.reproducibility import fallacy_scan
+
+    def exploding(**_):
+        raise RuntimeError("detector defect")
+
+    monkeypatch.setitem(fallacy_scan._DETECTORS, "survivorship", exploding)
+    inputs, unevaluable = mf.build_fallacy_inputs(mf.load_diagnostics())
+    assert "survivorship" in inputs and "survivorship" not in unevaluable   # stays visible
+    scan = run_fallacy_scan(inputs)
+    assert scan["crashed"] == ["survivorship"]                              # surfaced AS a bug
+
+
+def test_an_artifact_outside_the_project_is_dropped_not_emitted_as_an_escape(tmp_path, monkeypatch):
+    """An env-overridden root pointing outside the project cannot be attributed to any checkout. Emitting
+    it as `../../..` would publish a hash of a file the declared checkout does not contain."""
+    outside = tmp_path / "elsewhere" / "id_mapping.parquet"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"a real, readable file that simply is not in this project")   # must EXIST, or
+    monkeypatch.setattr(config, "ID_MAPPING_PATH", outside)                            # absence hides it
+    hashes = mf.build_manifest()["hashes"]
+    assert "id_mapping" not in hashes                        # dropped...
+    assert {"splits", "de_layers"} <= set(hashes)            # ...without taking the others with it
+    report = verify_reproducibility(config.PROJECT_ROOT, {"hashes": hashes},
+                                    out_path=tmp_path / "r.json")
+    missing = next(c for c in report["checks"] if c["check"] == "hash:id_mapping")
+    assert missing["status"] == "missing"                    # and verify says so explicitly
+
+
+def test_build_hashes_survives_a_malformed_frozen_split_record(tmp_path):
+    """`(x or {}).get(...)` guards a FALSY value, not a wrong-typed one — the same hole `_as_dict` was
+    added to close in verify.py. A truncated data/splits/manifest.json crashed build_manifest, so
+    run_repro_real.main() produced NO report at all."""
+    (tmp_path / "data/splits").mkdir(parents=True)
+    (tmp_path / "data/splits/blocked_target_ood.csv").write_bytes(b"split")
+    for malformed in ("not-an-object", ["a"], 7):
+        (tmp_path / "data/splits/manifest.json").write_text(json.dumps({"sha256": malformed}))
+        hashes = mf.build_manifest(tmp_path)["hashes"]                # returns rather than raising
+        assert hashes["splits"]["provenance"] == SELF_DERIVED         # no frozen record could be read
+    report = verify_reproducibility(tmp_path, mf.build_manifest(tmp_path),
+                                    config_snapshot=mf.live_config_snapshot(), out_path=tmp_path / "r.json")
+    assert report["verdict"] in VERDICTS
+
+
+def test_cause_names_the_critical_check_that_drove_the_verdict():
+    """_cause claims to walk _verdict's OWN precedence. Its fallback scanned every check, so an
+    unrecognised status on a CRITICAL check (the case the whitelist verdict exists to survive) got blamed
+    on whichever non-critical check happened to come first in the list."""
+    from tcell_pipeline.reproducibility.verify import _verdict
+    checks = [{"check": "schema:p", "category": "schema", "status": "incomplete"},
+              {"check": "config_hash", "category": "critical", "status": "a_status_nobody_defined"}]
+    assert _verdict(checks) == "CANNOT_VERIFY"
+    assert run_repro_real._cause(checks)["check"] == "config_hash"
+    # and the ordinary precedence still holds: a critical fail outranks a critical missing
+    ordered = [{"check": "a", "category": "critical", "status": "missing"},
+               {"check": "b", "category": "critical", "status": "fail"}]
+    assert run_repro_real._cause(ordered)["check"] == "b"
+
+
+def test_main_ignores_a_parent_process_argv(tmp_path, monkeypatch):
+    """main() is now called PROGRAMMATICALLY from run_module8_real.run_repro(), and argparse falls back to
+    sys.argv when argv is None — so a bare main() inherited the parent driver's flags and died with
+    'unrecognized arguments: --part repro'. Session A's test monkeypatched main, so it stayed green while
+    the real command was broken; only running it caught this."""
+    monkeypatch.setattr(sys, "argv", ["run_module8_real.py", "--part", "repro", "--device", "cuda:2"])
+    monkeypatch.setattr(config, "REPRODUCIBILITY_ROOT", tmp_path)
+    assert run_repro_real.main() != 0                 # must not SystemExit(2) on the parent's argv
+    assert (tmp_path / "repro_real_report.json").is_file()
+    assert run_repro_real.main([]) != 0               # the explicit-empty form A uses today still works
+
+
+def _fake_checkout_with_split(tmp_path, *, val_rows_in_artifact, n_val=3):
+    """A miniature checkout carrying a frozen split, a perturbation table, a prediction parquet, and
+    session A's comparator artifact — so the row-count provenance can be exercised end to end."""
+    import pandas as pd
+    (tmp_path / "data/splits").mkdir(parents=True)
+    (tmp_path / "data/intermediate").mkdir(parents=True)
+    (tmp_path / "data/results/predictions/perturbed_mean/val").mkdir(parents=True)
+    (tmp_path / "data/results/comparators").mkdir(parents=True)
+    genes = [f"G{i}" for i in range(5)]
+    roles = ["val"] * n_val + ["train"] * (5 - n_val)
+    pd.DataFrame({"hgnc_symbol": genes, "role": roles}).to_csv(
+        tmp_path / "data/splits/blocked_target_ood.csv", index=False)
+    pd.DataFrame({"hgnc_symbol": genes}).to_parquet(
+        tmp_path / "data/intermediate/perturbation_condition.parquet", index=False)
+    frame = predictions_to_frame(np.arange(n_val), np.zeros((n_val, 3)), np.zeros((n_val, 6)))
+    frame.to_parquet(tmp_path / "data/results/predictions/perturbed_mean/val/0.parquet", index=False)
+    (tmp_path / "data/results/comparators/tabular_baselines_vs_h1.json").write_text(
+        json.dumps({"feature_coverage": {"val_rows": val_rows_in_artifact}}))
+    return tmp_path
+
+
+def test_prediction_row_count_comes_from_the_frozen_split_not_another_sessions_artifact(tmp_path):
+    """The count used to be read straight out of data/results/comparators/tabular_baselines_vs_h1.json —
+    a file another live session rewrites. If its feature handling changed, this probe would have followed
+    it SILENTLY: presence is not freshness. The count now comes from the frozen, git-tracked split."""
+    ck = _fake_checkout_with_split(tmp_path, val_rows_in_artifact=3, n_val=3)
+    spec = mf._predictions(ck)["perturbed_mean_val"]
+    assert spec["n_rows"] == 3
+    assert "frozen split" in spec["n_rows_source"]
+    assert spec["cross_check"]["val_rows"] == 3 and spec["cross_check"]["agrees"] is True
+
+
+def test_a_row_count_that_disagrees_with_the_frozen_split_is_refused(tmp_path):
+    """Two independent sources disagreeing about the fold means we do not KNOW the row count. Refuse the
+    entry so verify reports `missing` -> CANNOT_VERIFY, rather than picking a winner."""
+    ck = _fake_checkout_with_split(tmp_path, val_rows_in_artifact=999, n_val=3)
+    assert mf._predictions(ck) == {}
+    report = verify_reproducibility(ck, {"predictions": mf._predictions(ck)}, out_path=tmp_path / "r.json")
+    assert next(c for c in report["checks"] if c["check"] == "schema")["status"] == "missing"
+
+
+def test_the_row_count_survives_the_comparator_artifact_being_absent(tmp_path):
+    """The split alone is sufficient — this module must not need another session's results to function."""
+    ck = _fake_checkout_with_split(tmp_path, val_rows_in_artifact=3, n_val=3)
+    (ck / "data/results/comparators/tabular_baselines_vs_h1.json").unlink()
+    spec = mf._predictions(ck)["perturbed_mean_val"]
+    assert spec["n_rows"] == 3 and spec["cross_check"]["val_rows"] is None
