@@ -705,11 +705,12 @@ old capped-fold numbers (H2a +0.001, H2b −0.006 on 1,000 rows / 1 epoch) were 
 family on one shared full fold (21,262 train / 4,400 val, 20-epoch budget, 8.2 h / 17.7 GPU-hours over
 three A100s) ranks on `systema`: **untyped_gnn 0.0951 > expression_only 0.0861 > condition_gated 0.0834
 > typed_static 0.0786 > network_prop 0.0319**. So **H2a is NOT supported** (typed_static − expr-only =
-−0.0075: the typed graph *lowers* systema below no-graph) and **H2b is technically supported** (+0.0048)
-but condition_gated is still *below* expression_only — the full typed+gated EG-IPG does not beat the
-no-graph baseline, and a plain untyped GCN scores best. All neural members sit within ~0.017 on a 0.086
-base (single-seed, no error bars), and the no-graph model was *still improving* at the 20-epoch budget
-while the graph models overfit by epoch 1–2 — so more compute widens the gap *against* the graph. The
+−0.0075: the typed graph *lowers* systema below no-graph) and **H2b is technically supported** (+0.0048),
+and the full typed+gated EG-IPG does not beat the no-graph baseline while a plain untyped GCN scores best.
+All neural members sit within ~0.017 on a 0.086 base, **and every one of these single-seed margins fell
+inside the 0.01 noise band — they were coin tosses until the 5-seed campaign below resolved them.** The
+no-graph model was *still improving* at the 20-epoch budget while the graph models overfit by epoch 1–2 —
+so more compute widens the gap *against* the graph. The
 frozen H1 is the pre-registered `condition_gated` (`--promote --pin condition_gated`, rank 3/4, margin
 −0.0117), the only member that can support the feat-012 rationale audit. The campaign fans one lane per
 GPU (`--only NAME`), recombines with `--merge`, and names the H1 with `--promote`;
@@ -717,6 +718,34 @@ GPU (`--only NAME`), recombines with `--merge`, and names the H1 with `--promote
 `docs/specs/2026-07-17-feat011-full-fold-campaign.md`; throughput + cache:
 `docs/specs/2026-07-17-graph-throughput-minibatch.md`; reviews:
 `docs/reviews/2026-07-16-code-review-module7.md`.
+
+**The 5-seed robustness campaign has run (2026-07-20) and it RESOLVES those coin tosses — the negative
+holds and sharpens.** `config.N_FINAL_SEEDS=5`: the §10.6 family retrained on seeds 1–4 (seed 0 already on
+disk) on the SAME frozen fold (reused, never redrawn — `--seed` reseeds init + data order only), one A100
+per seed, ~30.9 h wall / 102.3 GPU-hours, coverage 20/20 cells with zero dropped/non-finite/stale. Paired
+t on the per-seed Δsystema, **with family-wise multiplicity correction over the four simultaneous
+contrasts** (`survives_family_wise` requires *both* Bonferroni and Holm, so the method cannot be chosen
+after seeing which one rescues a claim):
+
+| contrast | mean Δ | 95% CI | raw p | Bonferroni | survives FWER |
+|---|---:|---|---:|---:|---|
+| **H2a** `typed_static − expression_only` | **−0.0131** | [−0.0190, −0.0072] | 0.0036 | 0.0142 | **yes** |
+| **H2b** `condition_gated − typed_static` | **+0.0112** | [+0.0046, +0.0177] | 0.0092 | 0.0369 | **yes** |
+| promotion `untyped_gnn − expression_only` | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 | **no** |
+| **H1 vs no-graph** `condition_gated − expression_only` | −0.0019 | [−0.0042, **+0.0004**] | 0.0847 | 0.3389 | **no** |
+
+Per-config mean `systema` (n=5): untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated 0.0838 >
+typed_static 0.0726. **Bottom line: after multiplicity control, NO graph variant reliably beats no-graph.**
+The typed graph is reliably *worse* (H2a survives correction). The frozen H1 is at **statistical parity**
+with no-graph — it does not beat it, and (contrary to an earlier reading of the marginal means) it cannot
+be called *below* it either: that contrast crosses zero at p=0.085. H2b survives but only means gating
+*repairs* the damage typing did (0.0726 → 0.0838, still short of 0.0857). Convergence favours the negative:
+`expression_only`/`untyped_gnn` were 5/5 **capped** at 20/20 epochs (still improving), while
+`typed_static`/`condition_gated` early-stopped at 11–13 epochs — with patience=10 their best validation was
+**epoch 1–3**. The graph models plateaued early at a worse optimum and still lost. `promoted.json` is
+unchanged (the frozen H1 stays `condition_gated` seed 0); the deliverable is the separate
+`data/results/screening/robustness_5seed.{json,md}`, produced by `./run_multiseed_campaign.sh` +
+`python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4`.
 
 **The external-comparator test has also run (feat-010, 2026-07-18).** On the SAME development fold, both
 public comparators were scored through the same suite as `network_propagation` (fit on train responses
@@ -728,6 +757,20 @@ the win is trained-predictor-over-public-smoother, not graph-over-no-graph (H2a 
 Consistency check: `txpert_public` 0.0321 ≈ `network_propagation` 0.0319. Single-seed; CPU, ~0 GPU-hours.
 Record: `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md` §A-results (artifact
 `data/results/comparators/comparators_vs_h1.json`).
+
+**A tabular-baseline bar was added too (feat-006, 2026-07-20; CPU, minutes).**
+`run_module8_real.py --part baselines` fits every simple baseline on the same frozen fold, predicting Δz
+from the target gene's **static graph node feature** (1412-d), scored through the same
+`response_metric_suite`: `elastic_net` 0.0342 > `ridge` 0.0206 > `zero` 0.0197 > `low_rank` 0.0169 >
+`perturbed_mean` 0.0123 > `nearest_neighbor` 0.0042. The frozen H1 (0.0834) beats the strongest by
+**+0.0492** — but treat that as an **upper bound**: the elastic-net bar did not converge
+(`n_iter_max == max_iter`, 6.4 % non-zero coefficients), and a better-fit bar could only score higher and
+shrink the margin. Val targets are disjoint from train, so this is a genuine generalisation bar; 385 train
+and 91 val rows whose target is absent from the graph carry an all-zero feature vector (counts persisted in
+the artifact). These are **not** feat-010 external comparators and consume no comparator-family cap. Same
+caveat as feat-010: beating this bar is a *trained-predictor* win, not graph value — no-graph
+`expression_only` (0.0861) beats it too. Artifacts:
+`data/results/comparators/tabular_baselines_{val.parquet,vs_h1.json}`.
 
 Note when reading screening logs: **`best_val` is not comparable across the family.** `typed_static`
 pins its gates to 1.0, so its sparsity penalty is an irreducible constant — it scores val 490.4 where

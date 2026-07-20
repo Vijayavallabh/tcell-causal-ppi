@@ -281,3 +281,51 @@ on a constant series. Pass 3 fixed the causes: a fold-keyed atomic seal, strict 
 `_corr` raising `Unevaluable`, scale-invariant `regression_to_mean`, a floor on the *stronger* cross-lagged
 direction, input validation across all 11 detectors, a whitelist verdict, a tolerance cap, and a conditional
 H1 note. See `docs/reviews/2026-07-17-code-review-module8.md`. +9 regression tests, red-green verified.
+
+## A2) feat-006 tabular-baseline bar (2026-07-20) — H1 clears it, but it is an UPPER-BOUND margin
+
+A second, cheaper bar for the same H1 clause: `run_module8_real.py --part baselines`
+(`run_tabular_baselines`). Every feat-006 simple baseline is fitted on the REAL train fold predicting Δz
+from the target gene's **static graph node feature** (1412-d, the same per-node features the GNN members
+consume) and scored on the REAL val fold through the SAME `response_metric_suite` as feat-010 — so these
+systema values are directly comparable to the comparator and screening numbers.
+
+**Leakage fence** is identical to feat-010: models see TRAIN (feature, response) pairs only; val features
+are the frozen static node features, so no val response leaks; `train_mean` is the train perturbed mean.
+Because the fold is blocked-target OOD, val targets are **disjoint** from train (verified: intersection
+0) — this is a genuine generalisation bar, not memorisation.
+
+**These are NOT external comparators.** They consume no feat-010 comparator-family cap and are not
+registered in the experiment registry. The emitted JSON therefore reports `kind: "baseline"` with a
+baseline-specific `basis` string; `summarize_vs_h1` gained `kind`/`basis` parameters for this, because
+reusing it verbatim had labelled every baseline `kind: "comparator"` — which would have mis-counted them
+for any later audit of the frozen comparator-family budget.
+
+**Result** (full fold, 21,262 / 4,400):
+
+| baseline | systema |
+|---|---:|
+| `elastic_net` (strongest) | +0.0342 |
+| `ridge` | +0.0206 |
+| `zero` | +0.0197 |
+| `low_rank` | +0.0169 |
+| `perturbed_mean` | +0.0123 |
+| `nearest_neighbor` | +0.0042 |
+
+The frozen H1 `condition_gated` (0.0834) beats the strongest by **+0.0492**, well outside the 0.01 band.
+
+**Two caveats that are part of the result, not footnotes.** (1) The margin is an **UPPER BOUND**: the
+elastic-net bar did not converge (`n_iter_max == max_iter == 2000`, `converged: False`,
+`nonzero_coef_frac` 0.064, now persisted via `ElasticNetBaseline.fit_diagnostics()`), and a better-fit bar
+could only score higher and shrink the margin. The original docstring argued only that more regularisation
+weakens the model — the safe direction for a *competitor*, and the wrong one for a *floor H1 must clear*.
+(2) 385 train and 91 val rows whose target is absent from the graph receive an all-zero feature vector and
+therefore one constant prediction, which depresses the feature-regressing baselines; the coverage counts
+are now persisted in `feature_coverage` rather than printed to a stdout line that dies with the terminal.
+
+**Same honest frame as feat-010:** clearing this bar is a *trained-predictor* win, **not** graph value —
+the no-graph `expression_only` (0.0861) beats the tabular bar too. Artifacts:
+`data/results/comparators/tabular_baselines_{val.parquet,vs_h1.json}`.
+
+Still deferred for feat-006 done: the CatBoost / gradient-boosting baseline and TabPFN (each needs a new
+dependency, TabPFN also a pretrained-weight download), plus a converged elastic-net bar.

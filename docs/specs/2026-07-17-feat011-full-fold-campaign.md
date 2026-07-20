@@ -283,3 +283,77 @@ frozen `condition_gated` (systema 0.0834) beats the strongest eligible public co
 (0.0321) by +0.0513 — but the no-graph `expression_only` (0.0861) beats the comparators too, so it does not
 rescue the graph (H2a stays negative). Full record + the code-review hardening:
 `docs/specs/2026-07-17-module8-comparators-audit-sealed-repro.md` §A-results.
+
+## Follow-on: the 5-seed robustness campaign (2026-07-20) — the coin tosses are RESOLVED
+
+Every margin this campaign reported sat inside the 0.01 noise band (H2a −0.0075, H2b +0.0048, promotion
+margin +0.0090), so the whole negative was a single-seed coin toss. `config.N_FINAL_SEEDS=5` was declared
+for exactly this and was referenced nowhere but a `promotion.py` docstring note. It has now been run.
+
+**Design.** Seeds 1–4 retrained (seed 0 already on disk) over the same §10.6 family, on the **same frozen
+fold** — `blocked_target_ood`, 21,262 / 4,400, loaded by name from `BLOCKED_SPLIT_PATH`, never redrawn;
+`--seed` reseeds weight init (`seeded_init`) and Trainer data order only. One A100 per seed (GPUs 0/1/2/4),
+20-epoch budget, batch 8, `SUBGRAPH_CACHE_SIZE=9000`. `./run_multiseed_campaign.sh`, then
+`python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4`.
+
+**Statistic.** For each seed, `d_s = systema(better, s) − systema(worse, s)`; a one-sample (paired) t on
+`{d_s}` against 0. Pairing removes the shared per-seed nuisance (init + data order on one fixed fold).
+Because four contrasts are tested simultaneously, each also carries a family-wise correction, and
+`survives_family_wise` requires **both** Bonferroni and Holm — the conservative call, so the method cannot
+be chosen after seeing which one rescues a claim.
+
+**Result** (n=5; coverage 20/20 cells, zero dropped / non-finite / stale; single frozen fold):
+
+| contrast | mean Δsystema | 95% CI | raw p | Bonferroni | Holm | survives FWER |
+|---|---:|---|---:|---:|---:|---|
+| h2a `typed_static − expression_only` | **−0.0131** | [−0.0190, −0.0072] | 0.0036 | 0.0142 | 0.0142 | **yes** |
+| h2b `condition_gated − typed_static` | **+0.0112** | [+0.0046, +0.0177] | 0.0092 | 0.0369 | 0.0277 | **yes** |
+| promotion_margin `untyped_gnn − expression_only` | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 | 0.0416 | **no** |
+| h1_vs_no_graph `condition_gated − expression_only` | −0.0019 | [−0.0042, +0.0004] | 0.0847 | 0.3389 | 0.0847 | **no** |
+
+Per-config mean systema: `untyped_gnn` 0.0902 [0.0865, 0.0939] > `expression_only` 0.0857 [0.0850, 0.0863]
+> `condition_gated` 0.0838 [0.0810, 0.0866] > `typed_static` 0.0726 [0.0665, 0.0787].
+
+**Reading it honestly.** After multiplicity control, **no graph variant reliably beats no-graph**. H2a
+survives correction, so the typed graph is reliably *worse* than no-graph — the central negative is now a
+statistically resolved result rather than a coin toss. The frozen H1 is at **statistical parity** with
+no-graph: `h1_vs_no_graph` crosses zero at p=0.085, so it neither beats no-graph nor can be called *below*
+it. H2b survives but only means gating **repairs** the damage typing did (0.0726 → 0.0838, still short of
+0.0857). The `untyped_gnn` edge is nominally positive and does **not** survive correction, so "a plain
+untyped GCN reliably beats no-graph" is not supported either.
+
+**Convergence favours the negative.** `expression_only` and `untyped_gnn` were 5/5 **capped** at 20/20
+epochs — still improving when the budget ran out. `typed_static` and `condition_gated` were 0/5 capped,
+early-stopping at 11–13 epochs; with patience=10 that puts their best validation at **epoch 1–3**. The graph
+models plateaued almost immediately at a worse optimum while the no-graph models were still climbing and
+still won, so more epochs would widen the gap against the graph. The deficit is not a budget artifact.
+
+**Cost / provenance.** ~30.9 h wall (Jul 18 21:25 → Jul 20 04:22 IST, vs ~17.7 h estimated) and 102.3
+`gpu_hours` over 20 lanes. `gpu_hours` is a *contended* wall-time proxy on the shared box — `typed_static`
+seed 1 took 11.88 h against seed 4's 5.34 h for the **same** 11 epochs — so it is not clean compute.
+`promoted.json` is **unchanged** (frozen H1 still `condition_gated` seed 0 @ 0.08340652613564893, basis
+still single-seed); the deliverable is the separate `data/results/screening/robustness_5seed.{json,md}`.
+
+## xhigh `/code-review` of the 5-seed commit (2026-07-20, 55 agents) — 15 findings, 2 claim-level
+
+The paired-t math was verified **correct** (every "the statistic is wrong" candidate was refuted) and no
+reported number changed. Two published *conclusions* did not follow from those numbers, and both were
+corrected in `e542d8c`:
+
+1. **The headline claim was never tested.** "The frozen H1 sits BELOW no-graph" was read off two marginal
+   per-config means; that pair was not in `CONTRASTS`. Run as a paired contrast it is −0.0019, p=0.0847 —
+   indistinguishable. `h1_vs_no_graph` is now a first-class contrast so the claim cannot be read off
+   marginal means again. **Rule now in AGENTS.md: a comparison you did not compute is not a result.**
+2. **No multiplicity control.** The three contrasts were each tested at raw alpha=0.05; the promotion
+   margin (raw p=0.0208) does not survive Bonferroni and had been published as a resolved positive. It is
+   retracted above.
+
+Thirteen further guard defects were fixed, all red-first with constructed breakers. The most instructive:
+the fold gate compared the registry `split` field, which `screen_config` fills from
+`cfg.get("split", "blocked_target_ood")` while `nested_family_configs` never sets it — a hardcoded literal
+that can only ever **confirm**, so a `--n-max` capped seed passed it. `screen_config` now records
+`n_train`/`n_val` and the aggregator keys fold identity on those. Related: `splits <= {FROZEN_SPLIT}` was
+vacuously true on the empty set (absence of evidence published as proof — now `None`); zero variance
+reported `p=0.0, "CI excludes zero"`, turning the one condition that proves the seeds carry no information
+into the strongest possible evidence (now undecidable); and `main()` returned 0 immediately after printing
+`FOLD MISMATCH … NOT comparable`, so an unattended campaign or any exit-status gate recorded it green.
