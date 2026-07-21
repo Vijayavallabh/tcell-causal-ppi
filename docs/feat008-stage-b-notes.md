@@ -227,8 +227,16 @@ Session E found the mechanism (`docs/h1-optimization-notes.md`) and it changes w
 `StageALoss._graph` — **in `training/losses.py`, a file this session owns** — is an unnormalised
 `sum` over edges divided only by BATCH SIZE, while every other term is mean-reduced. Over a real 16k–60k
 edge neighbourhood that makes the graph penalty **103× the response term at initialisation**; its
-gradient on the edge gates is up to 3.3e+06× the task's, and `GRAD_CLIP=1.0` then rescales the whole
-update by ~1/695, so ~99.98% of every step goes to driving gates to zero. The gate dies inside epoch 0.
+gradient on the edge gates is ~3.1e+06× the task's, so the penalty's **direction** is ~100% of the total
+(`g_total/g_penalty` = 0.999994–1.000315) and the gate dies inside epoch 0.
+
+> **CORRECTION (2026-07-21).** This paragraph previously continued "and `GRAD_CLIP=1.0` then rescales the
+> whole update by ~1/695, so ~99.98% of every step goes to driving gates to zero." **That mechanism is
+> wrong**, and session E withdrew it. AdamW is scale-invariant per parameter, so a uniform clip factor
+> cannot change the update at all (verified: ‖g‖=695 clipped to 1.0 gives the same θ as an unclipped
+> ‖g‖=0.17). Magnitude sets the *rate* of collapse; direction sets *whether* it happens. Confirmed
+> prospectively — per-edge normalisation makes the penalty 400× *smaller* than the task and the gates still
+> collapse 2,108×. The measurements were always right; only the causal story was wrong.
 I read `_graph` during this work and quoted its docstring — which says "averaged over the batch so its
 strength doesn't scale with batch size" and is silent on the edge dimension that actually varies 4× —
 without noticing the sum was never normalised over edges.

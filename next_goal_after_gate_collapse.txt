@@ -14,9 +14,19 @@ The EG-IPG graph arms were trained with their message passing switched off, by t
 
 `StageALoss._graph` is an unnormalised sum over EDGES divided only by BATCH SIZE, while every other loss
 term is mean-reduced. At ~40k edges/sample the penalty is ~103x the response term; its gradient on the edge
-gates is up to ~3.3e+06x the task's; `GRAD_CLIP=1.0` then rescales the whole update by ~1/695. So ~99.98%
-of every step drives gates toward zero and the gate dies inside epoch 0. The frozen H1's gate mean is
-~1.3e-07 against ~0.61 at init (NOT bit-zero: max 3.54e-07, 0 of 117,174 exactly zero).
+gates is ~3.1e+06x the task's. So the penalty's DIRECTION is ~100% of the total gate gradient
+(`g_total/g_penalty` = 0.999994-1.000315), AdamW marches the gates the same way at ~lr for all 2,127 steps
+of an epoch, and the gate dies inside epoch 0. The frozen H1's gate mean is ~1.3e-07 against ~0.61 at init
+(NOT bit-zero: max 3.54e-07, 0 of 117,174 exactly zero).
+
+CORRECTED 2026-07-21: an earlier revision of this paragraph said `GRAD_CLIP=1.0` rescales the update by
+~1/695 and that ~99.98% of every step therefore drives gates to zero. THAT MECHANISM IS WRONG. AdamW is
+scale-invariant per parameter — scaling every gradient by a constant c scales the first moment by c and the
+second by c^2, leaving m_hat/sqrt(v_hat) unchanged, and a uniform clip factor is exactly such a constant.
+Verified under the real settings: grad 1e-4 -> theta=-0.299969; 1e-1 -> -0.300000; ||g||=695 clipped to 1.0
+-> -0.300000. The clip changes NOTHING. MAGNITUDE SETS THE RATE OF COLLAPSE; DIRECTION SETS WHETHER IT
+HAPPENS. The measurements (103x, ~3.1e+06x, 695.53) were always right; only the causal story was wrong.
+This matters for options A-D below: it is why re-tuning lambda alone (option A) is not obviously sufficient.
 
 Controlled three-arm pilot (`tcell_pipeline.pilot_lambda_graph`, seed 0, 2 epochs), read from artifacts.
 All arms share one init (0.678556) — same seed. Gate mean is over all 289,974 edges; neighbourhood

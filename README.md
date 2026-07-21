@@ -755,10 +755,13 @@ after seeing which one rescues a claim):
 > arms were trained with their message passing driven to ~0 **by their own regulariser**, inside epoch 0.
 >
 > `StageALoss._graph` is an unnormalised sum over EDGES divided only by BATCH SIZE, while every other loss
-> term is mean-reduced. At ~40k edges/sample the penalty is ~103× the response term, its gradient on the
-> edge gates reaches ~3.3e+06× the task's, and `GRAD_CLIP=1.0` rescales the whole update by ~1/695 — so
-> ~99.98% of every step drives the gates to zero. The frozen H1's gate mean is **~1.3e-07 against ~0.61 at
-> initialisation**.
+> term is mean-reduced. At ~40k edges/sample the penalty is ~103× the response term and its gradient on the
+> edge gates ~3.1e+06× the task's, so the penalty's **direction** is ~100% of the total
+> (`g_total/g_penalty` = 0.999994–1.000315) and AdamW marches the gates the same way every step. The frozen
+> H1's gate mean is **~1.3e-07 against ~0.61 at initialisation**. (An earlier revision of this paragraph
+> blamed `GRAD_CLIP=1.0` rescaling the update by ~1/695. **That mechanism is wrong** — AdamW is
+> scale-invariant per parameter, so a uniform clip cannot change the update at all. Magnitude sets the
+> *rate* of collapse; direction sets *whether* it happens.)
 >
 > A controlled three-arm pilot settles it (seed 0, 2 epochs; gate mean over all 289,974 edges, from one
 > shared init of 0.678556): gates collapse to 1.9882e-07 at λ=0.01 (100% below 1e-3), **rise to 0.897950 at
@@ -770,10 +773,20 @@ after seeing which one rescues a claim):
 > **This is NOT evidence that the graph helps.** It means the experiment did not test the hypothesis. A
 > redesigned regulariser may re-run and still produce a negative — that would then be a real one. Until
 > then the honest statement is *"the comparison did not test the graph"*, not *"the graph does not help"*.
+>
+> **What kind of evidence the pilot is.** In the λ=0 arm the graph demonstrably works, and held-out
+> response still moves only 0.07% with that arm marginally the worst — so the negative looks robust. But
+> the pilot is n=1 seed, 2 epochs, an inner holdout and the response loss, **not** the primary endpoint and
+> **not** the frozen fold, so it cannot outrank a 5-seed multiplicity-controlled result. Nor is the 5-seed
+> campaign confirmatory here, since its graph arms had dead gates. **No valid, powered test of the graph
+> exists yet.** The pilot supplies *admissibility* — it removes "the graph was broken" as a competing
+> explanation — not *strength*, and must not be cited as the headline evidence.
 > See `next_goal_after_gate_collapse.txt` and `session-handoff.md`.
 
-Per-config mean `systema` (n=5): untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated 0.0838 >
-typed_static 0.0726. **Bottom line: after multiplicity control, NO graph variant reliably beats no-graph.**
+Per-config mean `systema` (n=5) — **all of it measured with the edge gates dead, so read it as a
+confounded measurement, not a finding**: untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated
+0.0838 > typed_static 0.0726. **Bottom line as published: after multiplicity control, NO graph variant
+reliably beats no-graph** — a statement about these runs, which did not test the graph.
 The typed graph is reliably *worse* (H2a survives correction). The frozen H1 is at **statistical parity**
 with no-graph — it does not beat it, and (contrary to an earlier reading of the marginal means) it cannot
 be called *below* it either: that contrast crosses zero at p=0.085. H2b survives but only means gating

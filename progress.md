@@ -45,6 +45,14 @@ resolution than the data supports, in both directions.
 `survives_family_wise`, the `h1_vs_no_graph` contrast, fold-size evidence, and a non-zero exit path.
 13 further guard defects were fixed (see the feat-011 evidence block). `./init.sh` green at 314.
 
+> **⚠️ SUPERSEDED IN TURN (2026-07-21).** The "CORRECTED BOTTOM LINE" above is itself a **confounded
+> measurement, not a finding**. Every graph arm in that campaign was trained with its edge gates
+> annihilated by `StageALoss._graph`, so the contrasts compared no-graph against
+> no-graph-with-spare-parameters. It is equally not evidence the graph helps. In the one pilot where the
+> gates survive, held-out response moves 0.07% with the working-graph arm marginally worst — so the
+> negative looks robust, but **no valid, powered test of the graph exists yet**. See the five-session
+> section at the end of this file and `next_goal_after_gate_collapse.txt`.
+
 ## ✅ DONE: the 5-seed robustness campaign (finished 2026-07-20 04:22 IST, ~30.9 h) — the negative is RESOLVED, not a coin toss
 
 `config.N_FINAL_SEEDS=5` was declared for exactly this and referenced nowhere but a `promotion.py` note.

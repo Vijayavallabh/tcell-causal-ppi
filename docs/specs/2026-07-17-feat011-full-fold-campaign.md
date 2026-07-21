@@ -314,6 +314,16 @@ be chosen after seeing which one rescues a claim.
 Per-config mean systema: `untyped_gnn` 0.0902 [0.0865, 0.0939] > `expression_only` 0.0857 [0.0850, 0.0863]
 > `condition_gated` 0.0838 [0.0810, 0.0866] > `typed_static` 0.0726 [0.0665, 0.0787].
 
+> **⚠️ CORRECTION (2026-07-21) — this campaign did not test the graph.** Every arm below was trained with
+> its edge gates annihilated by `StageALoss._graph`, an unnormalised sum over EDGES divided only by BATCH
+> SIZE: the penalty's gradient direction is ~100% of the total and the gate dies inside epoch 0 (frozen H1
+> gate mean ~1.3e-07 vs ~0.61 at init). Every contrast below therefore compares no-graph against
+> no-graph-with-spare-parameters — a **confounded measurement, not a finding**, and equally not evidence
+> that the graph helps. A controlled pilot in which the gates survive (λ=0, gate mean 0.897950, `h_graph`
+> 960× more neighbourhood-dependent) finds held-out response moving 0.07% with that arm marginally worst,
+> so the negative looks robust — but it is n=1 seed on the response loss, so **no valid powered test of the
+> graph exists yet**. The re-screen is owed. See `next_goal_after_gate_collapse.txt`.
+
 **Reading it honestly.** After multiplicity control, **no graph variant reliably beats no-graph**. H2a
 survives correction, so the typed graph is reliably *worse* than no-graph — the central negative is now a
 statistically resolved result rather than a coin toss. The frozen H1 is at **statistical parity** with
