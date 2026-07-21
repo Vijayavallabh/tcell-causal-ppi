@@ -532,8 +532,11 @@ Re-ran every non-destructive real-data entrypoint end-to-end, GPU where it helps
 
 ### What's In Progress
 
-- **feat-005 Latent Program Extraction** — fold-local basis machinery + frozen sparse_pca production
-  loadings done; the 4-method × 4-K comparison (reconstruction / sparsity / stability) + shallow-VAE basis remain.
+- **feat-005 Latent Program Extraction** — COMPLETE 2026-07-21 (session C). The 4-method × 4-K comparison
+  (reconstruction / sparsity / stability) + shallow-VAE basis are delivered: 17 cells, no gaps. Nothing
+  found justifies changing the frozen basis. Also retracted a non-reproducing number in feat-005's own
+  evidence and in README: "sparse_pca trades reconstruction for sparsity vs svd ~0.61" — svd is within
+  ±0.003 of sparse_pca at K=128, not 0.08 better.
 - **feat-008 EG-IPG Model** — M1+M2+M3 decoder/EGIPGModel + Module 4 rationale head / loss / faithfulness
   eval built; the training-loss OPTIMIZATION loop + train/calibration loops remain (and feat-007 is not-started).
 
@@ -586,3 +589,26 @@ Re-ran every non-destructive real-data entrypoint end-to-end, GPU where it helps
 - Read the experiment plan report for detailed feature specs (2026-07-14 literature refresh)
 - Before feat-011 screening / freezing H1, run the near-null-signal check
 - Module 0 marts are on disk but gitignored; rerun `python src/tcell_pipeline/run_module0.py` to regenerate
+
+## 2026-07-20/21 — five concurrent sessions
+
+Ran A (feat-006 tabular bar), B (feat-008 Stage B), C (feat-005 basis study), D (feat-013 reproducibility),
+E (H1 optimisation) in one checkout with per-session file ownership and a single integrator for the DoD
+triad. Committed: `bdc1f56` (feat-013), `ac1cbcd` (feat-008), `c52f24a` (session E — the two probes, the
+Stage-1 pilot, `training/inner_split.py` + tests, and `docs/h1-optimization-notes.md`; 6 new files,
+1,467 insertions, nothing else touched). `./init.sh` 314 -> 514.
+
+**The headline is E's**: the graph arms were trained with message passing driven to ~0 by `StageALoss._graph`
+(unnormalised over edges, divided only by batch size). A three-arm pilot settles it — from a shared init of
+0.678556, gates collapse to 1.9882e-07 at lambda=0.01, RISE to 0.897950 at lambda=0, and still collapse to
+3.2190e-04 under per-edge normalisation. The graph negative is a measurement-validity defect; the repair is
+a redesign, not one line. See `session-handoff.md`.
+
+**feat-006**: H1's margin over the strongest tabular bar fell +0.0492 -> +0.0000147 (a tie), every step from
+fitting the bar more honestly rather than from a better model. A scale-invariance defect in `systema` that
+scored collapsed predictors on floating-point dust was fixed, blast radius measured at one baseline.
+
+**Harness**: AGENTS.md gained four sections, all from defects found by re-derivation rather than by tests —
+concurrent-session committing, claims-about-process being invisible to test discipline, instrument blind
+spots (self-matching watchers, `ps` truncation, torch-vs-nvidia-smi device numbering), and cheap
+preconditions (read a checkpoint's gate mean before spending hours on it).

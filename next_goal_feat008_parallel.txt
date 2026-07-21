@@ -1,0 +1,146 @@
+Build feat-008's two missing FIT LOOPS and its near-null-signal freeze gate — the last remaining piece of
+the EG-IPG model and the CRITICAL PATH that blocks feat-012. Repo
+/mnt/md0/IITM/BackUp/Home/vijayavallabh/tcell-causal-ppi, Python 3.12 + uv, PYTHONPATH=src.
+./init.sh must stay green at every stopping point.
+
+============================================================
+READ THIS FIRST — A SECOND CLAUDE SESSION IS LIVE IN THIS SAME CHECKOUT
+============================================================
+Another session is finishing feat-006 (tabular baselines) RIGHT NOW and has a ~4.4 GPU-hour job running
+until roughly 23:30. You are working in the SAME working tree at the SAME time. Everything below about
+file ownership and shared resources is a HARD boundary, not advice. Violating it destroys the other
+session's in-flight work, which cannot be recovered without re-running hours of compute.
+
+FILES THE OTHER SESSION OWNS — DO NOT OPEN FOR EDITING, DO NOT REVERT, DO NOT REFORMAT:
+  .gitignore
+  requirements.txt
+  src/tcell_pipeline/baselines/__init__.py
+  src/tcell_pipeline/baselines/simple_baselines.py
+  src/tcell_pipeline/evaluation/metrics.py
+  src/tcell_pipeline/evaluation/metrics_ref.py
+  src/tcell_pipeline/run_module8_real.py
+  src/tests/test_baselines.py
+  src/tests/test_comparators.py
+  src/tests/test_metrics.py
+You may READ any of them. You may IMPORT from them. You may not write to them. If your work genuinely
+needs a change in one of these, STOP and tell me — do not edit it and do not work around it by copying
+the code somewhere else.
+
+FILES YOU OWN (edit freely):
+  src/tcell_pipeline/model.py
+  src/tcell_pipeline/training/trainer.py
+  src/tcell_pipeline/training/losses.py
+  src/tcell_pipeline/training/run_train.py
+  src/tcell_pipeline/rationale/rationale_head.py
+  src/tcell_pipeline/rationale/rationale_loss.py
+  src/tests/test_training.py
+  src/tests/test_rationale.py
+  ...plus any NEW file you create.
+
+THE DoD TRIAD IS SHARED STATE — DO NOT EDIT IT:
+  feature_list.json, progress.md, session-handoff.md
+Both sessions would need these and a concurrent read-modify-write silently loses one side's update (this
+is a plain JSON file, there is no merge). Instead write your evidence to a NEW file,
+docs/feat008-stage-b-notes.md, in the same style you would have used for the feature_list evidence block.
+The other session merges it into feature_list.json at commit time.
+
+COMMITS: do not commit anything until I say so. When I do, commit ONLY your own files by explicit path
+(`git commit -- <paths>`); never `git commit -a`, never `git add .`, and never stage the triad. Two
+sessions sharing one index will otherwise sweep up each other's half-finished work.
+
+SHARED MACHINE:
+- GPU: GPU 2 is TAKEN by the other session until ~23:30. GPUs 0, 1 and 4 belong to OTHER USERS and are at
+  90-100% utilisation. There is effectively NO free GPU right now. Run `nvidia-smi` before touching one,
+  every time — never assume.
+- CPU: the box is a shared 64-core machine already carrying four other users' long jobs plus the feat-006
+  run (load has been sitting near 70). Keep unit tests single-threaded-ish and do NOT launch anything
+  wide until the feat-006 job is done. Set OMP_NUM_THREADS=4 for your own work. A previous run on this box
+  was accidentally launched with 830 threads and drove load to 600, starving everything.
+- DATA: you may write under data/checkpoints/ and data/results/stage_b/ (create it). Do NOT write to
+  data/results/comparators/, data/results/predictions/baseline_*, data/results/screening/, or
+  data/intermediate/gene_program_loadings.parquet.
+
+ONE CHANGE ALREADY IN THE TREE THAT YOU MUST NOT REVERT: the other session fixed a real defect in the
+primary endpoint. `systema_pert_specific_delta` is a Pearson correlation and therefore SCALE-invariant, so
+a model that had collapsed onto the training mean was being scored on the DIRECTION of its floating-point
+residue — at full strength, whether that residue was 1e-5 or 1e-12. It scored +0.0129 for pure numerical
+dust. Collapsed predictors now correctly score 0.0. Every frozen result was re-scored and reproduces to
+3.5e-09, so nothing else moved. This matters to YOU directly: collapse-to-the-mean is the failure mode
+your calibration and rationale heads are most likely to hit, and the metric will now tell you the truth
+about it instead of handing you a spurious +0.013.
+
+============================================================
+WHAT TO BUILD
+============================================================
+feat-008's own evidence says exactly what is left: "the Stage-B calibration + rationale FIT loops (both
+loss modules exist, no fit loop), and the near-null-signal freeze gate." (Its older line about feat-007
+being not-started is STALE and already marked superseded — feat-007 is done.) Confirmed by inspection:
+  - training/losses.py     -> StageALoss, StageBCalibrationLoss  (loss exists, NO fit loop)
+  - rationale/rationale_loss.py -> RationaleLoss                 (loss exists, NO fit loop)
+  - rationale/rationale_head.py -> RationaleHead                 (module exists, never fitted)
+  - training/trainer.py    -> Trainer                            (the Stage-A loop — your template)
+
+(a) STAGE-B CALIBRATION FIT LOOP. Fit StageBCalibrationLoss on top of a FROZEN Stage-A model. Stage-A
+    weights must not receive gradients — assert it, do not merely intend it. Calibration is fit on TRAIN
+    only and evaluated on val; no val statistic may enter the fit.
+(b) RATIONALE-HEAD FIT LOOP. Fit RationaleHead with RationaleLoss, again over a frozen backbone. This is
+    what feat-012's audit needs and cannot run without.
+(c) NEAR-NULL-SIGNAL FREEZE GATE. A gate that refuses to promote / freeze a Stage-B or rationale fit whose
+    measured advantage is indistinguishable from its control.
+
+============================================================
+THE FRAME — THIS PROJECT'S RESULT IS A NEGATIVE, AND THAT IS FINE
+============================================================
+After family-wise correction NO graph variant reliably beats a no-graph model here; the frozen H1 sits at
+statistical PARITY with no-graph (-0.0019, p=0.085). Do NOT try to rescue that, and do NOT resurrect the
+retracted phrasings ("H1 sits below no-graph", "the untyped GNN reliably beats no-graph"). A phase that
+produces another negative is a SUCCESSFUL phase.
+
+This bites hardest on exactly what you are building: in a near-null-signal regime a calibration head or a
+rationale head can look good purely by fitting noise. So:
+- EVERY headline number needs a MATCHED-RANDOM CONTROL reported next to it, not instead of it. A rationale
+  that beats nothing is not a rationale. src/tcell_pipeline/rationale/matched_random.py already exists —
+  use it rather than inventing a control.
+- A comparison you did not compute is not a result. If you write "the calibrated model beats the
+  uncalibrated one", a test of that pair must exist in the code that produced the report. Never read a
+  comparison off two summary numbers or overlapping intervals.
+- If you test several things at once, report a family-wise corrected p (BOTH Bonferroni and Holm, so the
+  method cannot be chosen after seeing which one rescues the claim) and require it before calling anything
+  "reliable".
+- A degenerate case (zero variance, empty set, missing file) is UNDECIDABLE, not significant. Absence of
+  evidence must report None/unknown, never a pass.
+- Ask of every guard you write: WHAT INPUT WOULD MAKE THIS FIRE? If none can exist, it is decoration. Then
+  trace the guarded value all the way to the output, the JSON, the downstream gate AND the process exit
+  code — a run that prints "not comparable" must not exit 0.
+
+============================================================
+METHOD
+============================================================
+- Red-first TDD: every test pinning a correctness claim must be watched FAILING before you implement, and
+  for correctness-critical code you must CONSTRUCT an input that defeats it. Mutation testing is necessary,
+  not sufficient. Read AGENTS.md — it carries the specific failure modes this repo has already hit.
+- Keep unit tests fully synthetic and tiny so they run on CPU in seconds. The real training run is gated
+  (below) and is NOT needed to land the loops and their tests.
+- BEFORE ANY GPU RUN, or any run over ~1 hour, or any new dependency: STOP and show me the plan — what
+  runs, on which GPU (after checking nvidia-smi), the GPU-hour estimate WITH ITS BASIS (time one true step
+  end-to-end first; a sub-component benchmark is not a whole-pipeline estimate — that mistake nearly
+  launched a 22.7 h campaign here as "~7 h"), the early-stop rule, and the statistic you will report.
+  Wait for my approval.
+
+============================================================
+HARD SAFETY
+============================================================
+- The sealed challenge split (5,608 rows) is SEQUESTERED and UNOPENED. NEVER run evaluation/sealed_eval.py.
+- NEVER run run_module0.py — it is DESTRUCTIVE, re-downloads multi-GB PPI databases and overwrites the
+  frozen marts everything depends on.
+- Do NOT modify data/results/screening/promoted.json. The frozen H1 is frozen.
+- Do NOT regenerate the frozen program basis (data/intermediate/gene_program_loadings.parquet). Downstream
+  results depend on it; swapping it invalidates everything above and is my call, not yours.
+
+============================================================
+DONE WHEN
+============================================================
+Both fit loops train and are covered by tests you watched fail first; the freeze gate exists and can both
+FIRE and CLEAR on constructed inputs; ./init.sh is green; docs/feat008-stage-b-notes.md records the
+evidence (including every control alongside its headline); nothing outside your owned files has changed;
+and you have STOPPED for me to review before any commit.
