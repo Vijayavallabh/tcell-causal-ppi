@@ -44,7 +44,14 @@ Key facts:
   before acting on an inherited diagnosis. A **sub-component benchmark is not a whole-pipeline
   estimate**: a 0.36 h/epoch encoder-only bench hid the real 3× per-step cost (donor-invariance
   re-forwards the whole model), so a 22.7 h campaign nearly launched as ~7 h. Time the real end-to-end
-  path — one true step — before committing multi-hour compute.
+  path — one true step — before committing multi-hour compute. **A scaling exponent fitted on two
+  points is not a cost model either.** feat-005 fitted sparse_pca at 1.08 in K from K=64→128; it held
+  at K=256 and broke at K=512, predicting 52 min for a fit that really took 96 — so that cell blew a
+  90 min cap and returned nothing. The error runs both ways: fastica was *assumed* linear and is
+  actually FLAT in K (0.08 — ~90% of its cost is a K-independent whitening SVD), and acting on the
+  assumption would have needlessly stripped two cells of their resamples. Extrapolate only within the
+  range you measured, state the extrapolated cells AS extrapolations, and give any unattended sweep a
+  per-unit cap plus a total budget so a wrong model costs one cell instead of the night.
 - **Presence is not freshness — check a results file's provenance before reading it as this run's.** A
   parquet / log / checkpoint at the expected path may be a PRIOR run's; treating it as the current
   result silently reports stale numbers as fact. This session, stale `stage_a_history.json` and
@@ -69,6 +76,27 @@ Key facts:
   quality — "more regularisation only weakens it" is the safe direction for a *competitor* and the wrong
   one for a *floor*, because an under-fit bar inflates the very margin it exists to bound. Record its
   convergence/sparsity evidence instead of arguing the direction.
+- **A correction that passes everything has told you nothing — check that it CAN discriminate.** The
+  rule above says require the corrected p; that is necessary, not sufficient. In the feat-005 basis
+  study all 16 paired contrasts ran over 21,262 rows, every raw p UNDERFLOWED to exactly 0.0, and so
+  Bonferroni and Holm both "passed" all 16 — including one worth **−0.14 pp**. At large n,
+  significance is automatic and "survives Bonferroni" becomes a decoration that reads as strength.
+  Before leaning on a correction, ask what result it would have REJECTED; if the answer is none,
+  say so and make the effect size the load-bearing column. Flag an underflowed p as a floor
+  (`p_underflow`), never as certainty. And note WHICH axis carries the test: there the only axis with
+  a real sampling distribution (in-sample reconstruction) was also the one most confounded by model
+  capacity, while the informative axis had 3 resamples and could only be described — say that out
+  loud rather than letting the tested axis pass for the important one.
+- **Re-derive every number in a claims block from the artifact before you publish it — the refuting
+  number is usually already in your own table.** feat-005 handed over an evidence block asserting
+  sparse_pca was "the ONLY method producing any sparsity"; NMF had **55.7%** exact zeros against its
+  22.7%, and that number was sitting in the study's own K=128 table two sections above the sentence.
+  A reviewing session caught it. This is the same class as the uncomputed comparison above, one step
+  worse: the comparison HAD been computed, recorded, and then contradicted in prose. Prose drifts
+  from the table it came from. Before handing off, check the whole class programmatically (that block
+  then verified 18/18), not just the claim someone happened to question — and grep for the claim's
+  *meaning*, not its wording: the same falsehood sat in a second file phrased differently and a
+  literal-string grep missed it.
 - **Update artifacts**: Before ending session, sync `progress.md`, `feature_list.json`, AND
   `session-handoff.md` — all three must match committed reality (a structurally valid but stale
   state file silently misroutes the next session)
