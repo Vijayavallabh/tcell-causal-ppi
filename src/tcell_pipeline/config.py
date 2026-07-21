@@ -160,7 +160,8 @@ LAMBDA_CONTRAST: float = 0.5      # rationale beats matched-random reconstructio
 N_MATCHED_CONTROLS: int = 100     # matched-random controls per rationale (size + relation matched)
 
 
-# --- Module 5 (Loss + Training; Stage A trains M1+M2+M3, Stage B is a loss module only) ---
+# --- Module 5 (Loss + Training; Stage A trains M1+M2+M3, Stage B fits the calibration head and the
+#     rationale head over the FROZEN Stage-A predictor — feat-008) ---
 LR: float = 1e-3
 WEIGHT_DECAY: float = 1e-5
 MAX_EPOCHS: int = 100
@@ -185,6 +186,9 @@ DONOR_INVARIANCE: bool = True
 DONOR_INVARIANCE_SAMPLES: int = 2
 CHECKPOINTS_ROOT: Path = Path(os.environ.get("CHECKPOINTS_ROOT", DATA_DIR / "checkpoints"))
 LOGS_ROOT: Path = Path(os.environ.get("LOGS_ROOT", DATA_DIR / "logs"))
+# Stage-B outputs: the freeze-gate report over the calibration + rationale fits (feat-008). The fitted
+# heads themselves are seed-namespaced under CHECKPOINTS_ROOT/stage_b/<seed>/ (stage_b.stage_b_ckpt_dir).
+STAGE_B_ROOT: Path = Path(os.environ.get("STAGE_B_ROOT", DATA_DIR / "results" / "stage_b"))
 
 
 # --- Module 6 (Evaluation Metrics + Simple Baselines; feat-009 + feat-006) ---
