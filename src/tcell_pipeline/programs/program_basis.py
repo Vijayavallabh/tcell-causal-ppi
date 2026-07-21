@@ -42,7 +42,24 @@ def load_zscore_rows(rows: np.ndarray) -> np.ndarray:
     return sp.load_npz(zscore_path()).tocsr()[rows].toarray()
 
 
-def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int):
+def _record(info: dict | None, model, max_iter: int, iterative: bool) -> None:
+    """Optional convergence channel for the feat-005 method x K study.
+
+    ``_factor`` silences ConvergenceWarning by design, so a capped fit is otherwise invisible to
+    callers. A fit that hit its cap is UNDECIDABLE — not evidence the method reconstructs worse —
+    so ``converged`` is None whenever sklearn exposes no iteration count for the method.
+    """
+    if info is None:
+        return
+    n_iter = getattr(model, "n_iter_", None) if iterative else None
+    info.update(
+        n_iter=None if n_iter is None else int(n_iter),
+        max_iter=max_iter if iterative else None,
+        converged=None if n_iter is None else bool(int(n_iter) < max_iter),
+    )
+
+
+def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int, info: dict | None = None):
     """Return (components (K,G), scores (N,K)) for the requested factorisation."""
     from sklearn.exceptions import ConvergenceWarning
 
@@ -57,17 +74,20 @@ def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int):
 
             model = MiniBatchSparsePCA(n_components=K, random_state=seed, max_iter=max_iter, batch_size=256)
             model.fit(Z)
+            _record(info, model, max_iter, iterative=True)
             return model.components_, model.transform(Z)
         if method == "svd":
             from sklearn.decomposition import TruncatedSVD
 
             model = TruncatedSVD(n_components=K, random_state=seed).fit(Z)
+            _record(info, model, max_iter, iterative=False)  # randomized SVD: no iteration cap to hit
             return model.components_, model.transform(Z)
         if method == "fastica":
             from sklearn.decomposition import FastICA
 
             model = FastICA(n_components=K, random_state=seed, max_iter=max_iter, whiten="unit-variance")
             scores = model.fit_transform(Z)
+            _record(info, model, max_iter, iterative=True)
             # ICA loadings are mixing_ (X ~= S @ mixing_.T), NOT components_ (the unmixing matrix); return
             # mixing_.T so B = components.T = mixing_ matches the X ~= A @ B.T contract the other methods use.
             return model.mixing_.T, scores
@@ -78,6 +98,7 @@ def _factor(Z: np.ndarray, method: str, K: int, seed: int, max_iter: int):
             # ponytail: positive-part NMF; split into signed +/- channels if down-regulation programs matter.
             model = NMF(n_components=K, random_state=seed, max_iter=max_iter, init="nndsvda")
             scores = model.fit_transform(np.maximum(Z, 0.0))
+            _record(info, model, max_iter, iterative=True)
             return model.components_, scores
     raise ValueError(f"unknown program method {method!r}; valid: sparse_pca, nmf, fastica, svd")
 
@@ -88,12 +109,13 @@ def fit_program_basis(
     K: int = config.PROGRAM_DIM,
     seed: int = config.SPLIT_SEED,
     max_iter: int = 100,
+    info: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Fit Z_train ~= A @ B^T on training rows only. Returns (B (G,K), A (N_train,K)), float32."""
     Z = np.asarray(zscore_train, dtype=np.float32)
     if Z.ndim != 2:
         raise ValueError(f"zscore_train must be 2-D (N,G), got shape {Z.shape}")
-    components, scores = _factor(Z, method, K, seed, max_iter)
+    components, scores = _factor(Z, method, K, seed, max_iter, info)
     return np.ascontiguousarray(components.T, dtype=np.float32), np.asarray(scores, dtype=np.float32)
 
 
