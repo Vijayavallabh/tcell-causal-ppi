@@ -1,4 +1,8 @@
-SUPERSEDES ./next_goal_finish_all.txt, which is now materially WRONG and should not be worked.
+THIS IS THE ONLY GOAL SPEC. It superseded ./next_goal_finish_all.txt, which was materially WRONG; that
+file and the four per-session specs were DELETED in commit "Prune five spent goal specs" once their work
+landed, so a next session cannot pick one up by mistake. All five remain in git history if ever needed:
+  git log --diff-filter=D --oneline -- 'next_goal_*.txt'
+  git show <commit>^:next_goal_finish_all.txt
 
 That spec's Phases 4-6 assume the screening campaign produced valid comparisons between graph and no-graph
 models. It did not. Everything below follows from that.
