@@ -565,9 +565,24 @@ is the full `de_var` order, so it drops straight into the decoder's frozen loadi
 As-built: the production `sparse_pca` basis has been fitted on the real train fold (289 s, K=128) →
 `B` (10,282×128) / `A` (21,262×128), all finite, fold-locality exact (saved response rows == the 21,262
 train rows), ~23% exact-zero loadings with no dead programs; centered reconstruction MAE 0.687 vs a
-0.817 predict-zero baseline (sparse coding trades reconstruction for sparsity vs SVD's ~0.61). The
-`data/intermediate/*` parquets are gitignored — regenerate with the command above. The 4-method × 4-K
-comparison study and the shallow-VAE basis (feat-005 done-criterion) are still future work.
+0.817 predict-zero baseline. The `data/intermediate/*` parquets are gitignored — regenerate with the
+command above.
+
+> **CORRECTION (2026-07-21).** This paragraph previously ended "(sparse coding trades reconstruction for
+> sparsity vs SVD's ~0.61)". **That figure does not reproduce.** Measured at K=128, svd scores 0.6876 on
+> the common centred target and 0.6851 on its own raw target — within ±0.003 of sparse_pca's 0.6865, not
+> 0.08 better. The same harness reproduces the sparse_pca cell to 4 dp, so the harness is not the suspect;
+> "~0.61" appears to have been an uncomputed comparison. Found by session C's feat-005 study, which
+> supersedes it by a dated `CORRECTION:` in feat-005's evidence rather than by editing the original.
+
+The 4-method × 4-K comparison study and the shallow-VAE basis (feat-005's done-criterion) are **complete**
+(2026-07-21) — 17 cells on reconstruction, sparsity and stability. At K=128, the only fully-decidable
+column, held-out explained fraction is fastica 15.59% / svd 15.55% / **frozen sparse_pca 15.41%** / vae
+14.11% / nmf 13.11%: the frozen basis is 0.18 pp off the best and is the only method combining that
+accuracy with sparsity (22.7% exact zeros against 0.0% for svd/fastica/vae — NMF yields more zeros still
+at 55.7%, but pays 2.3 pp of held-out and is decidably unsuited to a signed target). Raising K buys
+reconstruction and pays in reproducibility (sparse_pca stability 0.841 → 0.612 → 0.350 → 0.225 across
+K=64..512). **Nothing found justifies changing the frozen basis** — the intended negative.
 
 ### Verify Module 3 (program decoder) end to end
 
@@ -733,6 +748,29 @@ after seeing which one rescues a claim):
 | **H2b** `condition_gated − typed_static` | **+0.0112** | [+0.0046, +0.0177] | 0.0092 | 0.0369 | **yes** |
 | promotion `untyped_gnn − expression_only` | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 | **no** |
 | **H1 vs no-graph** `condition_gated − expression_only` | −0.0019 | [−0.0042, **+0.0004**] | 0.0847 | 0.3389 | **no** |
+
+> ## ⚠️ CORRECTION (2026-07-21) — THIS COMPARISON DID NOT TEST THE GRAPH
+>
+> Everything in this section is **confounded** and must not be read as a result about the graph. The graph
+> arms were trained with their message passing driven to ~0 **by their own regulariser**, inside epoch 0.
+>
+> `StageALoss._graph` is an unnormalised sum over EDGES divided only by BATCH SIZE, while every other loss
+> term is mean-reduced. At ~40k edges/sample the penalty is ~103× the response term, its gradient on the
+> edge gates reaches ~3.3e+06× the task's, and `GRAD_CLIP=1.0` rescales the whole update by ~1/695 — so
+> ~99.98% of every step drives the gates to zero. The frozen H1's gate mean is **~1.3e-07 against ~0.61 at
+> initialisation**.
+>
+> A controlled three-arm pilot settles it (seed 0, 2 epochs; gate mean over all 289,974 edges, from one
+> shared init of 0.678556): gates collapse to 1.9882e-07 at λ=0.01 (100% below 1e-3), **rise to 0.897950 at
+> λ=0** (the prediction task wants the edges open), and still collapse to 3.2190e-04 under per-edge
+> normalisation — so the obvious one-line repair fails too. Equivalently, `h_graph` is **960× more
+> neighbourhood-dependent** at λ=0 than at λ=0.01; that ratio, not gate magnitude, is what carries the
+> scientific claim.
+>
+> **This is NOT evidence that the graph helps.** It means the experiment did not test the hypothesis. A
+> redesigned regulariser may re-run and still produce a negative — that would then be a real one. Until
+> then the honest statement is *"the comparison did not test the graph"*, not *"the graph does not help"*.
+> See `next_goal_after_gate_collapse.txt` and `session-handoff.md`.
 
 Per-config mean `systema` (n=5): untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated 0.0838 >
 typed_static 0.0726. **Bottom line: after multiplicity control, NO graph variant reliably beats no-graph.**

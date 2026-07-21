@@ -133,8 +133,12 @@ every mart they read. Cleanups: overridable decoder dims, the shared `build_enco
   speed; `run_program_basis` with no `--method` fits the paper-default sparse basis for the frozen
   production loadings. **As-built (2026-07-15):** the production `sparse_pca` basis has been fitted and
   frozen (`B` 10,282×128 / `A` 21,262×128, all finite, fold-locality exact, ~23% zero loadings, no dead
-  programs; centered reconstruction MAE 0.687 vs 0.817 predict-zero baseline — sparse coding trades
-  reconstruction for sparsity vs SVD's ~0.61). Parquets gitignored; regenerate via `run_program_basis`.
+  programs; centered reconstruction MAE 0.687 vs 0.817 predict-zero baseline). Parquets gitignored;
+  regenerate via `run_program_basis`.
+  > **CORRECTION (2026-07-21).** This bullet previously ended "— sparse coding trades reconstruction for
+  > sparsity vs SVD's ~0.61". **That does not reproduce.** Measured at K=128 by feat-005's study, svd is
+  > 0.6876 on the common centred target and 0.6851 on its own — within ±0.003 of sparse_pca's 0.6865, not
+  > 0.08 better. The claim appears to have been an uncomputed comparison.
 - **`nmf` sees the positive part only** (`np.maximum(Z,0)`): z-scores are signed, so down-regulation
   programs are dropped. Split into signed ± channels if down-regulation modules matter (marked
   `ponytail:` in `program_basis.py`).
