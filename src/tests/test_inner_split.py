@@ -70,7 +70,7 @@ def test_unreachable_fraction_warns_instead_of_silently_returning_a_different_sp
     near the requested fraction. It must still be a valid split, and it must say so — a caller that
     believes it held out 20% while holding out 50% reports the wrong number."""
     labels = _labels({"A": 50, "B": 50})
-    with pytest.warns(UserWarning, match=r"50\.0% of rows, not the requested 20\.0%"):
+    with pytest.warns(UserWarning, match=r"50\.0% of rows \(50/100\), not the requested 20\.0%"):
         tr, ho = group_partition(labels, holdout_frac=0.2, seed=0)
     assert len(ho) == 50 and len(tr) == 50
     assert {labels[i] for i in tr} & {labels[i] for i in ho} == set()

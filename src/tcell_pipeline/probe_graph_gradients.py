@@ -164,8 +164,14 @@ class _SeveredModel(torch.nn.Module):
         out = self.inner(batch, targets, conditions)
         h_graph = out["h_graph"].detach()
         dec = self.decoder(out["h_do"], h_graph)
+        # The gates are forwarded UNDETACHED and on purpose. Returning None here made
+        # `StageALoss._graph` short-circuit to a constant `zeros(())` with no grad_fn, so the control's
+        # `total` contained only the response/gene/de path — it proved that detaching h_graph kills
+        # response-path gradients and nothing at all about the penalty path, while the probe printed
+        # "a non-zero reading below is real". The severance under test is h_graph, not the penalty:
+        # keeping the penalty live is what makes the control able to FAIL.
         return {**dec, "h_do": out["h_do"], "h_graph": h_graph,
-                "edge_gates": None, "edge_confidences": None}
+                "edge_gates": out.get("edge_gates"), "edge_confidences": out.get("edge_confidences")}
 
 
 # --------------------------------------------------------------------------------------------------
@@ -372,12 +378,22 @@ def probe_e(build, ckpt: Path, batch, targets, conditions) -> dict:
     # neighbourhood, with no error raised.
     row = list(targets).index(target)
     cond = conditions[row]
-    with torch.no_grad():
-        h_do_row = build().perturbation_encoder(batch)[row].detach()
+
+    def _h_do(model):
+        """Each model's OWN perturbation embedding.
+
+        This used to be computed once from `build()` — a THIRD, freshly random-initialised model — and
+        then fed to both readings, so the "FROZEN H1" gate and sensitivity numbers were measured at an
+        input that model never produces. The headline gate_collapse_factor therefore mixed the real
+        collapse with an input-distribution mismatch and was not reproducible from the frozen weights
+        alone. The condition gate reads h_do, so this is not a cosmetic difference."""
+        with torch.no_grad():
+            return model.perturbation_encoder(batch)[row].detach()
+
     print(f"  target={target!r}  condition={cond!r}  (batch row {row} of {len(list(targets))})")
 
     out = {"target": target, "condition": str(cond)}
-    at_init = _neighbourhood_dependence(fresh, target, cond, h_do_row)
+    at_init = _neighbourhood_dependence(fresh, target, cond, _h_do(fresh))
     print(f"  AT INIT           edges={at_init['n_edges']:>7}  gate_mean={at_init['gate_mean']:.6f}  "
           f"||h_graph||={at_init['h_graph_norm']:.4f}  delete-all-edges rel-change={at_init['rel_delta']:.4e}")
     out["at_init"] = at_init
@@ -396,7 +412,7 @@ def probe_e(build, ckpt: Path, batch, targets, conditions) -> dict:
         print("    -> this is a DIFFERENT checkpoint; anything below is not about the frozen H1")
     trained = build()
     trained.load_state_dict(torch.load(ckpt, map_location="cpu")["model"])
-    tr = _neighbourhood_dependence(trained, target, cond, h_do_row)
+    tr = _neighbourhood_dependence(trained, target, cond, _h_do(trained))
     print(f"  FROZEN H1         edges={tr['n_edges']:>7}  gate_mean={tr['gate_mean']:.6f}  "
           f"||h_graph||={tr['h_graph_norm']:.4f}  delete-all-edges rel-change={tr['rel_delta']:.4e}")
     out["frozen"] = tr

@@ -19,8 +19,17 @@ from tcell_pipeline.baselines import (
     RidgeBaseline,
     ZeroBaseline,
 )
+from tcell_pipeline.run_module8_real import flag_underfit_bars
 
 _N, _M, _D, _K, _G = 40, 10, 6, 8, 30
+
+
+def _groups(n: int, span: int = 3) -> list[str]:
+    """Per-row target symbols, one gene spanning ``span`` rows as in the real mart.
+
+    Bars that hold rows out internally need these; without them they fall back to a random-row split
+    and warn, which is correct behaviour but not the path these tests mean to exercise."""
+    return [f"GENE{i // span}" for i in range(n)]
 
 
 def _data(seed: int = 0):
@@ -39,7 +48,7 @@ def _data(seed: int = 0):
 def test_each_baseline_fit_predict_shapes(name):
     X, z, B, Xt, conds, conds_t = _data()
     model = BASELINES[name](basis=B)
-    model.fit(X, z, conditions=conds)
+    model.fit(X, z, conditions=conds, groups=_groups(len(X)))
     dz, dx = model.predict(Xt, conditions=conds_t)
     assert dz.shape == (_M, _K)
     assert dx.shape == (_M, _G)
@@ -200,18 +209,26 @@ def test_gradient_boosting_learns_a_nonlinear_signal_the_linear_bars_cannot():
     assert gb_err < 0.5 * ridge_err, f"gradient boosting {gb_err:.4f} must beat ridge {ridge_err:.4f} here"
 
 
-def test_gradient_boosting_reports_fit_diagnostics():
-    """It is published as a floor H1 must clear, so it owes the same convergence evidence the elastic-net
-    bar does — otherwise the under-fit gate has nothing to read for it. CONSTRUCTED breaker: starve the
-    boosting budget and ``converged`` must go False, or the flag cannot distinguish a plateaued bar from a
-    budget-truncated one that would still be improving."""
-    X, z, B, _, _, _ = _data()
-    starved = BASELINES["gradient_boosting"](basis=B, max_iter=1).fit(X, z).fit_diagnostics()
-    assert starved["converged"] is False, "a bar stopped by its iteration cap is still improving, not fit"
+def test_gradient_boosting_reports_unknown_convergence_with_a_reason():
+    """CONTRACT CHANGED 2026-07-21 (review finding 5). This bar used to report a convergence VERDICT
+    from sklearn's ``early_stopping``, whose validation set can only be carved out by RANDOM ROWS. One
+    target gene spans ~3 rows, so those rows shared genes with the fitted rows and the verdict kept
+    rewarding depth past the point of blocked-target-OOD generalisation — measured on the real fold in
+    ``probe_catboost_budget.py``: the fit its own early stopping called converged scored 0.0553 on val,
+    WORSE than an arbitrary 1000-tree cut at 0.0657.
 
+    sklearn HGB offers no eval-set hook, so there is no way to give it a grouped split. The bar is now
+    fixed-budget and reports ``converged=None`` WITH a reason. That is not a downgrade of the gate:
+    ``flag_underfit_bars`` routes None to ``unknown`` and still sets ``margin_is_upper_bound``, so the
+    margin stays conservatively bounded — it is now bounded by an honest absence of evidence rather
+    than by a verdict measured on leaked rows."""
+    X, z, B, _, _, _ = _data()
     d = BASELINES["gradient_boosting"](basis=B).fit(X, z).fit_diagnostics()
-    assert d["converged"] is True                         # stopped early on its own train-internal plateau
-    assert d["n_outputs"] == _K and d["n_iter_max"] >= 1
+
+    assert d["converged"] is None, "a verdict here could only come from a leaking random-row split"
+    assert d["converged_unknown_reason"], "unknown without a stated reason is indistinguishable from a bug"
+    assert d["n_outputs"] == _K and d["n_iter_max"] >= 1   # evidence is still reported, just not a verdict
+    assert flag_underfit_bars({"gradient_boosting": d})["margin_is_upper_bound"] is True
 
 
 def test_catboost_learns_a_nonlinear_signal_and_reports_convergence():
@@ -226,13 +243,13 @@ def test_catboost_learns_a_nonlinear_signal_and_reports_convergence():
     zt = np.stack([np.sin(3 * Xt[:, 0]) + Xt[:, 1] ** 2, np.abs(Xt[:, 2]) * Xt[:, 3]], 1)
     B = rng.standard_normal((_G, 2))
 
-    m = BASELINES["catboost"](basis=B, iterations=300).fit(X, z)
+    m = BASELINES["catboost"](basis=B, iterations=300).fit(X, z, groups=_groups(len(X)))
     cat_err = np.mean((m.predict(Xt)[0] - zt) ** 2)
     ridge_err = np.mean((RidgeBaseline(basis=B).fit(X, z).predict(Xt)[0] - zt) ** 2)
     assert cat_err < ridge_err, f"catboost {cat_err:.4f} must beat ridge {ridge_err:.4f} on curvature"
 
     # od_wait > iterations so early stopping CANNOT fire: the cap is the only thing that can stop it
-    starved = BASELINES["catboost"](basis=B, iterations=3, od_wait=100).fit(X, z).fit_diagnostics()
+    starved = BASELINES["catboost"](basis=B, iterations=3, od_wait=100).fit(X, z, groups=_groups(len(X))).fit_diagnostics()
     assert starved["converged"] is False, "a bar stopped by its iteration cap is still improving"
 
 

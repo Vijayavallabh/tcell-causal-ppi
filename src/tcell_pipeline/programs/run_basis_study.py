@@ -117,6 +117,7 @@ def stability_and_heldout(Z: np.ndarray, method: str, K: int) -> tuple[dict, dic
     n = Z.shape[0]
     n_fit = int(round(RESAMPLE_FRAC * n))
     bases, ho_mae, ho_base, dead = [], [], [], 0
+    nat_mae, nat_base, nat_name = [], [], "centred"
     for r in range(N_RESAMPLE):
         idx = np.random.default_rng(RESAMPLE_SEED + r).permutation(n)
         fit_idx, ho_idx = np.sort(idx[:n_fit]), np.sort(idx[n_fit:])
@@ -124,10 +125,20 @@ def stability_and_heldout(Z: np.ndarray, method: str, K: int) -> tuple[dict, dic
         B, _, info, _ = _fit(Zf, method, K)
         bases.append(B)
         dead += sparsity_metrics(B)["n_dead"]
-        Zc_ho = Z[ho_idx] - Zf.mean(0, dtype=np.float64).astype(np.float32)
+        mu_f = Zf.mean(0, dtype=np.float64).astype(np.float32)
+        Zc_ho = Z[ho_idx] - mu_f
         m = recon_metrics(Zc_ho, _heldout_projection(Zc_ho, B), B)
         ho_mae.append(m["recon_mae"])
         ho_base.append(m["zero_baseline_mae"])
+        # ...and on the target the method ACTUALLY models. The in-sample path has carried
+        # `recon_native` since the start for exactly this reason, but held-out did not: NMF sees only
+        # the positive part, so scoring it on the signed centred target measures a different question
+        # — and the study's headline is a method x K ranking read off the held-out column.
+        tgt_ho, nat_name = _native_target(Z[ho_idx], mu_f, method)
+        m_nat = (m if nat_name == "centred"
+                 else recon_metrics(tgt_ho, _heldout_projection(tgt_ho, B), B))
+        nat_mae.append(m_nat["recon_mae"])
+        nat_base.append(m_nat["zero_baseline_mae"])
 
     pairs = [matched_stability(bases[i], bases[j]) for i, j in combinations(range(N_RESAMPLE), 2)]
     vals = [p["mean_abs_cosine"] for p in pairs if p["mean_abs_cosine"] is not None]
@@ -139,9 +150,16 @@ def stability_and_heldout(Z: np.ndarray, method: str, K: int) -> tuple[dict, dic
         "n_dead_across_resamples": int(dead),
     }
     base = float(np.mean(ho_base))
+    nbase = float(np.mean(nat_base))
     ho = {"recon_mae": float(np.mean(ho_mae)), "zero_baseline_mae": base,
           "explained_frac": None if base == 0 else 1.0 - float(np.mean(ho_mae)) / base,
-          "per_resample_mae": ho_mae}
+          "per_resample_mae": ho_mae,
+          # Cross-method ranking is only admissible on a COMMON target; `native` is the one this method
+          # was fitted for. Where they differ (nmf, svd) the two must not be compared with each other.
+          "native": {"target": nat_name, "recon_mae": float(np.mean(nat_mae)),
+                     "zero_baseline_mae": nbase,
+                     "explained_frac": None if nbase == 0 else 1.0 - float(np.mean(nat_mae)) / nbase},
+          "comparable_across_methods": nat_name == "centred"}
     return stab, ho
 
 
@@ -252,12 +270,37 @@ def wants_stability(method: str, K: int, cap_seconds: float) -> bool:
     return (1 + N_RESAMPLE * RESAMPLE_FRAC) * est_fit + _SCORING_OVERHEAD_S < cap_seconds
 
 
-def write_not_measured(path: Path, method: str, K: int, reason: str, seconds: float) -> None:
+def write_not_measured(path: Path, method: str, K: int, reason: str, seconds: float,
+                       row_mae_dir: Path | None = None) -> None:
     """Record a cell the bounded sweep could not complete, shaped like a real cell with None metrics.
 
     A missing row reads as 'not run'; a blank metric reads as 'ran and found nothing'. Neither is
     true of a capped cell, so the reason is carried explicitly all the way into the table.
+
+    Two things this must NOT do, both found by review after the sweep had already run:
+
+    * **Never overwrite a measured cell.** A completed cell can be re-queued (``is_cached`` returns
+      False when only stability is missing) and then time out on the retry — and this function would
+      replace a >90-minute fit with an all-None stub, unrecoverably. A stub is strictly less
+      informative than the measurement it would destroy, so an existing measured cell wins.
+    * **Never leave its ``row_mae`` array behind.** ``run_cell`` saves that array BEFORE the expensive
+      stability step, so a cell that dies in stability leaves a live ``.npy`` that ``build_contrasts``
+      globs — publishing a mean_diff, CI and Bonferroni/Holm p-values, and consuming a slot in the
+      multiplicity family, for a cell the neighbouring table reports as never measured.
     """
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+        if existing.get("recon", {}).get("recon_mae") is not None:
+            print(f"[basis-study] {method}:{K} {reason}, but a MEASURED cell is already on disk — "
+                  f"keeping it (a stub would destroy {existing.get('fit_seconds', 0.0):.0f}s of fit)",
+                  flush=True)
+            return
+    if row_mae_dir is not None:
+        orphan = Path(row_mae_dir) / f"{method}_K{K}.npy"
+        orphan.unlink(missing_ok=True)   # else build_contrasts publishes a p-value for a stub cell
     path.write_text(json.dumps({
         "method": method, "K": K, "not_measured": reason, "fit_seconds": seconds,
         "convergence": {"n_iter": None, "max_iter": cell_max_iter(method, K), "converged": None},
@@ -317,7 +360,8 @@ def run_sweep(cell_cap: float = _CELL_CAP_S, budget: float = _BUDGET_S) -> None:
         left = budget - (time.time() - t0)
         if left <= 60:
             print(f"[sweep] BUDGET EXHAUSTED before {method}:{K}")
-            write_not_measured(out, method, K, "budget_exhausted", 0.0)
+            write_not_measured(out, method, K, "budget_exhausted", 0.0,
+                               row_mae_dir=OUT_DIR / "row_mae")
             continue
         cap = min(cell_cap, left)
         stab = wants_stability(method, K, cap)
@@ -331,11 +375,13 @@ def run_sweep(cell_cap: float = _CELL_CAP_S, budget: float = _BUDGET_S) -> None:
             subprocess.run(cmd, env=env, timeout=cap, check=False,
                            cwd=str(Path(__file__).resolve().parents[2]))
         except subprocess.TimeoutExpired:
-            write_not_measured(out, method, K, "timeout", cap)
+            write_not_measured(out, method, K, "timeout", cap,
+                               row_mae_dir=OUT_DIR / "row_mae")
             print(f"[sweep] {method}:{K} TIMEOUT at {cap / 60:.0f} min -> not_measured")
             continue
         if not out.exists():  # died for some other reason — still must not vanish from the table
-            write_not_measured(out, method, K, "failed", time.time() - c0)
+            write_not_measured(out, method, K, "failed", time.time() - c0,
+                               row_mae_dir=OUT_DIR / "row_mae")
             print(f"[sweep] {method}:{K} FAILED -> not_measured")
         print(f"[sweep] {method}:{K} done in {(time.time() - c0) / 60:.1f} min "
               f"({(budget - (time.time() - t0)) / 3600:.1f} h budget left)")

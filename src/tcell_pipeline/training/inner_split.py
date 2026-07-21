@@ -69,11 +69,20 @@ def group_partition(labels, holdout_frac: float = 0.2, seed: int = 0) -> tuple[l
     # group larger than 2*n*(1-holdout_frac) >= n rows), so the train side is always non-empty here.
 
     achieved = n_held / len(labels)
-    if abs(achieved - holdout_frac) > _FRACTION_WARN_REL * holdout_frac:
+    # Two independent reasons to speak up, because the relative test alone has a blind spot: at
+    # holdout_frac=0.5 it tolerates anything up to 75%, so a 74/26 split — the holdout being the clear
+    # MAJORITY, the exact thing the argument check above refuses to accept as a request — passed silently.
+    # Validate what the caller GETS, not only what they asked for.
+    drifted = abs(achieved - holdout_frac) > _FRACTION_WARN_REL * holdout_frac
+    inverted = achieved > 0.5
+    if drifted or inverted:
+        why = ("the holdout is now the MAJORITY of the rows, so the split is inverted: training happens "
+               "on the smaller side" if inverted else
+               "sizes that cannot be packed closer without splitting a gene")
         warnings.warn(
-            f"target-grouped holdout is {achieved:.1%} of rows, not the requested {holdout_frac:.1%} — "
-            f"{len(groups)} target groups with sizes that cannot be packed closer without splitting a "
-            f"gene. The achieved fraction is what you have; report that one.",
+            f"target-grouped holdout is {achieved:.1%} of rows ({n_held}/{len(labels)}), not the "
+            f"requested {holdout_frac:.1%} — {len(groups)} target groups, {why}. The achieved fraction "
+            f"is what you have; report that one.",
             stacklevel=2,
         )
 

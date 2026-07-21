@@ -13,6 +13,8 @@ q_pre context features (ridge) or a target profile (kNN); the baselines stay agn
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import ElasticNet, Ridge
@@ -50,11 +52,37 @@ class BaseBaseline:
             return None
         return _np(X)
 
-    def fit(self, X, z, conditions=None) -> "BaseBaseline":
+    def fit(self, X, z, conditions=None, groups=None) -> "BaseBaseline":
+        """``groups`` are the per-row target symbols, used by bars that hold rows out INTERNALLY.
+
+        One target gene spans ~3 rows here, so a random-row internal holdout shares targets with the
+        rows it selects on and keeps rewarding capacity long after blocked-target-OOD generalisation has
+        decayed. Bars that do not split internally ignore it."""
         z = _np(z)
         self._k = z.shape[1]
+        self._groups = None if groups is None else [str(g) for g in groups]
         self._fit(self._features(X), z, conditions)
         return self
+
+    def _internal_split(self, n: int, frac: float, seed: int) -> tuple[np.ndarray, np.ndarray]:
+        """(keep, hold) row indices for an internal holdout — target-grouped when groups are known.
+
+        Falls back to random rows with a WARNING rather than silently, because the fallback is the exact
+        leak this method exists to remove and a silent fallback would read as a grouped split."""
+        groups = getattr(self, "_groups", None)
+        if groups is not None and len(groups) == n:
+            from tcell_pipeline.training.inner_split import group_partition
+            keep, hold = group_partition(groups, holdout_frac=frac, seed=seed)
+            return np.asarray(keep, dtype=int), np.asarray(hold, dtype=int)
+        warnings.warn(
+            f"{type(self).__name__}: no target groups supplied, falling back to a RANDOM ROW internal "
+            f"holdout. One target spans several rows, so the resulting convergence verdict is "
+            f"contaminated and must not be read as evidence about generalisation.",
+            stacklevel=3,
+        )
+        idx = np.random.default_rng(seed).permutation(n)
+        n_hold = max(1, int(round(n * frac)))
+        return idx[n_hold:], idx[:n_hold]
 
     def predict(self, X, conditions=None) -> tuple[np.ndarray, np.ndarray]:
         dz = self._predict_z(self._features(X), conditions)
@@ -178,7 +206,7 @@ class ElasticNetBaseline(BaseBaseline):
         total = sum(int(e.coef_.size) for e in est)
         max_iter = int(head.estimator.max_iter)
         return {"n_outputs": len(est), "n_iter_max": max(iters) if iters else None,
-                "max_iter": max_iter, "converged": bool(iters and max(iters) < max_iter),
+                "max_iter": max_iter, "converged": _converged_from_iters(iters, max_iter),
                 "nonzero_coef_frac": (nonzero / total) if total else 0.0}
 
 
@@ -202,10 +230,18 @@ class GradientBoostingBaseline(BaseBaseline):
                  max_leaf_nodes: int = 31, validation_fraction: float = 0.1,
                  n_iter_no_change: int = 20, random_state: int = 0, n_jobs: int = 8) -> None:
         super().__init__(basis)
+        # early_stopping is OFF, deliberately. sklearn's HGB can only carve its validation set out by
+        # RANDOM ROWS (`validation_fraction`) and offers no eval-set hook, so its early stopping selects
+        # depth on rows whose target genes are also in the fitted rows — the exact leak
+        # `training/inner_split.py` exists to remove, measured on the real fold in
+        # `probe_catboost_budget.py`: the fit its own early stopping called converged scored 0.0553 on
+        # val, WORSE than an arbitrary 1000-tree cut at 0.0657. A fixed budget with NO convergence claim
+        # is honest; a leaked verdict feeding the under-fit gate is not. CatBoostBaseline keeps a real
+        # verdict because it accepts an explicit, target-grouped eval_set.
+        self._n_iter_no_change = n_iter_no_change
         self._model = MultiOutputRegressor(
             HistGradientBoostingRegressor(max_iter=max_iter, learning_rate=learning_rate,
-                                          max_leaf_nodes=max_leaf_nodes, early_stopping=True,
-                                          validation_fraction=validation_fraction,
+                                          max_leaf_nodes=max_leaf_nodes, early_stopping=False,
                                           n_iter_no_change=n_iter_no_change, random_state=random_state),
             n_jobs=n_jobs)
 
@@ -216,15 +252,34 @@ class GradientBoostingBaseline(BaseBaseline):
         return _as_columns(self._model.predict(X))
 
     def fit_diagnostics(self) -> dict:
-        """Convergence evidence for the boosted bar (see ``ElasticNetBaseline.fit_diagnostics``): a booster
-        that exhausted ``max_iter`` was still descending, so its score is a LOWER bound on what this model
-        family reaches — and therefore the published H1 margin is an UPPER bound."""
+        """Fixed-budget bar: iteration counts are reported, a convergence VERDICT is not.
+
+        ``converged`` is None because the only selection signal sklearn offers here is a random-row
+        holdout, and a verdict measured on leaked rows is not evidence about generalisation.
+        ``flag_underfit_bars`` routes None to ``unknown``, which is the truthful bucket."""
         est = getattr(self._model, "estimators_", [])
         iters = [int(e.n_iter_) for e in est if getattr(e, "n_iter_", None) is not None]
         max_iter = int(self._model.estimator.max_iter)
         return {"n_outputs": len(est), "n_iter_max": max(iters) if iters else None,
                 "n_iter_mean": (sum(iters) / len(iters)) if iters else None, "max_iter": max_iter,
-                "converged": bool(iters and max(iters) < max_iter)}
+                "converged": None,
+                "converged_unknown_reason": "fixed budget; sklearn HGB can only early-stop on a "
+                                            "random-row split, which shares target genes with the "
+                                            "fitted rows"}
+
+
+def _converged_from_iters(iters, max_iter: int) -> bool | None:
+    """Convergence from per-output iteration counts, or None when there is NO evidence either way.
+
+    The bug this replaces was ``bool(iters and max(iters) < max_iter)``: an empty ``iters`` collapses to
+    ``False``, which is not "we could not tell" but the positive claim "it did not converge". That claim
+    is then published as ``under-fit=[...]`` in ``tabular_baselines_vs_h1.json`` and is exactly what a
+    reader uses to decide the H1 margin is an UPPER bound — a fabricated fact doing load-bearing work.
+    Absence of evidence is None; ``flag_underfit_bars`` already routes None to ``unknown``."""
+    iters = list(iters)
+    if not iters:
+        return None
+    return max(iters) < max_iter
 
 
 def _boost_converged(used: int, max_iter: int, od_wait: int) -> bool:
@@ -269,10 +324,13 @@ class CatBoostBaseline(BaseBaseline):
     def _fit(self, X, z, conditions) -> None:
         from catboost import CatBoostRegressor
 
-        n = X.shape[0]
-        n_val = max(1, int(round(n * self._validation_fraction)))
-        idx = np.random.default_rng(self._kw["random_seed"]).permutation(n)
-        hold, keep = idx[:n_val], idx[n_val:]
+        # TARGET-GROUPED, not random rows: one gene spans ~3 rows, so a permutation split puts the same
+        # gene on both sides and early stopping keeps rewarding depth long after blocked-target-OOD
+        # generalisation has decayed. Measured on the real fold (probe_catboost_budget.py): the 4000-iter
+        # fit CatBoost's own early stopping called converged scored 0.0553 on val, WORSE than an
+        # arbitrary 1000-tree cut at 0.0657.
+        keep, hold = self._internal_split(X.shape[0], self._validation_fraction,
+                                          int(self._kw["random_seed"]))
         self._model = CatBoostRegressor(**self._kw)
         self._model.fit(X[keep], z[keep], eval_set=(X[hold], z[hold]))
 

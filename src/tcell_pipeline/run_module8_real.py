@@ -40,7 +40,7 @@ from tcell_pipeline.comparators import (  # noqa: E402
     TxPertPublicAdapter,
     write_compatibility_report,
 )
-from tcell_pipeline.evaluation.output_schema import write_predictions  # noqa: E402
+from tcell_pipeline.evaluation.output_schema import prediction_path, write_predictions  # noqa: E402
 from tcell_pipeline.graph import build_hetero_graph  # noqa: E402
 from tcell_pipeline.programs.program_basis import zscore_path  # noqa: E402
 from tcell_pipeline.screening.experiment_registry import log_run, register_run  # noqa: E402
@@ -306,7 +306,35 @@ def check_qpre(pc_columns, obs_columns) -> dict:
     return {"q_pre": tagged["q_pre"], "obs": obs_columns}
 
 
-def _bar_signature(*, n_train: int, n_val: int, n_features: int, k: int, bar: str | None = None) -> dict:
+def _bar_source(bar: str | None) -> str:
+    """The source a bar's score actually depends on: its own class PLUS the shared base.
+
+    ``inspect.getsource`` on a subclass returns only that subclass's block, so hashing the leaf alone
+    left ``BaseBaseline`` — which owns ``_decode_genes`` (the ``dz @ B.T`` decode every bar's gene-space
+    metrics run through), ``_features`` and the fit contract — outside the key. Editing it changed every
+    bar's mae/rmse/topk/sign while ``baselines_sha`` sat still."""
+    import inspect
+
+    from tcell_pipeline.baselines import BASELINES, simple_baselines
+    from tcell_pipeline.baselines.simple_baselines import BaseBaseline
+
+    if bar is None:
+        return inspect.getsource(simple_baselines)
+    shared = inspect.getsource(BaseBaseline) + inspect.getsource(simple_baselines._np)
+    return inspect.getsource(BASELINES[bar]) + shared
+
+
+def _array_sha(a) -> str:
+    """Content fingerprint of a float array, so a REFIT at identical shape is a different key."""
+    import numpy as _np_mod
+    if a is None:
+        return "none"
+    arr = _np_mod.ascontiguousarray(_np_mod.asarray(a, dtype=_np_mod.float64))
+    return hashlib.sha256(arr.tobytes()).hexdigest()[:16]
+
+
+def _bar_signature(*, n_train: int, n_val: int, n_features: int, k: int, bar: str | None = None,
+                   basis=None, features=None, seed: int = 0) -> dict:
     """What a cached bar score is only valid FOR.
 
     Fold dimensions are the obvious half. The half that actually bites is the CODE: the systema collapse
@@ -323,25 +351,68 @@ def _bar_signature(*, n_train: int, n_val: int, n_features: int, k: int, bar: st
       scores as current — the precise "presence is not freshness" failure the key exists to prevent."""
     import inspect
 
-    from tcell_pipeline.baselines import BASELINES, simple_baselines
     from tcell_pipeline.evaluation import metrics as _M
 
     def _sha(text: str) -> str:
         return hashlib.sha256(text.encode()).hexdigest()[:16]
 
-    bar_src = inspect.getsource(BASELINES[bar]) if bar else inspect.getsource(simple_baselines)
     qpre_src = inspect.getsource(_qpre_block) + repr((_QPRE_NUMERIC, _QPRE_CATEGORICAL, _QPRE_OBS))
     return {"n_train": int(n_train), "n_val": int(n_val), "n_features": int(n_features), "k": int(k),
-            "metrics_sha": _sha(inspect.getsource(_M)), "baselines_sha": _sha(bar_src),
-            "qpre_sha": _sha(qpre_src)}
+            "seed": int(seed),
+            "metrics_sha": _sha(inspect.getsource(_M)), "baselines_sha": _sha(_bar_source(bar)),
+            "qpre_sha": _sha(qpre_src),
+            # CONTENT, not shape. A refit basis at the same PROGRAM_DIM, or a rebuilt STRING graph whose
+            # node features change while the 1412 dim holds, leaves every other field byte-identical —
+            # so every bar would hit the cache and republish pre-change scores while printing [cached].
+            "basis_sha": _array_sha(basis), "features_sha": _array_sha(features)}
+
+
+# Distinct exit BITS, one per part. They used to share a single `rc |= <0 or 1>`, which made two very
+# different states indistinguishable: an under-fit tabular bar (the published H1 margin is only an upper
+# bound — a finding) and feat-013's CANNOT_VERIFY (the correct and PERMANENT answer while the sealed
+# split stays sequestered — not a finding). Under `--part all` the run therefore exited 1 on a healthy
+# checkout every time, so any CI gate on it was permanently red and duly ignored, taking the under-fit
+# guard down with it. Separate bits keep every guard honored to the exit code AND readable.
+RC_COMPARATORS = 1 << 0
+RC_BASELINES = 1 << 1     # under-fit bar: the H1 margin it bounds is an UPPER bound
+RC_AUDIT = 1 << 2
+RC_REPRO = 1 << 3         # NOT reproducible / cannot verify — expected while the split is sealed
+
+_RC_NAMES = {RC_COMPARATORS: "comparators", RC_BASELINES: "baselines(under-fit)",
+             RC_AUDIT: "audit", RC_REPRO: "repro(not-reproducible)"}
+
+
+def _rc_legend(rc: int) -> str:
+    return "+".join(name for bit, name in _RC_NAMES.items() if rc & bit) or "ok"
+
+
+def _gpu_bar_device(device: str | None, explicit: bool) -> str | None:
+    """Device for a GPU-only bar: None (let it auto-select) unless the user asked for one.
+
+    ``--device`` is shared with the audit and defaults to cpu, so ``--with-tabicl`` alone constructed
+    ``TabICLBaseline(device="cpu")`` and turned a ~4.4 GPU-h bar into a multi-day CPU job on a shared
+    box — silently, since the flag's own help text says GPU."""
+    return device if explicit else None
 
 
 def _bar_cache_file(root, fs: str, name: str) -> Path:
     return Path(root) / f"{fs}__{name}.json"
 
 
-def load_cached_bar(root, fs: str, name: str, signature: dict) -> dict | None:
-    """A completed bar's score, or None when absent OR computed under a different signature."""
+def load_cached_bar(root, fs: str, name: str, signature: dict, predictions: Path | None = None) -> dict | None:
+    """A completed bar's score, or None when absent, stale, incomplete, or missing its artifact.
+
+    Three ways this returns a miss rather than a hit, each a real failure that reached the published
+    table once:
+
+    * signature mismatch — the score is not valid for this fold/code;
+    * a metric stored as ``null`` — ``_finite_or_none`` maps a non-finite mae to JSON null, and the
+      resumed run then formats that None with ``:>9.4f`` and dies AFTER the parquet is written but
+      BEFORE the H1 summary and the under-fit exit gate. A cache entry that cannot be printed is not a
+      completed bar;
+    * ``predictions`` given but absent on disk — ``write_predictions`` only runs on a miss, so a cleared
+      ``data/results/predictions`` would otherwise republish the whole comparator table with every
+      per-bar prediction file missing."""
     path = _bar_cache_file(root, fs, name)
     if not path.exists():
         return None
@@ -349,7 +420,13 @@ def load_cached_bar(root, fs: str, name: str, signature: dict) -> dict | None:
         doc = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError):
         return None                                     # unreadable cache is a miss, never a silent pass
-    return doc if doc.get("signature") == signature else None
+    if doc.get("signature") != signature:
+        return None
+    if any(v is None for v in (doc.get("metrics") or {}).values()):
+        return None
+    if predictions is not None and not Path(predictions).exists():
+        return None
+    return doc
 
 
 def save_cached_bar(root, fs: str, name: str, signature: dict, metrics: dict,
@@ -392,7 +469,7 @@ def _qpre_block(train_ds, val_ds) -> tuple[np.ndarray, np.ndarray, list[str]]:
 
 
 def run_tabular_baselines(n_max=None, seed: int = 0, with_tabicl: bool = False,
-                          device: str | None = None) -> int:
+                          device: str | None = None, device_explicit: bool = True) -> int:
     """feat-006 tabular baselines as an ADDITIONAL H1 comparator bar (like feat-010, CPU/minutes): fit each
     simple baseline on the REAL train fold — predicting Δz from the target gene's static graph node feature —
     score the REAL val fold through the SAME response_metric_suite, and rank vs the frozen H1 on systema.
@@ -440,22 +517,25 @@ def run_tabular_baselines(n_max=None, seed: int = 0, with_tabicl: bool = False,
             if name in _QPRE_ONLY and fs != "qpre":
                 continue          # too expensive to score on a feature set no margin is published from
             label = name if fs == "node" else f"{name}_qpre"
+            model_name = (f"baseline_{label}" if n_max is None
+                          else f"baseline_{label}_nmax{int(n_max)}")
+            pred_path = prediction_path(model_name, "val", seed, config.PREDICTIONS_ROOT)
             sig = _bar_signature(n_train=Xtr.shape[0], n_val=Xva.shape[0], n_features=Xtr.shape[1],
-                                 k=B.shape[1], bar=name)
-            hit = load_cached_bar(cache_root, fs, name, sig)
+                                 k=B.shape[1], bar=name, basis=B, features=Xtr, seed=seed)
+            hit = load_cached_bar(cache_root, fs, name, sig, predictions=pred_path)
             if hit is not None:   # resume: this bar already scored under THIS fold and THIS scoring code
                 metrics, diag = hit["metrics"], hit["diagnostics"]
                 print(f"[m8-base] {label:22s} systema={metrics['systema']:+.4f} [cached]", flush=True)
             else:
-                kw = {"device": device} if name in _TABULAR_GPU else {}
+                kw = {"device": _gpu_bar_device(device, device_explicit)} if name in _TABULAR_GPU else {}
                 model = BASELINES[name](basis=B, **kw)
-                model.fit(Xtr, tr["delta_z"])  # feature-free baselines ignore X, use its row count
+                # groups = the per-row target symbol: bars that hold rows out internally must move whole
+                # target genes, or their selection split shares genes with the rows they fit on.
+                model.fit(Xtr, tr["delta_z"], groups=tr["genes"])
                 dz, dx = model.predict(Xva)
                 metrics = compute_all_metrics(dz, dx, va["delta_z"], va["delta_x"], train_mean)
                 write_predictions(va["row_index"], dz, dx, None, split="val", seed=seed,
-                                  model=f"baseline_{label}" if n_max is None else
-                                  f"baseline_{label}_nmax{int(n_max)}",
-                                  root=config.PREDICTIONS_ROOT)
+                                  model=model_name, root=config.PREDICTIONS_ROOT)
                 diag = model.fit_diagnostics() if hasattr(model, "fit_diagnostics") else None
                 save_cached_bar(cache_root, fs, name, sig, metrics, diag)
                 if diag:      # an under-fit bar INFLATES the H1 margin — record it
@@ -613,21 +693,29 @@ def main() -> int:
     ap.add_argument("--n-max", type=int, default=None, help="cap rows per split (quick runs)")
     ap.add_argument("--n-cases", type=int, default=config.N_RATIONALE_AUDIT_CASES)
     ap.add_argument("--n-controls", type=int, default=10, help="matched-random controls per audited case")
-    ap.add_argument("--device", default="cpu")
+    ap.add_argument("--device", default=None,
+                    help="torch device for GPU-capable parts; default cpu, except GPU-only bars which "
+                         "auto-select when this is not given explicitly")
     ap.add_argument("--untrained", action="store_true", default=True)
     ap.add_argument("--no-register", action="store_true")
     ap.add_argument("--with-tabicl", action="store_true",
                     help="add the TabICL in-context bar (GPU; refit once per program)")
     a = ap.parse_args()
+    device_explicit = a.device is not None
+    device = a.device if device_explicit else "cpu"
     rc = 0
     if a.part in ("comparators", "all"):
-        rc |= run_comparators(a.n_max, register=not a.no_register)
+        rc |= RC_COMPARATORS if run_comparators(a.n_max, register=not a.no_register) else 0
     if a.part in ("baselines", "all"):
-        rc |= run_tabular_baselines(a.n_max, with_tabicl=a.with_tabicl, device=a.device)
+        rc |= RC_BASELINES if run_tabular_baselines(
+            a.n_max, with_tabicl=a.with_tabicl, device=device,
+            device_explicit=device_explicit) else 0
     if a.part in ("audit", "all"):
-        rc |= run_audit(a.n_cases, a.n_controls, a.device, a.n_max, a.untrained)
+        rc |= RC_AUDIT if run_audit(a.n_cases, a.n_controls, device, a.n_max, a.untrained) else 0
     if a.part in ("repro", "all"):
-        rc |= run_repro()
+        rc |= RC_REPRO if run_repro() else 0
+    if rc:
+        print(f"[m8] exit {rc} = {_rc_legend(rc)}", flush=True)
     return rc
 
 
