@@ -70,14 +70,22 @@ class BaseBaseline:
         Falls back to random rows with a WARNING rather than silently, because the fallback is the exact
         leak this method exists to remove and a silent fallback would read as a grouped split."""
         groups = getattr(self, "_groups", None)
+        why = "no target groups supplied"
         if groups is not None and len(groups) == n:
             from tcell_pipeline.training.inner_split import group_partition
-            keep, hold = group_partition(groups, holdout_frac=frac, seed=seed)
-            return np.asarray(keep, dtype=int), np.asarray(hold, dtype=int)
+            try:
+                keep, hold = group_partition(groups, holdout_frac=frac, seed=seed)
+                return np.asarray(keep, dtype=int), np.asarray(hold, dtype=int)
+            except ValueError as exc:
+                # group_partition REFUSES rather than returns a leaking split — e.g. a fold with a
+                # single target gene, where no grouped holdout exists at all. Refusing is right for it
+                # and wrong for us: the bar must still fit. Degrade to random rows, loudly, so the
+                # contaminated verdict is labelled instead of silently trusted.
+                why = f"no grouped split exists ({exc})"
         warnings.warn(
-            f"{type(self).__name__}: no target groups supplied, falling back to a RANDOM ROW internal "
-            f"holdout. One target spans several rows, so the resulting convergence verdict is "
-            f"contaminated and must not be read as evidence about generalisation.",
+            f"{type(self).__name__}: {why}, falling back to a RANDOM ROW internal holdout. One target "
+            f"spans several rows, so the resulting convergence verdict is contaminated and must not be "
+            f"read as evidence about generalisation.",
             stacklevel=3,
         )
         idx = np.random.default_rng(seed).permutation(n)

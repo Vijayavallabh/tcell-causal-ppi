@@ -406,10 +406,12 @@ def load_cached_bar(root, fs: str, name: str, signature: dict, predictions: Path
     table once:
 
     * signature mismatch — the score is not valid for this fold/code;
-    * a metric stored as ``null`` — ``_finite_or_none`` maps a non-finite mae to JSON null, and the
+    * a metric recorded as NON-FINITE — ``_finite_or_none`` maps a non-finite mae to JSON null, and the
       resumed run then formats that None with ``:>9.4f`` and dies AFTER the parquet is written but
       BEFORE the H1 summary and the under-fit exit gate. A cache entry that cannot be printed is not a
-      completed bar;
+      completed bar. The keys are recorded explicitly at save time rather than inferred from ``is
+      None``, because None is also this project's encoding for "no evidence": keying the miss on None
+      would make an honestly-undecidable metric recompute forever, silently, on every run;
     * ``predictions`` given but absent on disk — ``write_predictions`` only runs on a miss, so a cleared
       ``data/results/predictions`` would otherwise republish the whole comparator table with every
       per-bar prediction file missing."""
@@ -422,11 +424,20 @@ def load_cached_bar(root, fs: str, name: str, signature: dict, predictions: Path
         return None                                     # unreadable cache is a miss, never a silent pass
     if doc.get("signature") != signature:
         return None
-    if any(v is None for v in (doc.get("metrics") or {}).values()):
+    if doc.get("nonfinite_metrics"):
         return None
     if predictions is not None and not Path(predictions).exists():
         return None
     return doc
+
+
+def _nonfinite_keys(metrics: dict) -> list[str]:
+    import math as _math
+    out = []
+    for k, v in (metrics or {}).items():
+        if isinstance(v, (float, np.floating)) and not _math.isfinite(float(v)):
+            out.append(k)
+    return sorted(out)
 
 
 def save_cached_bar(root, fs: str, name: str, signature: dict, metrics: dict,
@@ -434,6 +445,9 @@ def save_cached_bar(root, fs: str, name: str, signature: dict, metrics: dict,
     config.ensure_dir(Path(root))
     config.write_text_atomic(
         json.dumps({"signature": signature, "metrics": _finite_or_none(metrics),
+                    # Which metrics were non-finite, recorded at the only point where it is still
+                    # knowable — after _finite_or_none they are indistinguishable from an honest None.
+                    "nonfinite_metrics": _nonfinite_keys(metrics),
                     "diagnostics": _finite_or_none(diagnostics) if diagnostics else None}, indent=2,
                    allow_nan=False),
         _bar_cache_file(root, fs, name))

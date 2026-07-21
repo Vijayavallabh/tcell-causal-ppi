@@ -15,10 +15,39 @@ survives an interrupt without losing completed work.
 from __future__ import annotations
 
 import os
+import sys as _sys
 
-os.environ.setdefault("OMP_NUM_THREADS", "4")  # shared 64-core box; must precede the numpy import
+# Whether this assignment can still bind is decided BEFORE it runs: libgomp and OpenBLAS read their
+# thread counts in load-time initialisers, so once numpy is in sys.modules the pools are already sized
+# and setdefault below is decoration. Running as `-m tcell_pipeline.programs.run_basis_study` imports
+# the parent package first, and that pulls in numpy — so on this path the cap NEVER took effect while
+# the driver printed "OMP=4" as though it had. That is the recorded shared-box regression: ~830 threads,
+# load 600, a 4-minute fit taking 87. Record the truth here and report it; do not fix it by capping
+# threads inside the package __init__, which would pin every trainer and screening run too.
+_NUMPY_ALREADY_LOADED = "numpy" in _sys.modules
+_THREAD_CAP_PRESET = "OMP_NUM_THREADS" in os.environ
+
+os.environ.setdefault("OMP_NUM_THREADS", "4")  # shared 64-core box
 os.environ.setdefault("OPENBLAS_NUM_THREADS", os.environ["OMP_NUM_THREADS"])
 os.environ.setdefault("MKL_NUM_THREADS", os.environ["OMP_NUM_THREADS"])
+
+
+def thread_cap_effective() -> bool:
+    """Did the BLAS/OpenMP cap actually bind for this process?
+
+    True only if it was already in the environment when Python started (the launch command set it), or
+    numpy had not yet been imported when this module was loaded. Anything else means the printed
+    ``OMP=`` value is a wish, not a fact."""
+    return bool(_THREAD_CAP_PRESET or not _NUMPY_ALREADY_LOADED)
+
+
+def warn_if_thread_cap_ineffective() -> None:
+    if not thread_cap_effective():
+        print(f"[basis-study] WARNING: OMP_NUM_THREADS={os.environ['OMP_NUM_THREADS']} was set AFTER "
+              f"numpy loaded, so the BLAS thread pools are already sized to all "
+              f"{os.cpu_count()} cores and this cap has NO EFFECT. Re-launch with it in the command "
+              f"(OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 python -m ...) — the "
+              f"per-cell time budget below assumes the cap holds.", flush=True)
 
 import argparse  # noqa: E402
 import json  # noqa: E402
@@ -419,7 +448,10 @@ def main(argv=None) -> int:
             [(m, k) for m in METHODS for k in KS] + [("vae", 128)]
         cells = [(m, int(k)) for m, k in cells]
         Z, mu = load_train_matrix()
-        print(f"[basis-study] {Z.shape[0]} train rows x {Z.shape[1]} genes, OMP={os.environ['OMP_NUM_THREADS']}")
+        eff = "" if thread_cap_effective() else " (NOT IN EFFECT — see warning above)"
+        warn_if_thread_cap_ineffective()
+        print(f"[basis-study] {Z.shape[0]} train rows x {Z.shape[1]} genes, "
+              f"OMP={os.environ['OMP_NUM_THREADS']}{eff}")
         for method, K in cells:
             out = OUT_DIR / "cells" / f"{method}_K{K}.json"
             if is_cached(out, want_stability=not a.no_stability) and not a.force:

@@ -184,6 +184,22 @@ def test_non_finite_metric_is_never_served_from_cache(tmp_path):
         "dies AFTER the parquet is written but BEFORE the H1 summary and the under-fit exit-code gate")
 
 
+def test_a_legitimately_none_metric_is_still_cacheable(tmp_path):
+    """SELF-REVIEW: rejecting on ``value is None`` conflated two different things.
+
+    ``_finite_or_none`` maps a non-finite float to null, but None is also this project's standing
+    encoding for 'no evidence' (an undecidable metric). Keying the miss on None would make such a bar
+    recompute forever, silently, every run. Record WHICH keys were non-finite instead."""
+    from tcell_pipeline.run_module8_real import load_cached_bar, save_cached_bar
+
+    sig = {"n_train": 1}
+    save_cached_bar(tmp_path, "node", "ridge", sig, {"systema": 0.1, "undecidable_metric": None}, None)
+
+    hit = load_cached_bar(tmp_path, "node", "ridge", sig)
+    assert hit is not None, "an honestly-undecidable metric must not make the bar uncacheable forever"
+    assert hit["metrics"]["systema"] == 0.1
+
+
 # --------------------------------------------------------------------------------------------------
 # [11] the expected repro verdict must stay distinguishable from a real gate failure
 # --------------------------------------------------------------------------------------------------
@@ -203,19 +219,34 @@ def test_repro_verdict_and_underfit_gate_use_distinct_exit_bits():
 # --------------------------------------------------------------------------------------------------
 
 
-def test_thread_cap_is_set_before_numpy_loads():
-    """`-m tcell_pipeline.programs.run_basis_study` imports the package first, which imports numpy."""
+def _import_env(repo: Path) -> dict:
+    return {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(repo / "src")}
+
+
+def test_importing_the_programs_package_does_not_cap_threads_globally():
+    """SELF-REVIEW of the first fix for [13], which had a blast radius its own test could not see.
+
+    Setting the caps in ``programs/__init__.py`` did make them precede numpy — but that package is
+    imported by model.py, training/dataset.py, run_train.py, run_stage_b.py and run_screening.py, so it
+    silently pinned OMP_NUM_THREADS=4 on every training and screening run, including the 20-epoch GPU
+    campaigns. A one-cell fix must not throttle the whole project."""
     repo = Path(__file__).resolve().parents[2]
     out = subprocess.run(
         [sys.executable, "-c",
-         "import os, sys; import tcell_pipeline.programs; "
-         "print(os.environ.get('OMP_NUM_THREADS'))"],
-        capture_output=True, text=True, cwd=repo,
-        env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(repo / "src")},
-    )
-    assert out.stdout.strip() == "4", (
-        f"OMP_NUM_THREADS is {out.stdout.strip()!r} after importing the package: libgomp/OpenBLAS "
-        f"already sized their pools to all 64 cores. stderr={out.stderr[-400:]}")
+         "import os; import tcell_pipeline.programs; print(os.environ.get('OMP_NUM_THREADS'))"],
+        capture_output=True, text=True, cwd=repo, env=_import_env(repo))
+    assert out.stdout.strip() == "None", (
+        f"importing the programs package set OMP_NUM_THREADS={out.stdout.strip()!r}, which every "
+        f"trainer inherits. stderr={out.stderr[-300:]}")
+
+
+def test_basis_study_reports_whether_its_thread_cap_actually_took_effect():
+    """The driver must not print OMP=4 when numpy was already loaded and the cap could not apply."""
+    from tcell_pipeline.programs import run_basis_study as R
+
+    assert R.thread_cap_effective() is False, (
+        "numpy is imported long before this test runs, so the cap cannot have taken effect here — a "
+        "guard that cannot report that is the silent-lie this finding was about")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -257,6 +288,20 @@ def test_gradient_boosting_publishes_no_leaked_convergence_verdict():
     assert bar._model.estimator.early_stopping is False, (
         "early stopping is selecting depth on a random-row split that shares target genes with the "
         "fitted rows, and that verdict feeds the under-fit gate")
+
+
+def test_internal_split_survives_a_fold_with_one_target_gene():
+    """SELF-REVIEW: group_partition RAISES when no grouped split exists, and the boosted bar swallowed
+    no such case before — so the grouped-split fix turned a working (if leaky) fit into a crash."""
+    from tcell_pipeline.baselines.simple_baselines import CatBoostBaseline
+
+    bar = CatBoostBaseline()
+    bar._groups = ["ONLY"] * 50                      # degenerate but real for a tiny or filtered fold
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        keep, hold = bar._internal_split(50, frac=0.1, seed=0)
+    assert len(keep) and len(hold), "a fold with one target gene must still fit, not raise"
+    assert caught, "and it must say the verdict is contaminated, since no grouped split was possible"
 
 
 def test_internal_split_warns_when_it_has_to_fall_back_to_random_rows():
