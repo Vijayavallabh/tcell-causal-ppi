@@ -95,14 +95,34 @@ def spearman_corr(pred, true) -> float:
     return float(np.where(degenerate, 0.0, _rowwise_pearson(rp, rt)).mean())
 
 
+_COLLAPSE_TOL = 1e-4    # ||pred - train_mean|| below this x ||train_mean|| carries no perturbation signal
+
+
 def systema_pert_specific_delta(pred, true, train_mean) -> float:
     """Correlation after removing the average training perturbation effect (§10.2 primary endpoint).
 
     ``rho(i) = corr(dz_hat_i - dz_bar_train, dz_i - dz_bar_train)`` per row, macro-averaged; subtracting
-    the generic treatment effect so the model isn't credited for predicting it."""
+    the generic treatment effect so the model isn't credited for predicting it.
+
+    A row whose centred prediction is NUMERICALLY zero scores 0: it has collapsed to the training mean and
+    carries no perturbation-SPECIFIC signal by definition. The exact-zero guard inside ``_rowwise_pearson``
+    cannot cover this, because Pearson is SCALE-INVARIANT — it reads only the DIRECTION of the centred
+    prediction, so a residue of relative 1e-12 scores exactly as strongly as one of 1e-5, and float
+    arithmetic essentially never lands on bit-exact zero. On the real val fold the perturbed-mean baseline
+    differed from the subtracted mean by relative 2.4e-06 (it accumulated in float64 while the scorer used a
+    float32 mean of the same array) and scored +0.0129 — above the 0.01 noise band and above three genuine
+    bars — with the sign decided purely by which way that dust pointed. Collapse-to-the-mean is the expected
+    failure mode in a near-null-signal regime, so it must read 0, not an arbitrary number.
+
+    The threshold sits ~4 orders above the observed artifact and ~4 below the nearest genuine predictor
+    (0.46 x ||train_mean||), so no real result moves; ``test_systema_still_scores_a_genuine_predictor_
+    unchanged`` pins that half."""
     p, t = _np(pred), _np(true)
     m = _np(train_mean).reshape(1, -1)
-    return float(_rowwise_pearson(p - m, t - m).mean())
+    dp = p - m
+    r = _rowwise_pearson(dp, t - m)
+    collapsed = np.linalg.norm(dp, axis=1) <= _COLLAPSE_TOL * float(np.linalg.norm(m))
+    return float(np.where(collapsed, 0.0, r).mean())
 
 
 def centroid_accuracy(pred, true, all_true=None) -> float:

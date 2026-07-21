@@ -167,3 +167,103 @@ def test_ridge_and_low_rank_handle_single_program():
         dz, dx = model.fit(X, z).predict(Xt)
         assert dz.shape == (5, 1)                             # column, not atleast_2d's (1, M) transpose
         assert dx.shape == (5, _G)
+
+
+def test_elastic_net_diagnostics_detect_a_truncated_fit():
+    """CONSTRUCTED breaker for the convergence guard: the previous test only asserted
+    ``isinstance(converged, bool)``, which no input can falsify — a guard whose input is a constant can
+    only confirm (AGENTS.md). Force the solver to stop at the iteration cap and the flag must go False;
+    give it room and it must go True, or the flag is decoration."""
+    X, z, B, _, _, _ = _data()
+    truncated = ElasticNetBaseline(basis=B, alpha=0.01, max_iter=1, tol=1e-12).fit(X, z)
+    d = truncated.fit_diagnostics()
+    assert d["converged"] is False, "a fit stopped at max_iter is NOT converged"
+    assert d["n_iter_max"] == d["max_iter"] == 1
+
+    shipped = ElasticNetBaseline(basis=B).fit(X, z)             # the DEFAULTS published as the H1 floor
+    assert shipped.fit_diagnostics()["converged"] is True, "the shipped bar must converge, or it under-bounds"
+
+
+def test_gradient_boosting_learns_a_nonlinear_signal_the_linear_bars_cannot():
+    """The real tabular threat to H1 is a non-linear learner, not another linear one: the report calls this
+    a near-null-signal regime where strong TABULAR models are what could break the comparator clause. Pin
+    that the bar actually captures curvature ridge cannot."""
+    rng = np.random.default_rng(7)
+    X = rng.standard_normal((300, 4))
+    z = np.stack([np.sin(3 * X[:, 0]) + X[:, 1] ** 2, np.abs(X[:, 2]) * X[:, 3]], 1)   # purely non-linear
+    Xt = rng.standard_normal((80, 4))
+    zt = np.stack([np.sin(3 * Xt[:, 0]) + Xt[:, 1] ** 2, np.abs(Xt[:, 2]) * Xt[:, 3]], 1)
+    B = rng.standard_normal((_G, 2))
+
+    gb_err = np.mean((BASELINES["gradient_boosting"](basis=B).fit(X, z).predict(Xt)[0] - zt) ** 2)
+    ridge_err = np.mean((RidgeBaseline(basis=B).fit(X, z).predict(Xt)[0] - zt) ** 2)
+    assert gb_err < 0.5 * ridge_err, f"gradient boosting {gb_err:.4f} must beat ridge {ridge_err:.4f} here"
+
+
+def test_gradient_boosting_reports_fit_diagnostics():
+    """It is published as a floor H1 must clear, so it owes the same convergence evidence the elastic-net
+    bar does — otherwise the under-fit gate has nothing to read for it. CONSTRUCTED breaker: starve the
+    boosting budget and ``converged`` must go False, or the flag cannot distinguish a plateaued bar from a
+    budget-truncated one that would still be improving."""
+    X, z, B, _, _, _ = _data()
+    starved = BASELINES["gradient_boosting"](basis=B, max_iter=1).fit(X, z).fit_diagnostics()
+    assert starved["converged"] is False, "a bar stopped by its iteration cap is still improving, not fit"
+
+    d = BASELINES["gradient_boosting"](basis=B).fit(X, z).fit_diagnostics()
+    assert d["converged"] is True                         # stopped early on its own train-internal plateau
+    assert d["n_outputs"] == _K and d["n_iter_max"] >= 1
+
+
+def test_catboost_learns_a_nonlinear_signal_and_reports_convergence():
+    """CatBoost is the bar feat-006's description actually names, and unlike the per-output boosters it
+    fits all K programs in ONE model (MultiRMSE), sharing tree structure across them. CONSTRUCTED breaker:
+    starve the iteration budget and ``converged`` must go False."""
+    pytest.importorskip("catboost")
+    rng = np.random.default_rng(11)
+    X = rng.standard_normal((300, 4))
+    z = np.stack([np.sin(3 * X[:, 0]) + X[:, 1] ** 2, np.abs(X[:, 2]) * X[:, 3]], 1)
+    Xt = rng.standard_normal((80, 4))
+    zt = np.stack([np.sin(3 * Xt[:, 0]) + Xt[:, 1] ** 2, np.abs(Xt[:, 2]) * Xt[:, 3]], 1)
+    B = rng.standard_normal((_G, 2))
+
+    m = BASELINES["catboost"](basis=B, iterations=300).fit(X, z)
+    cat_err = np.mean((m.predict(Xt)[0] - zt) ** 2)
+    ridge_err = np.mean((RidgeBaseline(basis=B).fit(X, z).predict(Xt)[0] - zt) ** 2)
+    assert cat_err < ridge_err, f"catboost {cat_err:.4f} must beat ridge {ridge_err:.4f} on curvature"
+
+    # od_wait > iterations so early stopping CANNOT fire: the cap is the only thing that can stop it
+    starved = BASELINES["catboost"](basis=B, iterations=3, od_wait=100).fit(X, z).fit_diagnostics()
+    assert starved["converged"] is False, "a bar stopped by its iteration cap is still improving"
+
+
+def test_tabicl_declares_unknown_convergence_so_the_gate_cannot_read_it_as_a_pass():
+    """TabICL is an amortized in-context model: there is no iterative fit to converge, so ``converged`` is
+    genuinely UNKNOWN, not True. That distinction is load-bearing — this fold has ~14x more columns than
+    TabICL's pre-training range, so its score may under-represent the family, and a bar we cannot certify
+    was fit well enough to bound must push the H1 margin to an upper bound rather than silently pass."""
+    pytest.importorskip("tabicl")
+    from tcell_pipeline.baselines import TabICLBaseline
+    from tcell_pipeline.run_module8_real import flag_underfit_bars
+
+    d = TabICLBaseline.diagnostics_for(n_features=1453, n_outputs=128)
+    assert d["converged"] is None                       # NOT True — absence of evidence is not a pass
+    assert d["n_features"] == 1453
+    assert d["out_of_pretraining_range"] is True
+    assert flag_underfit_bars({"tabicl": d})["margin_is_upper_bound"] is True
+
+
+def test_boost_converged_requires_a_full_patience_window():
+    """CONSTRUCTED breaker from the real run. `tree_count_ < max_iter` reads True at 999/1000, but CatBoost
+    sets tree_count_ = best_iteration + 1, so best was iteration 998 and overfitting detection never had its
+    od_wait=50 window to fire in — the bar was still improving when the budget ran out. Early stopping
+    genuinely fired only if `tree_count_ + od_wait <= max_iter`. Verified against catboost 1.2.10: a
+    generous budget (2000 iters, od_wait=10) stopped at tree_count_=99, and a starved one (5 iters,
+    od_wait=100) ran to 5."""
+    from tcell_pipeline.baselines.simple_baselines import _boost_converged
+
+    assert _boost_converged(999, 1000, 50) is False       # THE REAL RUN — shipped criterion said True
+    assert _boost_converged(1000, 1000, 50) is False      # ran the whole budget
+    assert _boost_converged(99, 2000, 10) is True         # measured genuine early stop
+    assert _boost_converged(5, 5, 100) is False           # starved: cap, not a plateau
+    assert _boost_converged(950, 1000, 50) is True        # exactly a full patience window fits
+    assert _boost_converged(951, 1000, 50) is False       # one short of it

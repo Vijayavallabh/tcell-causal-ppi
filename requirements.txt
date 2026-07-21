@@ -17,6 +17,11 @@ pyarrow         # Parquet shards (perturbation_condition, program_response, prot
 pyyaml          # feature_availability.yaml leakage-fence manifest (feature_availability.py)
 scikit-learn    # linear baselines + program bases (PCA / NMF / ICA, ridge, elastic-net, GBM)
 mygene
+catboost        # feat-006 tabular bar: MultiRMSE fits all K programs in ONE model (Apache-2.0, ~97 MB)
+tabicl          # feat-006 tabular foundation-model bar (BSD-3). Downloads a ~114 MB checkpoint on first
+                # use and wants a GPU. NOT TabPFN: its current weights are non-commercial and its own docs
+                # say competitive benchmarking needs a commercial licence — a governance blocker for a
+                # published comparator, on top of a login token and 128 single-target refits.
 # --- Graphs & modeling (Tier 1: EG-IPG) ---
 # GPU note: this host's NVIDIA driver is 535/CUDA 12.2, so install the CUDA-12.6 torch build
 # (runs on 12.2 via minor-version compat) — the default cu13x wheel can't see the GPU:

@@ -331,3 +331,56 @@ def test_output_schema_defaults_sigma_to_zero(tmp_path):
     dx = np.ones((3, _G), dtype=np.float32)
     path = write_predictions(ri, dz, dx, None, "zero", "val", 1, root=tmp_path)
     assert np.count_nonzero(read_predictions(path)["sigma"]) == 0
+
+
+def test_systema_scores_a_collapsed_predictor_zero_however_it_rounds():
+    """CONSTRUCTED breaker for the primary endpoint.
+
+    ``test_systema_pert_specific_removes_treatment_effect`` feeds a BIT-EXACT copy of train_mean, which is
+    the one input the existing degeneracy guard already handles — no real pipeline ever produces it. In the
+    live pipeline the perturbed-mean baseline built its mean in float64 while the scorer subtracted a
+    float32 mean of the SAME array, leaving a relative 2.4e-06 residue; because Pearson is SCALE-invariant
+    it read only that residue's DIRECTION and scored +0.0129 on the real val fold — above the 0.01 noise
+    band, and above three genuine bars.
+
+    Collapse-to-the-training-mean is the expected failure mode in a near-null-signal regime, so a collapsed
+    predictor must score 0 no matter which way its floating-point dust points, and must not depend on the
+    residue's magnitude (it does not: 1e-12 and 1e-5 scored identically)."""
+    pred, true = _fixture()
+    train_mean = true.mean(0)
+    rng = np.random.default_rng(0)
+    for eps in (1e-12, 1e-8, 1e-5):
+        for s in range(5):
+            r = rng.standard_normal(train_mean.shape)
+            r /= np.linalg.norm(r)
+            collapsed = np.broadcast_to(train_mean + eps * np.linalg.norm(train_mean) * r, true.shape)
+            got = metrics.systema_pert_specific_delta(collapsed, true, train_mean)
+            assert abs(got) < 1e-9, f"collapsed predictor scored {got:+.4f} (eps={eps})"
+
+
+def test_systema_still_scores_a_genuine_predictor_unchanged():
+    """The other half: the collapse guard must not swallow real signal. The nearest genuine predictor on the
+    real fold sits ~0.46 x ||train_mean|| away, four orders above the 1e-4 collapse threshold, so no real
+    result may move."""
+    pred, true = _fixture()
+    train_mean = true.mean(0)
+    assert metrics.systema_pert_specific_delta(true, true, train_mean) == pytest.approx(1.0)
+    # a predictor a realistic distance from the mean keeps its exact score
+    near = np.broadcast_to(train_mean, true.shape) + 0.4 * np.linalg.norm(train_mean) * (true - train_mean)
+    direct = metrics._rowwise_pearson(near - train_mean, true - train_mean).mean()
+    assert metrics.systema_pert_specific_delta(near, true, train_mean) == pytest.approx(direct)
+
+
+def test_both_systema_impls_agree_on_a_collapsed_predictor():
+    """The cross-check suite is the project's second opinion on the primary endpoint, and its convention is
+    that both implementations agree on the DEGENERATE cases too (see the centroid zero-predictor check).
+    Pin the collapse case here so the reference cannot silently keep the old scale-invariant reading."""
+    pred, true = _fixture()
+    train_mean = true.mean(0)
+    r = np.random.default_rng(3).standard_normal(train_mean.shape)
+    r /= np.linalg.norm(r)
+    collapsed = np.broadcast_to(train_mean + 1e-9 * np.linalg.norm(train_mean) * r, true.shape)
+    a = metrics.systema_pert_specific_delta(collapsed, true, train_mean)
+    b = metrics_ref.systema_pert_specific_delta(collapsed, true, train_mean)
+    assert a == pytest.approx(0.0, abs=1e-9)
+    assert b == pytest.approx(a, abs=1e-9), f"impls disagree on a collapsed predictor: {a:+.4f} vs {b:+.4f}"

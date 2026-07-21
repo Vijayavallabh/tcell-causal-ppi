@@ -68,7 +68,7 @@ def _verdict(mean, ci_excludes_zero, n: int, *, fold_comparable: bool = True) ->
     return f"CI excludes zero (n={n}) — favors the {'better' if mean > 0 else 'worse'} arm by Δ={mean:+.4f}"
 
 
-def _apply_family_wise(contrasts: dict, alpha: float) -> int:
+def apply_family_wise(contrasts: dict, alpha: float) -> int:
     """Multiplicity control over the SIMULTANEOUS contrasts, in place; returns the family size.
 
     Both Bonferroni and Holm adjusted p are recorded, and ``survives_family_wise`` requires BOTH — the
@@ -93,6 +93,14 @@ def _apply_family_wise(contrasts: dict, alpha: float) -> int:
     for _, c in testable:
         c["survives_family_wise"] = bool(c["p_holm"] <= alpha and c["p_bonferroni"] <= alpha)
     return m
+
+
+# Back-compat alias. This began as a private helper and is imported under its private name by
+# training/freeze_gate.py — a different session's file, currently FROZEN, so its call sites cannot be
+# updated in the same change. A rename is only safe when every caller moves with it; here one cannot, and
+# a bare rename would raise ImportError at that module's import time and take its 26 tests down with it.
+# Public name is canonical; drop this alias once freeze_gate.py switches over.
+_apply_family_wise = apply_family_wise
 
 
 def paired_delta_summary(better_by_seed, worse_by_seed, *, alpha: float = 0.05, seeds=None) -> dict:
@@ -263,7 +271,7 @@ def aggregate_seeds(seeds, *, names=FAMILY, screening_root: Path = config.SCREEN
         if not fold_comparable:      # qualify like summarize_vs_h1's fold gate, don't publish bare CIs
             c["verdict"] = _verdict(c["mean"], c["ci_excludes_zero"], c["n"], fold_comparable=False)
         contrasts[key] = c
-    family_size = _apply_family_wise(contrasts, alpha)
+    family_size = apply_family_wise(contrasts, alpha)
 
     per_config = {n: _mean_ci(by_config[n], alpha=alpha) for n in names}
     covered = [set(by_config[n]) for n in names if by_config[n]]

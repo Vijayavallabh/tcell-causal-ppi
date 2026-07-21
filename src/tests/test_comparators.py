@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 import torch
 import yaml
 
@@ -237,3 +238,144 @@ def test_comparators_register_as_distinct_families(tmp_path):
     assert r1.startswith("run-") and r2.startswith("run-")
     fams = {r["family"] for r in load_registry(reg)}
     assert fams == {"stable_shift", "txpert_public"}    # two distinct comparator families (within the cap of 2)
+
+
+# --------------------------------------------------------------------------------------------------
+# feat-006 under-fit gate: a floor the H1 must CLEAR is only as trustworthy as its own fit.
+# --------------------------------------------------------------------------------------------------
+def test_underfit_bar_makes_the_margin_an_upper_bound():
+    """A non-converged bar could only score HIGHER once converged, so it can only SHRINK the H1 margin —
+    publishing that margin as a settled number overstates H1. The firing input is real: the shipped
+    elastic-net bar reported converged=False with 6.4% non-zero coefficients."""
+    from tcell_pipeline.run_module8_real import flag_underfit_bars
+
+    g = flag_underfit_bars({"elastic_net": {"converged": False, "n_iter_max": 2000, "max_iter": 2000}})
+    assert g["underfit"] == ["elastic_net"]
+    assert g["margin_is_upper_bound"] is True
+
+
+def test_unknown_convergence_is_not_a_pass():
+    """Absence of evidence must read as unknown, never as green (AGENTS.md). A bar that exposes
+    diagnostics but cannot say whether it converged still bounds the margin from below."""
+    from tcell_pipeline.run_module8_real import flag_underfit_bars
+
+    g = flag_underfit_bars({"gradient_boosting": {"converged": None}})
+    assert g["unknown"] == ["gradient_boosting"] and g["underfit"] == []
+    assert g["margin_is_upper_bound"] is True
+
+
+def test_underfit_gate_clears_when_every_iterative_bar_converged():
+    """The other half of a real guard: it must be able to go GREEN, or it is decoration that always fires.
+    Closed-form bars (ridge/zero/kNN) expose no diagnostics — that is 'no convergence question', not
+    'unknown', so they must not pin the gate on forever."""
+    from tcell_pipeline.run_module8_real import flag_underfit_bars
+
+    g = flag_underfit_bars({"elastic_net": {"converged": True}, "gradient_boosting": {"converged": True}})
+    assert g["underfit"] == [] and g["unknown"] == []
+    assert g["margin_is_upper_bound"] is False
+    assert flag_underfit_bars({})["margin_is_upper_bound"] is False
+
+
+def test_tabular_covariate_fence_rejects_a_response_derived_column():
+    """The fair-featured tabular bar consumes real perturbation-table columns, so it needs the SAME leakage
+    fence H1's encoder has (PerturbationEncoder refuses Q_POST_COLS). CONSTRUCTED breaker: slip a
+    response-derived column into the covariate list and the build must refuse, not quietly fit on it."""
+    from tcell_pipeline import config
+    from tcell_pipeline.run_module8_real import check_qpre
+
+    ok = check_qpre(["culture_condition", "ppi_degree_physical", "donor_pc_00"], ["n_guides"])
+    assert ok["q_pre"] == ["culture_condition", "ppi_degree_physical", "donor_pc_00"]
+
+    with pytest.raises(ValueError, match="response-derived"):
+        check_qpre(["culture_condition", config.Q_POST_COLS[0]], ["n_guides"])
+    with pytest.raises(ValueError, match="response-derived"):
+        check_qpre(["culture_condition"], ["n_guides", config.Q_POST_COLS[0]])
+    # an UNCLASSIFIED perturbation-table column is not evidence of safety either — metadata is the
+    # permissive fall-through, so it must be refused rather than assumed q_pre.
+    with pytest.raises(ValueError, match="not declared q_pre"):
+        check_qpre(["culture_condition", "row_index"], ["n_guides"])
+
+
+def test_capped_run_cannot_clobber_the_published_full_fold_artifact():
+    """A ``--n-max`` smoke run scores a DIFFERENT fold, so its numbers must never land on the path the
+    full-fold result is published to. This bit for real: a 300-row smoke run overwrote
+    tabular_baselines_vs_h1.json with capped numbers that ``fold_comparable=False`` labelled honestly but
+    that had already destroyed the published full-fold table."""
+    from tcell_pipeline.run_module8_real import _artifact_stem
+
+    assert _artifact_stem(None) == "tabular_baselines"
+    assert _artifact_stem(300) != _artifact_stem(None)
+    assert "300" in _artifact_stem(300)
+
+
+def test_tabicl_is_restricted_to_the_qpre_feature_set():
+    """TabICL costs ~125 s PER PROGRAM per feature set (128 refits, no batching, 41 GiB peak so no
+    concurrency). The published H1 margin is measured against the qpre bars, so scoring TabICL on the
+    node-only set would burn ~4.4 GPU-h on a feature set no margin is drawn from. Pin the restriction so a
+    later edit cannot silently double the GPU bill."""
+    from tcell_pipeline.run_module8_real import _QPRE_ONLY, _TABULAR, _TABULAR_GPU
+
+    assert "tabicl" in _QPRE_ONLY and "tabicl" in _TABULAR_GPU
+    assert "tabicl" not in _TABULAR, "the GPU bar must not join the default CPU-only run"
+    assert not (_QPRE_ONLY & set(_TABULAR)), "a CPU bar must stay on BOTH feature sets"
+
+
+def test_bar_cache_is_invalidated_by_fold_shape_and_by_scoring_code(tmp_path):
+    """The combined run is ~6 h (4.4 of them GPU) on a SHARED box, so a completed bar is checkpointed and
+    reused on resume. Presence must not read as freshness: the signature has to change when the FOLD
+    changes AND when the scoring or baseline CODE changes. The second half is the one that bites — the
+    systema collapse fix silently invalidated every previously cached score without altering any fold
+    dimension, so a shape-only key would have resurrected pre-fix numbers as if they were current."""
+    from tcell_pipeline.run_module8_real import _bar_signature, load_cached_bar, save_cached_bar
+
+    sig = _bar_signature(n_train=21262, n_val=4400, n_features=1453, k=128)
+    assert set(sig) >= {"n_train", "n_val", "n_features", "k", "metrics_sha", "baselines_sha"}
+
+    save_cached_bar(tmp_path, "qpre", "elastic_net", sig, {"systema": 0.0694}, {"converged": True})
+    hit = load_cached_bar(tmp_path, "qpre", "elastic_net", sig)
+    assert hit is not None and hit["metrics"]["systema"] == 0.0694 and hit["diagnostics"]["converged"]
+
+    assert load_cached_bar(tmp_path, "qpre", "elastic_net", {**sig, "n_val": 4399}) is None
+    assert load_cached_bar(tmp_path, "node", "elastic_net", sig) is None      # other feature set
+    assert load_cached_bar(tmp_path, "qpre", "ridge", sig) is None            # other bar
+    # CONSTRUCTED breaker: same fold, changed scoring code -> the cached score is stale, not a hit.
+    assert load_cached_bar(tmp_path, "qpre", "elastic_net", {**sig, "metrics_sha": "different"}) is None
+    assert load_cached_bar(tmp_path, "qpre", "elastic_net", {**sig, "baselines_sha": "different"}) is None
+
+
+def test_bar_signature_is_per_bar_and_covers_feature_construction():
+    """Two holes in the first cache key, both found by probing it rather than by it firing.
+
+    (1) It hashed the WHOLE simple_baselines module, so correcting CatBoost's convergence criterion would
+    have discarded TabICL's 4.4 GPU-hour cached score. Hash the specific bar's class instead.
+    (2) It hashed the metric and the baselines but NOT the feature construction. Changing _qpre_block's
+    imputation (median -> mean) leaves n_features identical, so the cache would serve pre-change scores as
+    current — the exact 'presence is not freshness' failure the signature exists to prevent."""
+    from tcell_pipeline.run_module8_real import _bar_signature
+
+    kw = dict(n_train=21262, n_val=4400, n_features=1453, k=128)
+    cat = _bar_signature(**kw, bar="catboost")
+    tab = _bar_signature(**kw, bar="tabicl")
+    assert "qpre_sha" in cat, "feature construction must be part of the key"
+    assert cat["baselines_sha"] != tab["baselines_sha"], \
+        "a per-bar key: editing one bar must not invalidate another's expensive cached score"
+    assert _bar_signature(**kw, bar="catboost") == cat            # deterministic
+
+
+def test_repro_part_propagates_a_nonzero_exit_on_cannot_verify(monkeypatch):
+    """run_repro() printed 'VERDICT = CANNOT_VERIFY' and then `return 0`, so an unattended run or any
+    exit-status CI gate recorded an unverifiable reproduction as success — the same guard-not-honored-to-
+    the-exit-code defect this repo already fixed once in the multiseed campaign.
+
+    It also built hash entries with no `provenance` field. verify.py treats unlabelled as self-derived and
+    downgrades it from pass to incomplete, so the run reported hash:splits as 'compared against itself'
+    while the SAME function printed "independently-checked artifacts: ['splits']" (found by session D).
+    Both are fixed by deleting the duplicate builder and delegating to reproducibility.run_repro_real,
+    which labels provenance and returns exit_code(verdict)."""
+    from tcell_pipeline import run_module8_real
+    from tcell_pipeline.reproducibility import run_repro_real
+
+    monkeypatch.setattr(run_repro_real, "main", lambda *a, **k: 1)      # CANNOT_VERIFY
+    assert run_module8_real.run_repro() == 1, "an unverifiable reproduction must not exit 0"
+    monkeypatch.setattr(run_repro_real, "main", lambda *a, **k: 0)      # REPRODUCIBLE
+    assert run_module8_real.run_repro() == 0                            # ...and it must be able to pass

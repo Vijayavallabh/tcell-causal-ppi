@@ -78,9 +78,14 @@ def spearman_corr(pred, true) -> float:
 
 
 def systema_pert_specific_delta(pred, true, train_mean) -> float:
+    # A prediction that has collapsed onto train_mean carries no perturbation-specific signal, but Pearson
+    # is scale-invariant and reads only the DIRECTION of the residue — so float dust scores at full
+    # strength. Mirrors metrics._COLLAPSE_TOL; both implementations must agree on the degenerate case.
     p, t = _rows(pred), _rows(true)
     m = _rows(train_mean).ravel()
-    return float(np.mean([_pearson_row(pr - m, tr - m) for pr, tr in zip(p, t)]))
+    tol = 1e-4 * float(np.linalg.norm(m))
+    return float(np.mean([0.0 if np.linalg.norm(pr - m) <= tol else _pearson_row(pr - m, tr - m)
+                          for pr, tr in zip(p, t)]))
 
 
 def centroid_accuracy(pred, true, all_true=None) -> float:

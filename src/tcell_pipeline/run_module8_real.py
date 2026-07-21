@@ -233,10 +233,166 @@ def run_comparators(n_max=None, seed: int = 0, register: bool = True) -> int:
     return 0
 
 
-_TABULAR = ("zero", "perturbed_mean", "ridge", "elastic_net", "nearest_neighbor", "low_rank")
+_TABULAR = ("zero", "perturbed_mean", "ridge", "elastic_net", "gradient_boosting", "catboost",
+            "nearest_neighbor", "low_rank")
+# TabICL is opt-in: it is a GPU transformer refit once PER PROGRAM (~125 s x K here), so the default
+# CPU-only run must not silently become a multi-hour GPU job.
+_TABULAR_GPU = ("tabicl",)
+# ...and qpre-ONLY. The published H1 margin is measured against the qpre bars, so scoring the GPU bar on
+# the handicapped node-only set would spend another ~4.4 GPU-h on a feature set no margin is drawn from.
+_QPRE_ONLY = frozenset({"tabicl"})
 
 
-def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
+def flag_underfit_bars(diagnostics: dict) -> dict:
+    """Turn per-bar convergence evidence into a verdict on the H1 margin (AGENTS.md: a bar must be fit well
+    enough to bound).
+
+    Direction matters. For a COMPETITOR, under-fitting is safe — a weaker rival cannot manufacture a win.
+    For a FLOOR the result must CLEAR it is the opposite: a bar stopped mid-descent scores lower than the
+    model family actually reaches, so the published margin is an UPPER bound on H1's advantage, and a
+    converged bar could only shrink it. That distinction was missed once here (the elastic-net bar shipped
+    with ``n_iter_max == max_iter`` and 6.4% non-zero coefficients while the margin was reported as settled).
+
+    Only iterative bars answer this question: ridge / kNN / low-rank / the mean baselines are closed-form and
+    expose no ``fit_diagnostics`` at all, which is "no convergence question", not "unknown". A bar that DOES
+    expose diagnostics but cannot report ``converged`` is ``unknown`` and counts against the margin —
+    absence of evidence must never read as a pass."""
+    underfit = sorted(n for n, d in diagnostics.items() if d.get("converged") is False)
+    unknown = sorted(n for n, d in diagnostics.items() if d.get("converged") is None)
+    return {
+        "underfit": underfit,
+        "unknown": unknown,
+        "margin_is_upper_bound": bool(underfit or unknown),
+        "note": ("no iterative bar is under-fit: the margin is bounded by bars that reached their own "
+                 "optimum" if not (underfit or unknown) else
+                 "at least one bar did not demonstrably converge, so it scores BELOW what its model family "
+                 "reaches — the H1 margin is an UPPER BOUND and can only shrink"),
+    }
+
+
+# The q_pre covariates H1's own perturbation encoder consumes (encoders/batch.build_encoder_batch), minus
+# ``uniprot_id`` — the 1412-d static graph node feature is the tabular bar's protein representation. Giving
+# the bar the SAME prediction-time inputs is what makes it a fair floor: the first version saw only the
+# target's node feature, so it could not distinguish Rest from Stim48hr at all while H1 could, and that
+# handicap inflates the H1 margin exactly the way an under-fit bar does.
+_QPRE_NUMERIC = ("ppi_degree_physical", "ppi_degree_functional", "ppi_degree_complex",
+                 "control_baseline_expr")
+_QPRE_CATEGORICAL = ("culture_condition",)
+_QPRE_OBS = ("n_guides", "single_guide_estimate")       # from the DE obs table, not the perturbation table
+
+
+def check_qpre(pc_columns, obs_columns) -> dict:
+    """Refuse to build a baseline feature block out of anything response-derived.
+
+    ``PerturbationEncoder`` already refuses ``Q_POST_COLS``; a tabular bar reading the same table straight
+    from pandas has no such fence, and a q_post covariate would let a baseline peek at the response it is
+    being scored on. Perturbation-table columns must be classified q_pre by the project's own fence
+    (``feature_availability.classify_columns``) — ``metadata`` is that classifier's permissive fall-through,
+    so an unclassified column is refused too rather than assumed safe. The DE obs columns are not in the
+    perturbation table and so are not classified there; they are checked against ``Q_POST_COLS`` directly."""
+    from tcell_pipeline.feature_availability import classify_columns
+
+    pc_columns, obs_columns = list(pc_columns), list(obs_columns)
+    tagged = classify_columns(pc_columns)
+    if tagged["q_post"]:
+        raise ValueError(f"leakage fence: {tagged['q_post']} are response-derived (q_post) — refusing to "
+                         f"feed them to a baseline")
+    leaked_obs = [c for c in obs_columns if c in config.Q_POST_COLS]
+    if leaked_obs:
+        raise ValueError(f"leakage fence: obs columns {leaked_obs} are response-derived (q_post)")
+    if tagged["metadata"]:
+        raise ValueError(f"leakage fence: {tagged['metadata']} are not declared q_pre (unclassified columns "
+                         f"fall through to metadata, which is not evidence they are safe)")
+    return {"q_pre": tagged["q_pre"], "obs": obs_columns}
+
+
+def _bar_signature(*, n_train: int, n_val: int, n_features: int, k: int, bar: str | None = None) -> dict:
+    """What a cached bar score is only valid FOR.
+
+    Fold dimensions are the obvious half. The half that actually bites is the CODE: the systema collapse
+    fix changed every score without moving a single fold dimension, so a shape-only key would have served
+    pre-fix numbers as current. Hashing source makes any edit — a metric definition, a hyperparameter
+    default — invalidate the affected cache automatically, rather than relying on someone remembering to
+    bump a version constant.
+
+    Two corrections, both found by probing this key rather than by it firing:
+    - PER-BAR, not per-module. Hashing all of ``simple_baselines`` meant correcting CatBoost's convergence
+      criterion would have discarded TabICL's 4.4 GPU-hour cached score. Only the bar's own class matters.
+    - The FEATURE CONSTRUCTION counts too. ``_qpre_block`` was invisible to the key, so swapping its
+      imputation (median -> mean) would leave ``n_features`` identical and the cache would serve pre-change
+      scores as current — the precise "presence is not freshness" failure the key exists to prevent."""
+    import inspect
+
+    from tcell_pipeline.baselines import BASELINES, simple_baselines
+    from tcell_pipeline.evaluation import metrics as _M
+
+    def _sha(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+    bar_src = inspect.getsource(BASELINES[bar]) if bar else inspect.getsource(simple_baselines)
+    qpre_src = inspect.getsource(_qpre_block) + repr((_QPRE_NUMERIC, _QPRE_CATEGORICAL, _QPRE_OBS))
+    return {"n_train": int(n_train), "n_val": int(n_val), "n_features": int(n_features), "k": int(k),
+            "metrics_sha": _sha(inspect.getsource(_M)), "baselines_sha": _sha(bar_src),
+            "qpre_sha": _sha(qpre_src)}
+
+
+def _bar_cache_file(root, fs: str, name: str) -> Path:
+    return Path(root) / f"{fs}__{name}.json"
+
+
+def load_cached_bar(root, fs: str, name: str, signature: dict) -> dict | None:
+    """A completed bar's score, or None when absent OR computed under a different signature."""
+    path = _bar_cache_file(root, fs, name)
+    if not path.exists():
+        return None
+    try:
+        doc = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None                                     # unreadable cache is a miss, never a silent pass
+    return doc if doc.get("signature") == signature else None
+
+
+def save_cached_bar(root, fs: str, name: str, signature: dict, metrics: dict,
+                    diagnostics: dict | None) -> None:
+    config.ensure_dir(Path(root))
+    config.write_text_atomic(
+        json.dumps({"signature": signature, "metrics": _finite_or_none(metrics),
+                    "diagnostics": _finite_or_none(diagnostics) if diagnostics else None}, indent=2,
+                   allow_nan=False),
+        _bar_cache_file(root, fs, name))
+
+
+def _artifact_stem(n_max) -> str:
+    """Published-artifact stem. A ``--n-max`` run scores a DIFFERENT (subsampled) fold, so it gets its own
+    stem and can never overwrite the full-fold result — ``fold_comparable=False`` labels a capped run
+    honestly but does not undo having destroyed the published table it landed on."""
+    return "tabular_baselines" if n_max is None else f"tabular_baselines_nmax{int(n_max)}"
+
+
+def _qpre_block(train_ds, val_ds) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """(train, val, names) covariate blocks. Every fitted statistic — the one-hot vocabulary and the NaN
+    impute value — comes from TRAIN only, so no val information reaches the fit."""
+    from sklearn.preprocessing import OneHotEncoder
+
+    from tcell_pipeline.encoders.batch import DONOR_COLS
+
+    num = list(_QPRE_NUMERIC) + list(DONOR_COLS)
+    check_qpre(num + list(_QPRE_CATEGORICAL), list(_QPRE_OBS))
+    enc = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    enc.fit(train_ds.pc[list(_QPRE_CATEGORICAL)])
+    med = train_ds.pc[num].median()                       # control_baseline_expr has NaNs; impute on TRAIN
+
+    def block(ds):
+        return np.hstack([ds.pc[num].fillna(med).to_numpy(dtype="float64"),
+                          enc.transform(ds.pc[list(_QPRE_CATEGORICAL)]),
+                          ds.obs[list(_QPRE_OBS)].to_numpy(dtype="float64")])
+
+    names = num + list(enc.get_feature_names_out(list(_QPRE_CATEGORICAL))) + list(_QPRE_OBS)
+    return block(train_ds), block(val_ds), names
+
+
+def run_tabular_baselines(n_max=None, seed: int = 0, with_tabicl: bool = False,
+                          device: str | None = None) -> int:
     """feat-006 tabular baselines as an ADDITIONAL H1 comparator bar (like feat-010, CPU/minutes): fit each
     simple baseline on the REAL train fold — predicting Δz from the target gene's static graph node feature —
     score the REAL val fold through the SAME response_metric_suite, and rank vs the frozen H1 on systema.
@@ -265,32 +421,57 @@ def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
                 cov += 1
         return F, cov
 
-    Xtr, ctr = feats(tr["genes"])
-    Xva, cva = feats(va["genes"])
+    Xtr_node, ctr = feats(tr["genes"])
+    Xva_node, cva = feats(va["genes"])
+    Ctr, Cva, cov_names = _qpre_block(train, val)
+    feature_sets = {"node": (Xtr_node, Xva_node),
+                    "qpre": (np.hstack([Xtr_node, Ctr]), np.hstack([Xva_node, Cva]))}
     print(f"[m8-base] {len(tr['genes'])} train / {len(va['genes'])} val rows; target-in-graph "
-          f"{ctr}/{len(Xtr)} train, {cva}/{len(Xva)} val; feat_dim={Xg.shape[1]}; "
-          f"K={B.shape[1]} G={B.shape[0]}", flush=True)
+          f"{ctr}/{len(Xtr_node)} train, {cva}/{len(Xva_node)} val; node_dim={Xg.shape[1]} "
+          f"+{len(cov_names)} q_pre covariates; K={B.shape[1]} G={B.shape[0]}", flush=True)
 
+    bars = _TABULAR + (_TABULAR_GPU if with_tabicl else ())
+    cache_root = Path(config.COMPARATORS_ROOT) / f"_bars_{_artifact_stem(n_max)}"
     rows, diagnostics = [], {}
-    for name in _TABULAR:
-        model = BASELINES[name](basis=B)
-        model.fit(Xtr, tr["delta_z"])          # feature-free baselines ignore X content, use its row count
-        dz, dx = model.predict(Xva)
-        metrics = compute_all_metrics(dz, dx, va["delta_z"], va["delta_x"], train_mean)
-        write_predictions(va["row_index"], dz, dx, None, model=f"baseline_{name}", split="val", seed=seed,
-                          root=config.PREDICTIONS_ROOT)
-        rows.append({"name": name, **metrics})
-        if hasattr(model, "fit_diagnostics"):  # an under-fit bar would INFLATE the H1 margin — record it
-            diagnostics[name] = model.fit_diagnostics()
-            print(f"[m8-base] {name} fit: {diagnostics[name]}", flush=True)
-        print(f"[m8-base] {name:16s} systema={metrics['systema']:+.4f} pearson={metrics['pearson']:+.4f}",
-              flush=True)
+    for fs, (Xtr, Xva) in feature_sets.items():
+        for name in bars:
+            if fs != "node" and not BASELINES[name].requires_features:
+                continue          # X-independent by construction — a second identical row, not a second bar
+            if name in _QPRE_ONLY and fs != "qpre":
+                continue          # too expensive to score on a feature set no margin is published from
+            label = name if fs == "node" else f"{name}_qpre"
+            sig = _bar_signature(n_train=Xtr.shape[0], n_val=Xva.shape[0], n_features=Xtr.shape[1],
+                                 k=B.shape[1], bar=name)
+            hit = load_cached_bar(cache_root, fs, name, sig)
+            if hit is not None:   # resume: this bar already scored under THIS fold and THIS scoring code
+                metrics, diag = hit["metrics"], hit["diagnostics"]
+                print(f"[m8-base] {label:22s} systema={metrics['systema']:+.4f} [cached]", flush=True)
+            else:
+                kw = {"device": device} if name in _TABULAR_GPU else {}
+                model = BASELINES[name](basis=B, **kw)
+                model.fit(Xtr, tr["delta_z"])  # feature-free baselines ignore X, use its row count
+                dz, dx = model.predict(Xva)
+                metrics = compute_all_metrics(dz, dx, va["delta_z"], va["delta_x"], train_mean)
+                write_predictions(va["row_index"], dz, dx, None, split="val", seed=seed,
+                                  model=f"baseline_{label}" if n_max is None else
+                                  f"baseline_{label}_nmax{int(n_max)}",
+                                  root=config.PREDICTIONS_ROOT)
+                diag = model.fit_diagnostics() if hasattr(model, "fit_diagnostics") else None
+                save_cached_bar(cache_root, fs, name, sig, metrics, diag)
+                if diag:      # an under-fit bar INFLATES the H1 margin — record it
+                    print(f"[m8-base] {label} fit: {diag}", flush=True)
+                print(f"[m8-base] {label:22s} systema={metrics['systema']:+.4f} "
+                      f"pearson={metrics['pearson']:+.4f}", flush=True)
+            rows.append({"name": label, "features": fs, **metrics})
+            if diag:
+                diagnostics[label] = diag
 
-    out = Path(config.COMPARATORS_ROOT) / "tabular_baselines_val.parquet"
+    stem = _artifact_stem(n_max)
+    out = Path(config.COMPARATORS_ROOT) / f"{stem}_val.parquet"
     config.write_parquet_atomic(pd.DataFrame(rows), out)
-    print("\n" + " ".join(f"{c:>16}" if c == "name" else f"{c:>9}" for c in _COLS))
-    for r in rows:
-        print(" ".join(f"{r['name']:>16}" if c == "name" else f"{r[c]:>9.4f}" for c in _COLS))
+    print("\n" + " ".join(f"{c:>22}" if c == "name" else f"{c:>9}" for c in _COLS))
+    for r in sorted(rows, key=lambda r: -r["systema"]):
+        print(" ".join(f"{r['name']:>22}" if c == "name" else f"{r[c]:>9.4f}" for c in _COLS))
     print(f"[m8-base] table -> {out}")
 
     fold_comparable = n_max is None
@@ -303,23 +484,34 @@ def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
               f"SKIPPED (not comparable to the full-fold H1)", flush=True)
     summary = summarize_vs_h1(
         rows, h1, noise_margin=_NOISE_MARGIN, fold_comparable=fold_comparable, kind="baseline",
-        basis="feat-006 tabular baselines (target STATIC graph node-feature -> Δz) on the development "
-              "val fold (blocked_target_ood); single-seed; H1 systema read from promoted.json (frozen, "
-              "NOT retrained). These are NOT feat-010 external comparators and consume no "
+        basis="feat-006 tabular baselines on the development val fold (blocked_target_ood); single-seed; "
+              "H1 systema read from promoted.json (frozen, NOT retrained). Two feature sets are scored: "
+              "'node' = the target's STATIC graph node feature only (the original bar, which cannot see the "
+              "culture condition at all), and '*_qpre' = that plus the q_pre covariates H1's own "
+              "perturbation encoder consumes (condition one-hot, donor PCs, PPI degrees, control baseline "
+              "expression, guide count). These are NOT feat-010 external comparators and consume no "
               "comparator-family cap. Beating this bar is a trained-predictor win, NOT graph value — the "
               "no-graph expression_only model beats it too.")
     summary["tabular_baselines_val_parquet"] = str(out)
     summary["promoted_json"] = str(promo_path) if promo_path.exists() else None
     summary["promoted_json_status"] = promo_status
     summary["fit_diagnostics"] = diagnostics
+    summary["underfit_gate"] = flag_underfit_bars(diagnostics)
+    summary["qpre_covariates"] = cov_names
     # off-graph targets get an all-zero feature row indistinguishable from real data; every such val row
     # gets the SAME constant prediction, depressing the feature-regressing baselines and inflating the H1
     # margin. Persist the counts so the margin can be audited from the artifact, not a lost stdout line.
     summary["feature_coverage"] = {
-        "train_rows": int(len(Xtr)), "train_in_graph": int(ctr), "train_off_graph": int(len(Xtr) - ctr),
-        "val_rows": int(len(Xva)), "val_in_graph": int(cva), "val_off_graph": int(len(Xva) - cva),
-        "note": "off-graph targets receive an all-zero feature vector (no node features available)"}
-    summ_path = Path(config.COMPARATORS_ROOT) / "tabular_baselines_vs_h1.json"
+        "train_rows": int(len(Xtr_node)), "train_in_graph": int(ctr),
+        "train_off_graph": int(len(Xtr_node) - ctr),
+        "val_rows": int(len(Xva_node)), "val_in_graph": int(cva),
+        "val_off_graph": int(len(Xva_node) - cva),
+        "distinct_train_node_rows": int(len(np.unique(Xtr_node, axis=0))),
+        "note": "off-graph targets receive an all-zero node-feature vector (no node features available). "
+                "The node block is a function of the TARGET only, so it repeats across conditions — the "
+                "'node' bars cannot separate Rest/Stim8hr/Stim48hr at all, which is what the '_qpre' bars "
+                "fix."}
+    summ_path = Path(config.COMPARATORS_ROOT) / f"{stem}_vs_h1.json"
     config.write_text_atomic(json.dumps(_finite_or_none(summary), indent=2, allow_nan=False), summ_path)
     if summary["h1_beats_strongest"] is not None:
         verdict = "beats" if summary["h1_beats_strongest"] else "does NOT beat"
@@ -333,6 +525,16 @@ def run_tabular_baselines(n_max=None, seed: int = 0) -> int:
     else:
         print("[m8-base] no H1 verdict emitted — baselines ranked without a comparable frozen H1")
     print(f"[m8-base] H1-vs-tabular-baselines summary -> {summ_path}")
+
+    # The gate is honored all the way to the EXIT CODE: an under-fit floor means the published margin is an
+    # upper bound, and an unattended run (or a CI status check) must not record that as a settled result.
+    gate = summary["underfit_gate"]
+    if gate["margin_is_upper_bound"]:
+        print(f"[m8-base] *** MARGIN IS AN UPPER BOUND *** under-fit={gate['underfit'] or 'none'} "
+              f"unknown-convergence={gate['unknown'] or 'none'} — {gate['note']}", flush=True)
+        return 1
+    print("[m8-base] under-fit gate CLEAR: every iterative bar converged, so the margin is not inflated by "
+          "a truncated fit.")
     return 0
 
 
@@ -379,58 +581,30 @@ def _sha(p: Path) -> str:
 
 
 def run_repro() -> int:
-    """feat-013 against this checkout, with a manifest built from the REAL frozen artifacts."""
-    from tcell_pipeline.reproducibility import verify_reproducibility
+    """feat-013 against this checkout — delegated to ``reproducibility.run_repro_real``.
 
-    root = config.PROJECT_ROOT
-    artifacts = {"id_mapping": config.ID_MAPPING_PATH, "splits": config.BLOCKED_SPLIT_PATH,
-                 "de_layers": zscore_path()}
-    # Prefer an INDEPENDENT expected hash — one recorded when the artifact was frozen. splits/manifest.json
-    # published sha256 at freeze time, so checking today's file against it is a genuine reproduction test.
-    # Where no frozen record exists we can only self-hash, which proves the file is readable but compares it
-    # to itself; those entries are labelled so the report is not read as more than it is.
-    frozen_split = {}
-    if config.SPLIT_MANIFEST_PATH.exists():
-        frozen_split = (json.loads(config.SPLIT_MANIFEST_PATH.read_text()).get("sha256") or {})
-    hashes, independent = {}, []
-    for name, p in artifacts.items():
-        rel = str(Path(p).relative_to(root))          # MUST be relative to the checkout
-        expected = frozen_split.get(Path(p).name)     # an independently frozen record, if one was published
-        hashes[name] = {"path": rel, "sha256": expected or _sha(Path(p))}
-        src = "frozen manifest" if expected else "self-derived (no frozen record)"
-        if expected:
-            independent.append(name)
-        print(f"[m8-repro] {name:11} {rel}  expected={hashes[name]['sha256'][:16]}…  [{src}]", flush=True)
+    This function used to build the manifest itself, and that duplicate had two defects (the first found
+    by the feat-013 session, the second by the test that now pins it):
 
-    snapshot = {k: getattr(config, k) for k in
-                ("PROGRAM_DIM", "DE_N_VARS", "DELTA_PRED", "N_BOOTSTRAP", "SPLIT_SEED", "SPLIT_FRACTIONS",
-                 "SEQ_SIM_COSINE_THRESHOLD", "GROUP_SIZE_CAP", "MAX_EGIPG_TRIALS", "RATIONALE_TOP_K")}
-    manifest = {
-        "hashes": hashes,
-        "config_hashes": {"config_snapshot":
-                          hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()},
-    }
-    pred = Path(config.PREDICTIONS_ROOT) / "perturbed_mean" / "val" / "0.parquet"
-    if pred.exists():
-        manifest["predictions"] = {"perturbed_mean_val": {"path": str(pred.relative_to(root))}}
-    # decision / observed / fallacy_inputs are deliberately absent: no sealed decision exists yet and the
-    # fallacy probes must be authored by the analyst from real diagnostics. The verifier is expected to say
-    # CANNOT_VERIFY — that is the correct answer, not a failure of the run.
-    report = verify_reproducibility(root, manifest, config_snapshot=snapshot)
-    print(f"\n[m8-repro] VERDICT = {report['verdict']}")
-    for c in report["checks"]:
-        print(f"  {c['status']:10} {c['category']:10} {c['check']}"
-              + (f"   ({c['reason']})" if c.get("reason") else ""))
-    print(f"[m8-repro] report -> {report['report_path']}")
-    print(f"[m8-repro] independently-checked artifacts (expected hash came from a frozen record, so a MATCH "
-          f"is a real reproduction test): {independent or 'NONE'}")
-    print("[m8-repro] the remaining hash entries are self-derived — they prove the artifact is readable and "
-          "stable within this checkout, but compare it to itself, so they are NOT a reproduction test. A true "
-          "clean-checkout run needs the original run's published manifest.")
-    print("[m8-repro] CANNOT_VERIFY is the correct verdict here: no sealed confirmatory decision exists to "
-          "reproduce, and the 11 fallacy probes must be authored by the analyst from real diagnostics.")
-    return 0
+    * Its hash entries carried no ``provenance`` field. ``verify.py`` treats an unlabelled entry as
+      self-derived and downgrades it from pass to incomplete — so the run reported ``hash:splits`` as
+      "compared against itself" while this same function printed "independently-checked artifacts:
+      ['splits']". One invocation, two contradictory claims.
+    * It printed ``VERDICT = CANNOT_VERIFY`` and then ``return 0``, so an unattended run or an exit-status
+      CI gate recorded an unverifiable reproduction as success — the guard-not-honored-to-the-exit-code
+      failure this repo already fixed once in the multiseed campaign.
 
+    ``run_repro_real`` owns the manifest, labels provenance correctly, and returns ``exit_code(verdict)``
+    (0 only for REPRODUCIBLE). Deleting the copy is the fix: two implementations of one contract is how the
+    two drifted apart in the first place."""
+    from tcell_pipeline.reproducibility import run_repro_real
+
+    # Pass argv explicitly. This call originally read `main()`, which back then defaulted to argv=None and
+    # so let argparse fall through to sys.argv — still carrying THIS driver's `--part repro`, which died
+    # with "unrecognized arguments". The feat-013 session fixed it at the source (`main(argv=())`, with
+    # `sys.argv[1:]` passed only from its own `__main__`), so a bare call is safe now; the explicit empty
+    # list is kept because this caller genuinely wants that module's DEFAULTS, not this process's flags.
+    return run_repro_real.main([])
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -442,12 +616,14 @@ def main() -> int:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--untrained", action="store_true", default=True)
     ap.add_argument("--no-register", action="store_true")
+    ap.add_argument("--with-tabicl", action="store_true",
+                    help="add the TabICL in-context bar (GPU; refit once per program)")
     a = ap.parse_args()
     rc = 0
     if a.part in ("comparators", "all"):
         rc |= run_comparators(a.n_max, register=not a.no_register)
     if a.part in ("baselines", "all"):
-        rc |= run_tabular_baselines(a.n_max)
+        rc |= run_tabular_baselines(a.n_max, with_tabicl=a.with_tabicl, device=a.device)
     if a.part in ("audit", "all"):
         rc |= run_audit(a.n_cases, a.n_controls, a.device, a.n_max, a.untrained)
     if a.part in ("repro", "all"):

@@ -69,3 +69,9 @@ logs/
 Thumbs.db
 .idea/
 .vscode/
+
+# CatBoost writes per-fit training logs here (feat-006 tabular bar)
+catboost_info/
+
+# Session scratch dirs — reproducers belong in src/ as real modules, not here
+scratchpad/

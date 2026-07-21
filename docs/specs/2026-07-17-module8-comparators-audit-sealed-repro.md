@@ -185,8 +185,25 @@ clean `checkout` and returns one verdict:
   correlation≠causation, reverse-causation); a flagged fallacy is critical.
 
 Verdict tree: any critical **fail** → `NOT_REPRODUCIBLE`; else any critical **missing** →
-`CANNOT_VERIFY`; else any non-critical issue → `PARTIALLY_REPRODUCIBLE`; else `REPRODUCIBLE`. Written to
-`<REPRODUCIBILITY_ROOT>/reproducibility_report.json`. It performs no training — the "rerun the final model +
+`CANNOT_VERIFY`; else any non-critical issue → `PARTIALLY_REPRODUCIBLE`; else `REPRODUCIBLE`.
+
+> **CORRECTION (2026-07-21).** Two divergences from the shipped code, both raised by the feat-013 session
+> (`docs/feat013-repro-notes.md` §9) and fixed here rather than there, since this spec covers Module 8.
+>
+> 1. **A critical check in `incomplete` is not in the tree above**, and it yields `PARTIALLY_REPRODUCIBLE`.
+>    The status predates that session for the fallacy scan, but it now covers three classes: a self-derived
+>    hash, an unattested decision, and an unchecked row count. `incomplete` means *this check could not
+>    certify*, which is deliberately distinct from `missing` (absent) and from `fail` (contradicted) —
+>    absence of evidence must never read as a pass.
+> 2. **The report filename below is the default and no longer the one produced.**
+>    `verify_reproducibility`'s default `out_path` is still
+>    `<REPRODUCIBILITY_ROOT>/reproducibility_report.json` (`verify.py:345`), but BOTH drivers now pass an
+>    explicit path, so no run emits that name. `run_module8_real --part repro` delegates to
+>    `reproducibility.run_repro_real`, which writes **`repro_real_report.json`** plus
+>    `manifest_real.json`. A reader following the old sentence looks for a file that never appears.
+
+Written to `<REPRODUCIBILITY_ROOT>/reproducibility_report.json` by default, and in practice to
+`repro_real_report.json` (see the correction above). It performs no training — the "rerun the final model +
 comparators over frozen seeds" step is the sealed evaluator, whose decision the manifest carries under
 `observed`.
 
