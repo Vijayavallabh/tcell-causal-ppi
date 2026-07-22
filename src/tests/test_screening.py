@@ -683,6 +683,31 @@ def test_gate_mean_is_none_not_zero_for_an_arm_with_no_gates(tmp_path):
     assert history[0]["train"]["gate_frac_dead"] is None
 
 
+def test_gate_mean_is_recorded_correctly_with_donor_invariance_on(tmp_path):
+    """Gate logging runs in Trainer._epoch alongside the donor-invariance re-forwards (1 +
+    DONOR_INVARIANCE_SAMPLES extra eval-mode forwards that extract only delta_z). The logged gate read
+    comes from the single REAL forward's ``out``, BEFORE those re-forwards, so donor invariance must not
+    corrupt it. Every OTHER gate test runs with donor invariance OFF (the shared fixture disables it for
+    speed), so this pins the on-path interaction the real campaign uses — the repo's test-blindness
+    lesson: an untested combination is where a regression hides."""
+    (off := tmp_path / "off").mkdir()
+    (on := tmp_path / "on").mkdir()
+    _, hist_off = _run_lane(off, CONDITION_GATED, n_epochs=1, donor_invariance=False)
+    _, hist_on = _run_lane(on, CONDITION_GATED, n_epochs=1, donor_invariance=True)
+
+    # non-vacuous: donor invariance must genuinely be active in the on-run (a real invariance loss term)
+    # and genuinely off in the off-run — otherwise the comparison below tests nothing
+    assert any(e["train"]["invariance"] > 0 for e in hist_on), "donor invariance never activated — vacuous"
+    assert all(e["train"]["invariance"] == 0.0 for e in hist_off), "donor invariance leaked into off run"
+
+    g_off, g_on = hist_off[0]["train"]["gate_mean"], hist_on[0]["train"]["gate_mean"]
+    assert g_on is not None and 0.0 < g_on <= 1.0, "donor invariance broke gate logging"
+    assert 0.0 <= hist_on[0]["train"]["gate_frac_dead"] <= 1.0
+    # the gate is read from the real forward, not the donor re-forwards, so turning donor invariance on
+    # must not materially move the epoch-0 gate mean; a gross contamination would blow this tolerance
+    assert abs(g_on - g_off) < 0.1, f"donor invariance shifted the logged gate mean: {g_off} -> {g_on}"
+
+
 def test_screening_row_records_the_lambda_graph_the_run_actually_trained_under(tmp_path):
     """Provenance: the re-screen runs at lambda_graph=0, and the artifact must say so — read off the
     loss object that trained, not off a config the run might not have used."""

@@ -173,6 +173,9 @@ FOCAL_GAMMA: float = 2.0          # focal down-weighting of easy (abundant non-D
 LAMBDA_DE: float = 0.1            # weight on the DE up/down classification head
 LAMBDA_INV: float = 0.1           # weight on donor-invariance of the shared program component
 LAMBDA_GRAPH: float = 0.01        # weight on the edge-gate sparsity + unsourced-reliance penalty
+GATE_DEAD: float = 1e-3           # an edge gate below this contributes nothing in float32 — the pilot's
+#                                   collapse criterion; shared by the trainer's gate logging and the
+#                                   rationale audit's collapsed-gate guard (one threshold, not two)
 LAMBDA_GENE: float = 0.5          # weight on gene-level (delta_x) reconstruction vs program-level
 # DE up/down call from the per-gene z-score: |z| >~ 1.64 is the two-sided 10% tail, the proxy this
 # dataset carries for adj_p < 0.1 (the exact adj_p layer is not part of the __getitem__ contract).

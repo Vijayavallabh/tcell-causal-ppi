@@ -17,8 +17,6 @@ from tcell_pipeline import config
 from tcell_pipeline.training.dataset import PerturbationDataset, sample_donor_variants
 from tcell_pipeline.training.losses import StageALoss
 
-_GATE_DEAD = 1e-3  # an edge gate below this contributes nothing in float32 — the pilot's collapse criterion
-
 
 @contextlib.contextmanager
 def seeded_init(seed: int):
@@ -134,7 +132,7 @@ class Trainer:
                           for a in per if a.numel()]
                 if alphas:
                     a = torch.cat(alphas).float()
-                    s, d = a.sum(), (a < _GATE_DEAD).sum()
+                    s, d = a.sum(), (a < config.GATE_DEAD).sum()
                     g_sum, g_dead = (s, d) if g_sum is None else (g_sum + s, g_dead + d)
                     g_n += a.numel()
                 # donor variants are a stochastic resample — TRAIN only, so the val total stays

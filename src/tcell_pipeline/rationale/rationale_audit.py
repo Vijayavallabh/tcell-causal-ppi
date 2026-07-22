@@ -208,13 +208,12 @@ def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repea
             torch.cuda.set_rng_state_all(cuda_states)
 
 
-_DEAD_GATE = 1e-3  # a gate below this contributes nothing in float32 — the pilot's collapse criterion
-
-
-def _gate_mean(model, dataset, cases: list, device: str, max_cases: int = 4) -> float | None:
+def _gate_mean(model, dataset, cases: list, max_cases: int = 4) -> float | None:
     """Mean edge gate over the first few audit cases — the model's OWN encode path, so it measures the
     gates the audit would actually delete. ``None`` when nothing could be measured (no cases, or a
-    subgraph with no edges): unknown is not a pass and not a collapse."""
+    subgraph with no edges): unknown is not a pass and not a collapse. The model already carries its
+    device via its own parameters (``encode_subgraph`` reads ``self.proj.weight.device``), so no device
+    argument is needed here — same as ``_audit_one``."""
     total, n = 0.0, 0
     with torch.no_grad():
         for case in cases[:max_cases]:
@@ -328,8 +327,8 @@ def audit_rationale(model, head, dataset, n_cases: int = config.N_RATIONALE_AUDI
     # that state (mean ~1.3e-07 against ~0.61 at init), and scoring 50 cases on one costs hours to
     # produce numbers that cannot mean anything. One forward decides it. `undecidable` is reported as
     # its own state: it must never be read as an audit that ran and failed.
-    gate_mean = _gate_mean(model, dataset, chosen, device)
-    live = gate_mean is not None and gate_mean > _DEAD_GATE
+    gate_mean = _gate_mean(model, dataset, chosen)
+    live = gate_mean is not None and gate_mean > config.GATE_DEAD
     cases = ([] if not live else
              [_audit_one(model, head, dataset, case, tester, n_controls, sparsities, gen, seed)
               for case in chosen])
