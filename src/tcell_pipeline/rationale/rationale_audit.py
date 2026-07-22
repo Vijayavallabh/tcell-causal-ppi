@@ -208,6 +208,28 @@ def _stability(graph_encoder, head, sub, cond, h_do, base_selected: set, n_repea
             torch.cuda.set_rng_state_all(cuda_states)
 
 
+_DEAD_GATE = 1e-3  # a gate below this contributes nothing in float32 — the pilot's collapse criterion
+
+
+def _gate_mean(model, dataset, cases: list, device: str, max_cases: int = 4) -> float | None:
+    """Mean edge gate over the first few audit cases — the model's OWN encode path, so it measures the
+    gates the audit would actually delete. ``None`` when nothing could be measured (no cases, or a
+    subgraph with no edges): unknown is not a pass and not a collapse."""
+    total, n = 0.0, 0
+    with torch.no_grad():
+        for case in cases[:max_cases]:
+            batch = build_encoder_batch(dataset.pc.iloc[[case["row"]]], dataset.obs.iloc[[case["row"]]])
+            h_do = model.perturbation_encoder(batch)[0]
+            sub = sample_subgraph(model.graph_encoder.graph, case["gene"],
+                                  gene_to_idx=model.graph_encoder.gene_to_idx)
+            gates = model.graph_encoder.encode_subgraph(sub, case["condition"], h_do)["gates"]
+            for g in gates.values():
+                if g.numel():
+                    total += float(g.float().sum())
+                    n += int(g.numel())
+    return total / n if n else None
+
+
 def _audit_one(model, head, dataset, case: dict, tester, n_controls: int, sparsities, gen, seed: int) -> dict:
     gene, cond = case["gene"], case["condition"]
     i = case["row"]
@@ -300,10 +322,21 @@ def audit_rationale(model, head, dataset, n_cases: int = config.N_RATIONALE_AUDI
     n_uncovered = len(strata) - len(covered)
     chosen = _select_cases(covered, n_cases, seed)
 
-    cases = [_audit_one(model, head, dataset, case, tester, n_controls, sparsities, gen, seed)
-             for case in chosen]
+    # CHEAP PRECONDITION. RationaleHead importance is gate * sigmoid(scorer), so when the gates have
+    # collapsed every deletion is a float32 no-op and sufficiency / necessity / minimality / stability
+    # are UNDECIDABLE BY CONSTRUCTION — not negative. Every checkpoint from the 5-seed campaign is in
+    # that state (mean ~1.3e-07 against ~0.61 at init), and scoring 50 cases on one costs hours to
+    # produce numbers that cannot mean anything. One forward decides it. `undecidable` is reported as
+    # its own state: it must never be read as an audit that ran and failed.
+    gate_mean = _gate_mean(model, dataset, chosen, device)
+    live = gate_mean is not None and gate_mean > _DEAD_GATE
+    cases = ([] if not live else
+             [_audit_one(model, head, dataset, case, tester, n_controls, sparsities, gen, seed)
+              for case in chosen])
 
     report = {"n_requested": n_cases, "n_audited": len(cases), "n_uncovered_in_dataset": n_uncovered,
+              "gate_mean": gate_mean, "gates_live": bool(live),
+              "undecidable_by_construction": bool(not live),
               "aggregate": _aggregate(cases), "cases": cases}
     out_path = Path(out_path) if out_path else config.RATIONALE_AUDIT_ROOT / "audit_report.json"
     import json

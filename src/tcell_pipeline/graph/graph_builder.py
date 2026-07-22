@@ -91,11 +91,23 @@ def build_hetero_graph(
     baseline: pd.DataFrame | None = None,
     plm_store: PluggableEmbeddingStore | None = None,
     pinnacle_store: PluggableEmbeddingStore | None = None,
+    functional_min_score: float = 0.0,
 ) -> tuple[HeteroData, dict[str, int]]:
     """Build the typed protein graph. Any argument left None is loaded from ``config`` paths.
 
     Returns the HeteroData plus the ``gene_to_idx`` map (also attached as ``graph.gene_to_idx``
     so the sampler can seed from a gene symbol). Complex ids are attached as ``graph.complex_ids``.
+
+    ``functional_min_score`` drops ``functional_assoc`` edges whose score is below it. STRING supplies
+    6,857,702 of the graph's 7,980,907 edges (86%) at a median score of 0.228 — below STRING's own
+    "medium confidence" floor of 0.4 — and the typed encoder aggregates them with an unnormalised sum,
+    so they dominate every node update by sheer degree. Only the functional relation is thresholded:
+    physical / co-complex edges are a different evidence class whose scores are not comparable to
+    STRING's probabilistic one.
+
+    Node identity is deliberately derived from the UNFILTERED frame, so ``gene_to_idx`` is identical at
+    every threshold and two thresholds are comparable. A gene whose only edges are pruned keeps its
+    index and simply has an empty neighbourhood; it does not vanish and re-index every node after it.
     """
     if edges is None:
         edges, complexes, id_map, baseline = _load_default_frames()
@@ -114,6 +126,8 @@ def build_hetero_graph(
     edge_index: dict[str, torch.Tensor] = {}
     for rel, flag in _RELATION_FLAG.items():
         mask = edges[flag].to_numpy() == 1
+        if rel == "functional_assoc" and functional_min_score > 0.0:
+            mask &= edges["score"].to_numpy() >= functional_min_score
         ei = torch.tensor(np.stack([src_idx[mask], dst_idx[mask]]), dtype=torch.long)
         edge_index[rel] = ei
         data[PROTEIN, rel, PROTEIN].edge_index = ei

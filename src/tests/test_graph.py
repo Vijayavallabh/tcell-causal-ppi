@@ -762,3 +762,76 @@ def test_invalidate_graph_caches_is_a_noop_when_uncached():
     graph, _ = _dense_random_graph()
     invalidate_graph_caches(graph)                        # no _neighbor_index / _subgraph_cache yet
     assert not hasattr(graph, "_neighbor_index") and not hasattr(graph, "_subgraph_cache")
+
+
+# --------------------------------------------------------------------------------------------------
+# AAAI architecture search levers (2026-07-22): edge-confidence pruning + per-relation normalisation
+# --------------------------------------------------------------------------------------------------
+def _frames_scored():
+    """Functional edges spanning STRING's published confidence bands (0.15 / 0.45 / 0.85)."""
+    edges, complexes, id_map, baseline = _frames()
+    extra = pd.DataFrame([
+        _edge("A", "G", "string", 0.15, func=1),   # below STRING 'medium' (0.4)
+        _edge("A", "H", "string", 0.45, func=1),   # medium
+        _edge("A", "I", "string", 0.85, func=1),   # high
+    ])
+    return pd.concat([edges, extra], ignore_index=True), complexes, id_map, baseline
+
+
+def _n_edges(g, rel):
+    return int(g[PROTEIN, rel, PROTEIN].edge_index.size(1))
+
+
+def test_functional_min_score_prunes_only_low_confidence_functional_edges():
+    """86% of the real graph is STRING functional_assoc with a median score of 0.228 — below STRING's
+    own 'medium confidence' floor. Pruning must hit ONLY that relation: physical and complex edges are
+    a different evidence class and are not score-comparable to STRING's probabilistic score."""
+    frames = _frames_scored()
+    full, _ = build_hetero_graph(*frames, plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN)
+    med, _ = build_hetero_graph(*frames, plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN,
+                                functional_min_score=0.4)
+    high, _ = build_hetero_graph(*frames, plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN,
+                                 functional_min_score=0.7)
+    assert _n_edges(full, "functional_assoc") == 4      # 0.5, 0.15, 0.45, 0.85
+    assert _n_edges(med, "functional_assoc") == 3       # drops 0.15
+    assert _n_edges(high, "functional_assoc") == 1      # keeps only 0.85
+    for rel in ("physical_ppi", "co_complex"):
+        assert _n_edges(med, rel) == _n_edges(full, rel), f"pruning altered {rel}"
+        assert _n_edges(high, rel) == _n_edges(full, rel), f"pruning altered {rel}"
+
+
+def test_functional_min_score_keeps_the_node_index_stable():
+    """Node identity must NOT move with the threshold, or two thresholds are not comparable: gene_to_idx
+    is derived from the UNFILTERED frame, so a gene whose only edges are pruned keeps its index and
+    simply has an empty neighbourhood. Otherwise a pruned run silently re-indexes every node."""
+    frames = _frames_scored()
+    _, idx_full = build_hetero_graph(*frames, plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN)
+    g_high, idx_high = build_hetero_graph(*frames, plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN,
+                                          functional_min_score=0.7)
+    assert idx_full == idx_high, "pruning re-indexed the nodes — thresholds are not comparable"
+    assert g_high[PROTEIN].x.size(0) == len(idx_full), "a node disappeared with its edges"
+
+
+def test_relation_normalisation_divides_the_aggregate_by_neighbour_count():
+    """`_RelMessage` aggregates with an unnormalised `add`, so a relation's contribution scales with its
+    DEGREE. functional_assoc is 86% of the real graph, so it dominates every node update by sheer count
+    — which is the leading explanation for typed_static (-0.0131 vs no-graph) losing to an untyped GCN
+    (+0.0045), since GCNConv normalises and this does not. `mean` must actually divide."""
+    from tcell_pipeline.graph.typed_graph_encoder import _RelMessage
+    torch.manual_seed(0)
+    hidden, edge_dim, n_src = 4, 3, 5
+    x = torch.randn(n_src, hidden)
+    # four edges all pointing at destination node 0, one at node 1
+    ei = torch.tensor([[1, 2, 3, 4, 1], [0, 0, 0, 0, 1]])
+    ea = torch.randn(ei.size(1), edge_dim)
+    al = torch.ones(ei.size(1), 1)
+
+    add = _RelMessage(hidden, edge_dim, 0.0, norm="add").eval()
+    mean = _RelMessage(hidden, edge_dim, 0.0, norm="mean").eval()
+    mean.load_state_dict(add.state_dict())          # identical weights: only aggregation differs
+    with torch.no_grad():
+        a = add(x, x, ei, ea, al)
+        m = mean(x, x, ei, ea, al)
+    assert torch.allclose(a[0], m[0] * 4, atol=1e-5), "node with 4 neighbours was not divided by 4"
+    assert torch.allclose(a[1], m[1], atol=1e-5), "node with 1 neighbour must be unchanged by mean"
+    assert not torch.allclose(a[0], m[0], atol=1e-4), "mean and add produced the same aggregate"

@@ -1,0 +1,14 @@
+data/graphs/complex_membership.parquet
+data/graphs/protein_edges.parquet
+data/intermediate/control_baseline_expr.parquet
+data/intermediate/control_donor_profiles.parquet
+data/intermediate/de_layers/zscore.npz
+data/intermediate/de_obs.parquet
+data/intermediate/de_var.parquet
+data/intermediate/gene_program_loadings.parquet
+data/intermediate/id_mapping.parquet
+data/intermediate/perturbation_condition.parquet
+data/intermediate/pinnacle_embeddings.parquet
+data/intermediate/plm_embeddings.parquet
+data/intermediate/program_response.parquet
+data/splits/blocked_target_ood.csv

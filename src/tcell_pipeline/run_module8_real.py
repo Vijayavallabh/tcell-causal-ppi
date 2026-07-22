@@ -633,26 +633,52 @@ def run_tabular_baselines(n_max=None, seed: int = 0, with_tabicl: bool = False,
 
 
 # --------------------------------------------------------------------------------------------------
-def run_audit(n_cases: int, n_controls: int, device: str, n_max=None, untrained: bool = True) -> int:
-    """feat-012 machinery over the REAL graph. Honest framing: without the frozen promoted H1 the numbers
-    are a machinery check, not the feat-012 result."""
+def run_audit(n_cases: int, n_controls: int, device: str, n_max=None, untrained: bool = True,
+              ckpt=None, head_ckpt=None, seed: int = 0) -> int:
+    """feat-012 over the REAL graph.
+
+    With ``--ckpt`` this is the feat-012 campaign: a TRAINED Stage-A model, and ``--head-ckpt`` adds the
+    Stage-B-fitted rationale head (without it the head is zero-init, which ranks purely by the frozen
+    gate — faithful by construction, but weaker than a fitted head and reported as such). Without
+    ``--ckpt`` the model is untrained and the numbers are a machinery check, NOT the feat-012 result.
+
+    ``audit_rationale`` refuses a model whose gates have collapsed — importance is gate * sigmoid(scorer),
+    so at ~1e-07 every deletion is a float32 no-op and every contrast is undecidable BY CONSTRUCTION.
+    That refusal is honored HERE to the exit code: an undecidable audit must never exit 0."""
     from tcell_pipeline.graph.typed_graph_encoder import TypedGraphEncoder
     from tcell_pipeline.model import EGIPGModel
     from tcell_pipeline.rationale import RationaleHead, audit_rationale
 
-    if not untrained:
-        print("[m8-audit] a trained graph checkpoint is not available (Stage-A's real run is expr-only and "
-              "the graph model cannot converge until the mini-batch refactor lands) — rerun with --untrained")
+    if not untrained and ckpt is None:
+        print("[m8-audit] --no-untrained requires --ckpt naming a trained Stage-A checkpoint")
         return 1
     torch.set_num_threads(1)
     gene_names = pd.read_parquet(config.DE_VAR_PATH, columns=["gene_name"])["gene_name"].tolist()
     graph, g2i = build_hetero_graph()
     ds = PerturbationDataset("val", n_max=n_max)
     model = EGIPGModel.from_saved_basis(gene_names, graph_encoder=TypedGraphEncoder(graph, g2i)).eval()
+    if ckpt is not None:
+        state = torch.load(ckpt, map_location=device, weights_only=True)
+        model.load_state_dict(state["model"] if "model" in state else state)
+        model.eval()
     head = RationaleHead().eval()
-    print(f"[m8-audit] UNTRAINED graph model over the real PPI graph; {len(ds)} val rows; "
+    if head_ckpt is not None:
+        head.load_state_dict(torch.load(head_ckpt, map_location=device, weights_only=True)["head"])
+        head.eval()
+    provenance = ("TRAINED " + str(ckpt)) if ckpt else "UNTRAINED"
+    print(f"[m8-audit] {provenance} graph model over the real PPI graph; {len(ds)} val rows; "
+          f"head={'fitted ' + str(head_ckpt) if head_ckpt else 'zero-init (ranks by gate)'}; "
           f"n_cases={n_cases} n_controls={n_controls} device={device}", flush=True)
-    report = audit_rationale(model, head, ds, n_cases=n_cases, n_controls=n_controls, device=device, seed=0)
+    report = audit_rationale(model, head, ds, n_cases=n_cases, n_controls=n_controls, device=device,
+                             seed=seed)
+    print(f"[m8-audit] gate mean {report['gate_mean']} -> gates "
+          f"{'LIVE' if report['gates_live'] else 'COLLAPSED'}")
+    if report["undecidable_by_construction"]:
+        print("[m8-audit] UNDECIDABLE BY CONSTRUCTION: the gates have collapsed, so every deletion is a "
+              "float32 no-op and no faithfulness contrast can be formed. This is NOT a failed audit and "
+              "NOT a negative result — nothing was measured. Audit a checkpoint with live gates.")
+        print(f"[m8-audit] report -> {report['report_path']}")
+        return 1
     agg = report["aggregate"]
     print(f"[m8-audit] audited={report['n_audited']} uncovered_in_fold={report['n_uncovered_in_dataset']}")
     print(f"[m8-audit] frac sufficiency<random = {agg['frac_sufficiency_below_random']}")
@@ -660,8 +686,9 @@ def run_audit(n_cases: int, n_controls: int, device: str, n_max=None, untrained:
     print(f"[m8-audit] mean minimality={agg['mean_minimality']} mean stability={agg['mean_stability']}")
     print(f"[m8-audit] source ablation Δ: {agg['source_ablation_delta_sufficiency']}")
     print(f"[m8-audit] report -> {report['report_path']}")
-    print("[m8-audit] NOTE: model is UNTRAINED — this validates the audit path at real scale; the feat-012 "
-          "campaign needs the frozen promoted H1.")
+    if ckpt is None:
+        print("[m8-audit] NOTE: model is UNTRAINED — this validates the audit path at real scale; the "
+              "feat-012 campaign needs a trained checkpoint whose gates are alive.")
     return 0
 
 
@@ -710,7 +737,16 @@ def main() -> int:
     ap.add_argument("--device", default=None,
                     help="torch device for GPU-capable parts; default cpu, except GPU-only bars which "
                          "auto-select when this is not given explicitly")
-    ap.add_argument("--untrained", action="store_true", default=True)
+    ap.add_argument("--untrained", action=argparse.BooleanOptionalAction, default=True,
+                    help="allow auditing an UNTRAINED model (machinery check at real scale). Pass "
+                         "--no-untrained to REQUIRE a trained checkpoint via --ckpt (the guard then fires "
+                         "if none is given). Default lets a --ckpt-less run proceed as an untrained probe.")
+    ap.add_argument("--ckpt", default=None,
+                    help="trained Stage-A checkpoint to audit (feat-012 campaign). Without it the audited "
+                         "model is untrained and the run is only a machinery check.")
+    ap.add_argument("--head-ckpt", default=None,
+                    help="Stage-B-fitted rationale head (stage_b_rationale_head.pt). Without it the head "
+                         "is zero-init, which ranks edges purely by the frozen gate.")
     ap.add_argument("--no-register", action="store_true")
     ap.add_argument("--with-tabicl", action="store_true",
                     help="add the TabICL in-context bar (GPU; refit once per program)")
@@ -725,7 +761,8 @@ def main() -> int:
             a.n_max, with_tabicl=a.with_tabicl, device=device,
             device_explicit=device_explicit) else 0
     if a.part in ("audit", "all"):
-        rc |= RC_AUDIT if run_audit(a.n_cases, a.n_controls, device, a.n_max, a.untrained) else 0
+        rc |= RC_AUDIT if run_audit(a.n_cases, a.n_controls, device, a.n_max, a.untrained,
+                                    ckpt=a.ckpt, head_ckpt=a.head_ckpt) else 0
     if a.part in ("repro", "all"):
         rc |= RC_REPRO if run_repro() else 0
     if rc:

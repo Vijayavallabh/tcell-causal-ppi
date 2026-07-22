@@ -344,6 +344,45 @@ matrix — typed edge learning is part of the AI contribution.
 
 ## Setup
 
+### Fresh-machine quickstart (build everything, then reproduce the paper)
+
+Ordered path from a bare host to a state where every paper experiment runs. Each step links a detailed
+subsection below; the caveats there are load-bearing, not decoration. **GPU:** an 80 GB card (A100) is
+assumed for the graph encoders and embeddings; CPU-only works for the tabular baselines and tests.
+
+```bash
+# 1. Environment (details: "Create the environment" below)
+git clone https://github.com/Vijayavallabh/tcell-causal-ppi && cd tcell-causal-ppi
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install -r requirements.txt && uv tool install awscli
+# GPU torch build matching your driver — see the "GPU" note below (False from torch.cuda.is_available() -> fix here)
+
+# 2. Download the processed data layer (~100 GiB; details: "Download data (staged)")
+#    Pulls the four aggregate HDF5 arts + the supplementary tables. The ~1,617 GiB raw cell files are NOT needed.
+
+# 3. Build the derived marts + typed PPI graph from the download (DESTRUCTIVE — downloads the 5 PPI DBs and
+#    writes the frozen marts; run ONCE on a fresh host, never to "test"):
+PYTHONPATH=src python -m tcell_pipeline.run_module0
+
+# 4. Splits are TRACKED in git (data/splits/, hashed + frozen) — they arrive with the clone, do NOT regenerate.
+#    Precompute target embeddings (details: "Precompute target embeddings"):
+PYTHONPATH=src python -m tcell_pipeline.embeddings_plm         # ESM-2 650M (GPU, resumable)
+PYTHONPATH=src python -m tcell_pipeline.embeddings_pinnacle    # PINNACLE CD4 T-cell context
+
+# 5. Fit the frozen program basis (deterministic; details: "Fit the fold-local program basis"):
+PYTHONPATH=src python -m tcell_pipeline.programs.run_program_basis   # sparse_pca K=128, ~5 min
+
+# 6. Verify the whole install is healthy (compiles + full test suite):
+./init.sh
+```
+
+After `./init.sh` is green you can run any experiment in **"Reproducing the paper experiments"** below.
+Two hard rules survive setup: never run `run_module0` again to "test" (it overwrites the frozen marts),
+and never regenerate the program basis with a non-default `--method`/`--K` (it silently replaces the
+frozen basis every result is expressed in — verify with `sha256sum` before/after if you must).
+
+### Harness scaffolding (optional — for agent-assisted development, not for reproduction)
+
 Install the [Harness Engineering skill](https://walkinglabs.github.io/learn-harness-engineering/en/skills/) — it provides the `harness-creator` skill used to generate this repo's agent scaffolding (AGENTS.md, feature_list.json, progress.md, init.sh, session-handoff.md):
 
 ```bash
@@ -827,6 +866,126 @@ Note when reading screening logs: **`best_val` is not comparable across the fami
 pins its gates to 1.0, so its sparsity penalty is an irreducible constant — it scores val 490.4 where
 `condition_gated` scores 3.47 on the same fold. H2a/H2b and promotion rank on `systema` for this
 reason.
+
+## Reproducing the paper experiments
+
+Everything below runs on the **development (val) fold**. The sealed challenge split stays sequestered —
+**never run `evaluation/sealed_eval.py`**; opening it is a one-way, test-steward-only action. All
+long GPU runs below: launch with `setsid` and kill the whole group with `kill -TERM -<PGID>` (a launcher
+script records its own kill command under `data/logs/`), and keep `OMP_NUM_THREADS` low (4–8) — the
+sklearn baselines nest parallelism and the box's 64-thread default produces ~830 threads and thrash.
+
+### 1. The graph-regulariser fix (feat-011)
+
+The screening campaign's edge-gate sparsity penalty `L_graph` is an **unnormalised sum over edges**; at
+the default `LAMBDA_GRAPH=0.01` it is ~103× the response term and its gradient dominates the edge gates'
+direction, annihilating them to ~1e-7 inside epoch 0 **in every seed** — so the "graph" arms trained with
+message passing switched off, and the prior graph-vs-no-graph comparison was confounded by construction.
+Confirm the collapse cheaply on any checkpoint before spending hours on it:
+
+```bash
+# reads the gate collapse FACTOR, not a rendered mean — ~1e-7 => the graph cannot contribute
+PYTHONPATH=src python -m tcell_pipeline.probe_graph_gradients --n-max 8 --batch-size 2 --steps 1
+```
+
+The fix is `--lambda-graph 0` (the gates are then learned by the prediction task; sparsity is reported as
+a separate diagnostic). Per-epoch gate mean is now logged as a first-class quantity in each run's
+`stage_a_history.json`, so a future collapse cannot recur silently.
+
+### 2. Confirmatory 5-seed re-screen at λ=0
+
+Re-runs **only** `condition_gated` at `--lambda-graph 0` on the frozen fold across 5 paired seeds; the
+other three arms are unaffected (`typed_static` pins its gates to 1.0, `untyped_gnn`/`expression_only`
+emit none) and their frozen lanes stay valid comparators. Nothing frozen is written — a separate root
+plus a copied registry, hashed before/after.
+
+```bash
+setsid nohup ./run_rescreen_lambda0.sh > data/logs/rescreen.nohup.log 2>&1 &   # 5 lanes, 4 A100s, ~16–28 h
+# aggregate once every lane has landed -> the 4 pre-registered contrasts, Bonferroni AND Holm:
+SCREENING_ROOT=data/results/screening_lambda0 \
+REGISTRY_PATH=data/results/screening_lambda0/experiment_registry.yaml \
+PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
+```
+
+The report is `data/results/screening_lambda0/robustness_5seed.{json,md}`; the headline contrast is
+`h1_vs_no_graph` (`condition_gated − expression_only`). Read it from the artifact — a comparison not in
+`CONTRASTS` is not a result, and at n=5 the corrected p is required, not the raw one.
+
+#### Running the seeds across several single-GPU machines
+
+The five seeds are **independent** — each is one `--only condition_gated` lane on one GPU (~8–14 h), so
+they distribute across machines with no shared state during training. A worker machine does **not** need
+the ~100 GiB download, `run_module0`, or the embedding/basis rebuild — only the repo, the env, and a
+**~1.8 GiB set of derived artifacts** (listed in `portable_artifacts.txt`; everything a seed reads, minus
+the 8 GiB of unused DE layers). Set one up in minutes:
+
+```bash
+# on the worker: repo + env (see "Create the environment") + the GPU torch build, then:
+rsync -av --files-from=portable_artifacts.txt  you@source-host:/path/to/tcell-causal-ppi/  ./
+# run one seed (pick a distinct S per machine); writes condition_gated/<S>.parquet + a checkpoint:
+SCREENING_ROOT=out PREDICTIONS_ROOT=out/pred REGISTRY_PATH=out/registry.yaml \
+  PYTHONPATH=src python -m tcell_pipeline.screening.run_screening \
+  --only condition_gated --seed 4 --epochs 20 --batch-size 8 --device cuda --lambda-graph 0
+```
+
+Then gather every machine's `condition_gated/<S>.parquet` into ONE
+`data/results/screening_lambda0/condition_gated/` (alongside the three reference arms, which stay on the
+host with the frozen `data/results/screening/`) and aggregate with the staleness fence **off** — because
+the seeds carry no shared registry, comparability is checked from each parquet's recorded
+`n_train`/`n_val` instead:
+
+```bash
+SCREENING_ROOT=data/results/screening_lambda0 PYTHONPATH=src \
+  python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4 --no-registry
+```
+
+A partial lane that never finished is simply absent — its seed drops from `n` and is named in the
+report's coverage, never silently averaged in. A 4-seed report (`--seeds 0,1,2,3`) is a valid paired
+result; add the fifth seed's parquet and re-run when it lands.
+
+### 3. Architecture search — the ablation behind the model choice
+
+Scores graph-encoder variants on a **target-grouped inner holdout of train** (val stays closed), so the
+selected architecture is chosen without touching the fold it is later confirmed on. Full record:
+`docs/feat011-arch-search-notes.md`.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.arch_search --list          # the 9-cell grid: {add,mean,gcn} × threshold
+setsid nohup ./run_arch_search.sh  > data/logs/arch.nohup.log  2>&1 &   # stage 1: normalisation × edge pruning
+PYTHONPATH=src python -m tcell_pipeline.arch_search --refs --list   # no-graph + untyped-GCN references
+setsid nohup ./run_arch_stage2.sh > data/logs/s2.nohup.log 2>&1 &   # stage 2: GCN edge-weights, GATv2 attention
+```
+
+Verdict (14 cells): the current `condition_gated` (typed, gated, **unnormalised** aggregation, **full**
+graph) wins; every lever — per-relation normalisation, edge-confidence pruning, edge-weighting, learned
+attention — is neutral or worse. Inner-holdout numbers are a **selection lead at n=1**, not the headline;
+step 2's val campaign is what confirms them.
+
+### 4. Predictive-rationale audit (feat-012)
+
+Necessity / sufficiency / minimality / stability of the returned subgraph vs matched-random controls,
+plus structural-OOD, on a **live-gate** checkpoint from step 2. The driver refuses a collapsed-gate
+checkpoint up front (importance = gate × score, so at ~1e-7 every deletion is a float32 no-op — undecidable
+by construction, and it exits non-zero rather than reporting a fake negative):
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.run_module8_real --part audit --device cuda \
+  --ckpt data/results/screening_lambda0/condition_gated/0/ckpt/stage_a_best.pt \
+  --head-ckpt <stage_b_rationale_head.pt>   # optional: a Stage-B-fitted head; omit to rank by the frozen gate
+```
+
+### 5. Reproducibility verdict (feat-013)
+
+Clean-checkout reproduction of the deterministic preprocessing hashes + the fallacy scan over the study's
+own estimates:
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.reproducibility.run_repro_real   # exit 0 ONLY for REPRODUCIBLE
+```
+
+On this checkout the reproduction axis is `CANNOT_VERIFY` **by design** — the confirmatory decision is
+defined on the sequestered challenge split, which is unopened. That is the correct verdict from a
+development checkout, not a defect.
 
 ## Repository / data-mart layout
 

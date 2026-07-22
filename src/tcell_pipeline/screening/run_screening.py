@@ -111,7 +111,8 @@ def merge(seed: int = config.SPLIT_SEED) -> int:
 
 
 def run(epochs: int = 2, batch_size: int = 8, seed: int = config.SPLIT_SEED,
-        n_max: int | None = None, device: str = "cpu", only: str | None = None) -> int:
+        n_max: int | None = None, device: str = "cpu", only: str | None = None,
+        lambda_graph: float | None = None) -> int:
     torch.set_num_threads(1)
     if device.startswith("cuda"):
         # reduce allocator fragmentation for the dense-subgraph typed encoder (set before the first CUDA
@@ -138,7 +139,7 @@ def run(epochs: int = 2, batch_size: int = 8, seed: int = config.SPLIT_SEED,
           f"device={device}; cache={config.SUBGRAPH_CACHE_SIZE}")
 
     configs = nested_family_configs(gene_names, graph, gene_to_idx, epochs, names=wave,
-                                    batch_size=batch_size, seed=seed)
+                                    batch_size=batch_size, seed=seed, lambda_graph=lambda_graph)
 
     def netprop(train_ds, val_ds, train_mean, *, predictions_root, screening_root, split):
         return score_network_propagation(train_ds, val_ds, train_mean, graph=graph, gene_to_idx=gene_to_idx,
@@ -192,9 +193,14 @@ if __name__ == "__main__":
     ap.add_argument("--pin", default=None, metavar="NAME",
                     help="freeze NAME as the H1 regardless of its screening rank (--promote) — for a negative "
                          "fold where the pre-registered confirmatory H1 is kept over the argmax winner")
+    ap.add_argument("--lambda-graph", type=float, default=None, metavar="W",
+                    help="override the edge-gate sparsity/unsourced penalty weight (default: config's 0.01). "
+                         "The 2026-07-21 re-screen runs condition_gated at 0 — at 0.01 the unnormalised "
+                         "per-edge sum is ~103x the response term and annihilates the gates inside epoch 0. "
+                         "The value that actually trained is recorded in the run's result row.")
     a = ap.parse_args()
     if a.merge:
         sys.exit(merge(a.seed))
     if a.promote:
         sys.exit(promote_final(a.seed, a.noise_margin, a.pin))
-    sys.exit(run(a.epochs, a.batch_size, a.seed, a.n_max, a.device, a.only))
+    sys.exit(run(a.epochs, a.batch_size, a.seed, a.n_max, a.device, a.only, a.lambda_graph))

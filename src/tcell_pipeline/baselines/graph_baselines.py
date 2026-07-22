@@ -27,7 +27,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch_geometric.data import Batch
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GATv2Conv, GCNConv
 
 from tcell_pipeline import config
 from tcell_pipeline.baselines.simple_baselines import BaseBaseline, _np
@@ -176,13 +176,30 @@ class UntypedGraphEncoder(nn.Module):
         ei = torch.cat(present, dim=1) if present else torch.zeros((2, 0), dtype=torch.long)
         return torch.cat([ei, ei.flip(0)], dim=1).to(device)  # undirected
 
+    def _homogeneous_score(self, sub, device) -> torch.Tensor:
+        """Per-edge STRING/source confidence aligned to ``_homogeneous_edges`` (same relation order, same
+        undirected doubling), shape (E_doubled, 1). This is the signal the plain GCN throws away; the
+        gat / wgcn variants feed it into attention / edge weights."""
+        cols = [sub[PROTEIN, rel, PROTEIN].edge_attr[:, _SCORE_COL]
+                for rel in _PP_RELATIONS if sub[PROTEIN, rel, PROTEIN].edge_index.numel()]
+        if not cols:
+            return torch.zeros((0, 1), device=device)
+        s = torch.cat(cols).to(device).unsqueeze(-1)
+        return torch.cat([s, s], dim=0)  # mirror the src||flip doubling in _homogeneous_edges
+
+    def _message_pass(self, h, ei, sub, device) -> torch.Tensor:
+        """The overridable convolution loop. Base = plain GCN, which ignores ``sub`` (no edge features).
+        Subclasses that consume edge scores read them via ``_homogeneous_score(sub, device)``."""
+        for conv in self.convs:
+            h = F.relu(conv(h, ei))
+        return h
+
     def encode_one(self, gene: str, h_do_row: torch.Tensor) -> torch.Tensor:
         device = self.proj.weight.device
         sub = sample_subgraph(self.graph, gene, gene_to_idx=self.gene_to_idx).to(device)
         h = F.relu(self.proj(sub[PROTEIN].x))
         ei = self._homogeneous_edges(sub, device)
-        for conv in self.convs:
-            h = F.relu(conv(h, ei))
+        h = self._message_pass(h, ei, sub, device)
         h_graph, _ = self.readout(h_do_row.to(device).unsqueeze(0), h)
         return h_graph.squeeze(0)
 
@@ -209,10 +226,56 @@ class UntypedGraphEncoder(nn.Module):
         bat = Batch.from_data_list(subs).to(device)
         h = F.relu(self.proj(bat[PROTEIN].x))
         ei = self._homogeneous_edges(bat, device)
-        for conv in self.convs:
-            h = F.relu(conv(h, ei))
+        h = self._message_pass(h, ei, bat, device)
         # each query attends over its own subgraph's nodes only (batch vector is already sorted)
         return self.readout(h_do[torch.tensor(part, device=device)], h, node_batch=bat[PROTEIN].batch)[0]
+
+
+# --------------------------------------------------------------------------------------------------
+# 2b. Augmented untyped encoders (AAAI stage-2): the two things GCN discards, added back
+# --------------------------------------------------------------------------------------------------
+class AugmentedUntypedEncoder(UntypedGraphEncoder):
+    """``UntypedGraphEncoder`` with a choice of homogeneous convolution, to improve on the plain-GCN
+    baseline by consuming the edge confidence GCN throws away:
+
+      ``gcn``   the baseline: fixed symmetric ``1/sqrt(d_i d_j)``, edge scores unused (bit-identical to
+                ``UntypedGraphEncoder``).
+      ``gat``   ``GATv2Conv`` with ``edge_dim=1``: LEARNED attention weights that read the per-edge
+                STRING score, instead of a fixed degree normalisation. Heads averaged (``concat=False``)
+                so the hidden width is unchanged.
+      ``wgcn``  ``GCNConv`` with ``edge_weight`` = the per-edge score: the cheapest way to let the edge
+                confidence modulate the fixed normalisation.
+
+    Untyped by construction — no condition gate, no relation types — so it keeps ``UntypedGraphEncoder``'s
+    ``(h_graph, None, None)`` contract and trains through the same decoder / Stage-A loss."""
+
+    CONVS = ("gcn", "gat", "wgcn")
+
+    def __init__(self, graph=None, gene_to_idx=None, hidden: int = config.GRAPH_HIDDEN_DIM,
+                 layers: int = config.GRAPH_LAYERS, *, conv: str = "gat",
+                 heads: int = config.GRAPH_N_HEADS) -> None:
+        if conv not in self.CONVS:
+            raise ValueError(f"conv must be one of {self.CONVS}, got {conv!r}")
+        super().__init__(graph, gene_to_idx, hidden, layers)  # builds proj / GCN convs / readout
+        self.conv_kind = conv
+        if conv == "gat":
+            # concat=False averages the heads so out-dim stays `hidden`; edge_dim=1 lets the per-edge
+            # score enter the attention logits (GATv2's edge-aware attention, Brody et al. 2021)
+            self.convs = nn.ModuleList(
+                [GATv2Conv(hidden, hidden, heads=heads, concat=False, edge_dim=1, add_self_loops=True)
+                 for _ in range(layers)])
+        # 'wgcn' reuses the base GCNConv modules; only the call in _message_pass differs
+
+    def _message_pass(self, h, ei, sub, device) -> torch.Tensor:
+        if self.conv_kind == "gcn":
+            return super()._message_pass(h, ei, sub, device)
+        score = self._homogeneous_score(sub, device)
+        for conv in self.convs:
+            if self.conv_kind == "gat":
+                h = F.relu(conv(h, ei, edge_attr=score))
+            else:  # wgcn
+                h = F.relu(conv(h, ei, edge_weight=score.squeeze(-1)))
+        return h
 
 
 # --------------------------------------------------------------------------------------------------

@@ -41,6 +41,7 @@ from tcell_pipeline.graph.typed_graph_encoder import TypedGraphEncoder
 from tcell_pipeline.model import EGIPGModel
 from tcell_pipeline.screening.experiment_registry import log_run, register_run
 from tcell_pipeline.training.dataset import PerturbationDataset
+from tcell_pipeline.training.losses import StageALoss
 from tcell_pipeline.training.trainer import Trainer, seeded_init
 
 EXPRESSION_ONLY = "expression_only"
@@ -141,14 +142,16 @@ def nested_family_factories(gene_names, graph, gene_to_idx, *, basis_path=None,
 
 def nested_family_configs(gene_names, graph, gene_to_idx, n_epochs: int, *, names=None, basis_path=None,
                           perturbation_encoder_factory=None, lr: float = config.LR,
-                          batch_size: int = config.BATCH_SIZE, seed: int = 0) -> list[dict]:
-    """Build screening configs for the named members (default: the three nested-family members)."""
+                          batch_size: int = config.BATCH_SIZE, seed: int = 0,
+                          lambda_graph: float | None = None) -> list[dict]:
+    """Build screening configs for the named members (default: the three nested-family members).
+    ``lambda_graph=None`` keeps the config default; pass a float to override the edge-gate penalty."""
     factories = nested_family_factories(gene_names, graph, gene_to_idx, basis_path=basis_path,
                                         perturbation_encoder_factory=perturbation_encoder_factory)
     if names is None:  # an explicit [] means "no configs", not "use the defaults"
         names = [EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED]
     return [{"name": n, "model_factory": factories[n], "n_epochs": n_epochs, "lr": lr,
-             "batch_size": batch_size, "seed": seed} for n in names]
+             "batch_size": batch_size, "seed": seed, "lambda_graph": lambda_graph} for n in names]
 
 
 # --------------------------------------------------------------------------------------------------
@@ -180,9 +183,16 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
     try:
         with seeded_init(seed):  # weight init from the config seed too, so the whole run is reproducible
             model = cfg["model_factory"]()
-        trainer = Trainer(model, train_ds, val_ds, lr=cfg.get("lr", config.LR), max_epochs=cfg["n_epochs"],
-                          batch_size=bs, seed=seed, device=device, ckpt_dir=ckpt_dir, log_dir=log_dir,
-                          donor_invariance=donor_invariance)
+        # An explicit lambda_graph builds the loss here; None keeps the Trainer's config default. The
+        # re-screen runs the condition-gated arm at 0.0 (the only arm the penalty reaches — see
+        # test_graph_penalty_carries_gradient_to_condition_gated_only).
+        lam = cfg.get("lambda_graph")
+        dec = model.decoder
+        loss = None if lam is None else StageALoss(dec.gene_dim, dec.program_dim, h_do_dim=dec.h_do_dim,
+                                                   lambda_graph=float(lam))
+        trainer = Trainer(model, train_ds, val_ds, loss=loss, lr=cfg.get("lr", config.LR),
+                          max_epochs=cfg["n_epochs"], batch_size=bs, seed=seed, device=device,
+                          ckpt_dir=ckpt_dir, log_dir=log_dir, donor_invariance=donor_invariance)
         result = trainer.run()
         if result["best_ckpt"]:  # score the best-validation weights, not the last epoch's
             model.load_state_dict(torch.load(result["best_ckpt"], map_location=device)["model"])
@@ -200,6 +210,8 @@ def screen_config(cfg: dict, train_ds, val_ds, train_mean, *, device: str = "cpu
         results = {"name": name, "seed": seed, "n_epochs": cfg["n_epochs"], "status": "completed",
                    "best_val": result["best_val"], "epochs_run": result["epochs_run"],
                    "n_train": len(train_ds), "n_val": len(val_ds),
+                   # read off the loss that TRAINED, not off a config the run might not have used
+                   "lambda_graph": float(trainer.loss.lambda_graph),
                    "gpu_hours": gpu_hours, "primary": metrics[PRIMARY_METRIC], **metrics}
         _write_result_row(results, screening_root, name, seed)
         if run_id is not None:

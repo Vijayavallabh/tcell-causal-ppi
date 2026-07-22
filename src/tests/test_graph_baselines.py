@@ -175,3 +175,100 @@ def test_untyped_batched_forward_matches_per_sample_loop():
     assert gates is None and confs is None  # untyped: no provenance, no gate -- by design
     assert torch.allclose(got, ref, atol=1e-5)
     assert torch.allclose(got[1], torch.zeros(enc.hidden))  # absent target -> zero
+
+
+# --------------------------------------------------------------------------------------------------
+# AAAI stage-2: augmented untyped encoders that USE the edge scores plain GCN discards (2026-07-22)
+# --------------------------------------------------------------------------------------------------
+def _graph_scored(func_score):
+    """The fixture graph with the G2–G3 functional edge's STRING score set to ``func_score``; topology
+    is otherwise identical, so any output change is attributable to the score alone."""
+    edges = pd.DataFrame([
+        _edge("G0", "G1", "biogrid", 0.9, phys=1), _edge("G1", "G2", "biogrid", 0.8, phys=1),
+        _edge("G2", "G3", "string", func_score, func=1), _edge("G3", "G4", "biogrid", 0.7, phys=1),
+        _edge("G4", "G5", "corum", 0.6, cplx=1),
+    ])
+    complexes = pd.DataFrame([
+        dict(protein_gene="G0", complex_id=1, source_database="CORUM", confidence=1.0, is_curated=1),
+        dict(protein_gene="G1", complex_id=1, source_database="CORUM", confidence=1.0, is_curated=1),
+    ])
+    id_map = pd.DataFrame([dict(hgnc_symbol="G0", uniprot_id="P0"), dict(hgnc_symbol="G1", uniprot_id="P1")])
+    baseline = pd.DataFrame([dict(hgnc_symbol="G0", control_baseline_expr=1.0)])
+    return build_hetero_graph(edges, complexes, id_map, baseline, plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN)
+
+
+def test_augmented_untyped_conv_kinds_forward_to_the_untyped_contract():
+    """gat / wgcn must honour the untyped contract: (n, hidden), no gates, absent target -> zero row."""
+    from tcell_pipeline.baselines.graph_baselines import AugmentedUntypedEncoder
+    graph, g2i = _graph()
+    for conv in ("gat", "wgcn"):
+        enc = AugmentedUntypedEncoder(graph, g2i, conv=conv).eval()
+        h_do = torch.randn(3, config.H_DO_DIM)
+        h_graph, gates, confs = enc(["G2", "NOPE", "G4"], ["Rest", "Rest", "Rest"], h_do)
+        assert h_graph.shape == (3, config.GRAPH_HIDDEN_DIM)
+        assert gates is None and confs is None, f"{conv} must emit no gates (untyped contract)"
+        assert torch.allclose(h_graph[1], torch.zeros(config.GRAPH_HIDDEN_DIM)), "absent target not zeroed"
+
+
+def test_gat_and_wgcn_route_gradient_from_edge_scores_that_plain_gcn_ignores():
+    """The whole point of these variants is to consume the STRING confidence untyped_gnn discards. The
+    rigorous test is GRADIENT flow, not init-output sensitivity: GATv2 feeds the score through attention
+    logits that node features dominate at random init, so its init output barely moves even though the
+    score is fully wired and trainable (d out / d score != 0). wgcn multiplies the message by the score,
+    so it is sensitive at init too. Plain gcn never reads the score — its message-pass never even calls
+    ``_homogeneous_score`` — so no gradient path to the score exists."""
+    from tcell_pipeline.baselines.graph_baselines import AugmentedUntypedEncoder
+    graph, g2i = _graph()
+    h_do = torch.randn(1, config.H_DO_DIM)
+    for conv, expect_grad in (("gcn", False), ("gat", True), ("wgcn", True)):
+        enc = AugmentedUntypedEncoder(graph, g2i, conv=conv)
+        captured = {}
+        orig = enc._homogeneous_score
+        def spy(sub, device, _orig=orig):  # make the score a leaf so its gradient is observable
+            captured["s"] = _orig(sub, device).detach().requires_grad_(True)
+            return captured["s"]
+        enc._homogeneous_score = spy
+        enc(["G2"], ["Rest"], h_do)[0].sum().backward()
+        s = captured.get("s")
+        got_grad = s is not None and s.grad is not None and float(s.grad.abs().sum()) > 0
+        assert got_grad == expect_grad, (
+            f"{conv}: gradient-to-score was {got_grad}, expected {expect_grad} "
+            f"({'score must be wired into the output' if expect_grad else 'score must be ignored'})")
+
+
+def test_plain_gcn_augmented_matches_the_original_untyped_encoder():
+    """conv='gcn' must be bit-identical to UntypedGraphEncoder — the refactor that added the hook cannot
+    have changed the baseline the whole search is measured against."""
+    from tcell_pipeline.baselines.graph_baselines import AugmentedUntypedEncoder
+    graph, g2i = _graph()
+    h_do = torch.randn(4, config.H_DO_DIM)
+    torch.manual_seed(7); base = UntypedGraphEncoder(graph, g2i).eval()
+    torch.manual_seed(7); aug = AugmentedUntypedEncoder(graph, g2i, conv="gcn").eval()
+    with torch.no_grad():
+        ob = base(["G0", "G2", "NOPE", "G4"], ["Rest"] * 4, h_do)[0]
+        oa = aug(["G0", "G2", "NOPE", "G4"], ["Rest"] * 4, h_do)[0]
+    assert torch.allclose(ob, oa, atol=1e-6), "conv='gcn' diverged from the original untyped encoder"
+
+
+def test_augmented_untyped_batched_forward_matches_per_sample_loop():
+    """The §10.6 spec makes batched==per-sample equivalence MANDATORY for every message-passing variant
+    ('a divergence would silently change which subgraph the model sees — the science, not just the
+    speed'). AugmentedUntypedEncoder overrides _message_pass for all three conv kinds, so each needs the
+    same cross-check UntypedGraphEncoder has: encode_one (unbatched oracle) vs the batched forward. The
+    batched _homogeneous_score alignment for gat/wgcn is exactly what this pins."""
+    from tcell_pipeline.baselines.graph_baselines import AugmentedUntypedEncoder
+    for conv in ("gcn", "gat", "wgcn"):
+        torch.manual_seed(0)
+        graph, g2i = _graph()
+        enc = AugmentedUntypedEncoder(graph, g2i, conv=conv).eval()
+        genes = ["G0", "NOTAGENE", "G3", "G5"]  # an absent target between real ones
+        h_do = torch.randn(len(genes), config.GRAPH_HIDDEN_DIM)
+        with torch.no_grad():
+            ref = torch.stack([
+                torch.zeros(enc.hidden) if g not in g2i else enc.encode_one(g, h_do[b])
+                for b, g in enumerate(genes)
+            ])
+            got, gates, confs = enc(genes, ["Rest"] * len(genes), h_do)
+        assert gates is None and confs is None, f"{conv}: untyped contract broken"
+        assert torch.allclose(got, ref, atol=1e-4), f"{conv}: batched forward diverged from encode_one"
+        assert torch.allclose(got[1], torch.zeros(enc.hidden)), f"{conv}: absent target not zeroed"

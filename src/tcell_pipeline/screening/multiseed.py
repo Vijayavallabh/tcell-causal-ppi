@@ -392,9 +392,19 @@ def main(argv=None) -> int:
                     help="comma seeds to aggregate (default 0..N_FINAL_SEEDS-1)")
     ap.add_argument("--alpha", type=float, default=0.05, help="two-sided CI level (default 0.05 -> 95%%)")
     ap.add_argument("--no-write", action="store_true", help="print only; do not write the report")
+    ap.add_argument("--no-registry", action="store_true",
+                    help="aggregate on PARQUET PRESENCE alone, ignoring the experiment registry. Use ONLY "
+                         "when gathering per-seed parquets produced on DIFFERENT machines (no shared "
+                         "registry): the staleness fence is off, so every gathered parquet is trusted, and "
+                         "fold identity is checked from the recorded n_train/n_val sizes instead of the "
+                         "registry split label.")
     a = ap.parse_args(argv)
     seeds = [int(x) for x in a.seeds.split(",") if x.strip() != ""]
-    agg = aggregate_seeds(seeds, alpha=a.alpha)
+    reg = None if a.no_registry else config.REGISTRY_PATH
+    if a.no_registry:
+        print("[robust] --no-registry: staleness fence OFF, trusting gathered parquets; "
+              "fold identity from recorded n_train/n_val only")
+    agg = aggregate_seeds(seeds, alpha=a.alpha, registry_path=reg)
     _print_agg(agg)
     if not a.no_write:
         paths = write_robustness_report(agg)

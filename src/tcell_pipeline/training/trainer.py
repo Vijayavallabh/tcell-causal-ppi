@@ -17,6 +17,8 @@ from tcell_pipeline import config
 from tcell_pipeline.training.dataset import PerturbationDataset, sample_donor_variants
 from tcell_pipeline.training.losses import StageALoss
 
+_GATE_DEAD = 1e-3  # an edge gate below this contributes nothing in float32 — the pilot's collapse criterion
+
 
 @contextlib.contextmanager
 def seeded_init(seed: int):
@@ -118,10 +120,23 @@ class Trainer:
         self.loss.train(train)
         agg: dict = {}
         n = 0
+        # Edge-gate monitoring, accumulated on-device and synced once per epoch. The 5-seed campaign's
+        # gates were annihilated by L_graph inside epoch 0 and NOTHING recorded it, so the whole family
+        # was screened with its message passing switched off. `None` means the arm emits no gates at
+        # all — absence of gates must never render as a collapsed gate (see AGENTS.md).
+        g_sum = g_dead = None
+        g_n = 0
         with torch.set_grad_enabled(train):
             for batch, targets, conditions, dz_true, dx_true, _ in loader:
                 dz_true, dx_true = dz_true.to(self.device), dx_true.to(self.device)
                 out = self.model(batch, targets, conditions)
+                alphas = [a.detach() for per in (out.get("edge_gates") or {}).values()
+                          for a in per if a.numel()]
+                if alphas:
+                    a = torch.cat(alphas).float()
+                    s, d = a.sum(), (a < _GATE_DEAD).sum()
+                    g_sum, g_dead = (s, d) if g_sum is None else (g_sum + s, g_dead + d)
+                    g_n += a.numel()
                 # donor variants are a stochastic resample — TRAIN only, so the val total stays
                 # deterministic for frozen weights and early-stopping/best-checkpoint aren't RNG-driven
                 dz_variants = self._donor_variants(batch, targets, conditions) if (self._donor_on and train) else None
@@ -135,7 +150,11 @@ class Trainer:
                 for k, v in comps.items():
                     agg[k] = agg.get(k, 0.0) + float(v.detach())
                 n += 1
-        return {k: v / max(n, 1) for k, v in agg.items()}
+        metrics = {k: v / max(n, 1) for k, v in agg.items()}
+        # per EDGE, not per batch — the loss components above are per-batch means
+        metrics["gate_mean"] = float(g_sum) / g_n if g_n else None
+        metrics["gate_frac_dead"] = float(g_dead) / g_n if g_n else None
+        return metrics
 
     def _save_ckpt(self, tag: str, epoch: int, metrics: dict) -> Path:
         config.ensure_dir(self.ckpt_dir)

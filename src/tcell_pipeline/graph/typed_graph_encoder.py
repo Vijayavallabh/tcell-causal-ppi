@@ -19,7 +19,7 @@ import torch
 from torch import nn
 from torch_geometric.data import Batch
 from torch_geometric.nn import MessagePassing
-from torch_geometric.utils import dropout_edge
+from torch_geometric.utils import degree, dropout_edge
 
 from tcell_pipeline import config
 from tcell_pipeline.graph.graph_builder import COMPLEX, PROTEIN, build_hetero_graph
@@ -50,10 +50,30 @@ def signed_message(h: torch.Tensor, w_sign: nn.Linear, w_mag: nn.Linear) -> torc
 
 
 class _RelMessage(MessagePassing):
-    """One relation's message + aggregation for one layer (custom message on PyG MessagePassing)."""
+    """One relation's message + aggregation for one layer (custom message on PyG MessagePassing).
 
-    def __init__(self, hidden: int, edge_dim: int, edge_dropout: float) -> None:
-        super().__init__(aggr="add")
+    ``norm`` selects how a node's incoming messages for THIS relation are combined:
+
+      ``add``   plain sum (the original). A relation's contribution then scales with its degree, so
+                the most abundant relation dominates the node update regardless of how informative it
+                is. On the real graph ``functional_assoc`` is 86% of all edges at a median score of
+                0.228, and the aggregate is summed again across relations — so the least reliable
+                evidence class wins by sheer count.
+      ``mean``  divide by the in-degree for this relation, so every relation contributes on the same
+                scale and relative weight is set by the learned parameters (and the condition gate),
+                not by annotation density.
+      ``gcn``   symmetric ``1/sqrt(d_i d_j)``, the normalisation ``GCNConv`` applies. This is the
+                isolated difference against ``UntypedGraphEncoder``, which uses ``GCNConv`` and is the
+                BEST graph variant (+0.0045 vs no-graph) while this encoder is the worst (-0.0131).
+    """
+
+    NORMS = ("add", "mean", "gcn")
+
+    def __init__(self, hidden: int, edge_dim: int, edge_dropout: float, norm: str = "add") -> None:
+        if norm not in self.NORMS:
+            raise ValueError(f"norm must be one of {self.NORMS}, got {norm!r}")
+        super().__init__(aggr="mean" if norm == "mean" else "add")
+        self.norm = norm
         self.w_r = nn.Linear(hidden, hidden)
         self.u_r = nn.Linear(edge_dim, hidden)
         self.w_sign = nn.Linear(hidden, hidden)
@@ -62,14 +82,25 @@ class _RelMessage(MessagePassing):
 
     def forward(self, x_src, x_dst, edge_index, edge_attr, alpha):
         ei, mask = dropout_edge(edge_index, p=self.p, training=self.training)
+        w = None
+        if self.norm == "gcn" and ei.numel():
+            # symmetric 1/sqrt(d_src * d_dst), computed on THIS relation's degrees only
+            d_src = degree(ei[0], x_src.size(0)).clamp(min=1)
+            d_dst = degree(ei[1], x_dst.size(0)).clamp(min=1)
+            w = (d_src[ei[0]] * d_dst[ei[1]]).rsqrt().unsqueeze(-1)
         return self.propagate(
-            ei, x=(x_src, x_dst), edge_attr=edge_attr[mask], alpha=alpha[mask],
+            ei, x=(x_src, x_dst), edge_attr=edge_attr[mask], alpha=alpha[mask], w=w,
             size=(x_src.size(0), x_dst.size(0)),
         )
 
-    def message(self, x_j, edge_attr, alpha):
+    def message(self, x_j, edge_attr, alpha, w):
         m = self.w_r(signed_message(x_j, self.w_sign, self.w_mag)) + self.u_r(edge_attr)
-        return alpha * m
+        m = alpha * m
+        # `w` (the gcn degree weight) comes from torch_geometric.utils.degree, which is float32
+        # regardless of the ambient autocast dtype; cast to the message dtype so the gcn path stays
+        # autocast-clean by construction (else `w * m` promotes to float32 and only self-heals when a
+        # later Linear happens to recast it — the precision-under-autocast fragility this repo has hit).
+        return m if w is None else w.to(m.dtype) * m
 
 
 class _FFN(nn.Module):
@@ -85,13 +116,21 @@ class _FFN(nn.Module):
 class _GraphLayer(nn.Module):
     """One relational layer: message over 4 relations, residual FFN+LayerNorm per node type."""
 
-    def __init__(self, hidden: int, edge_dim: int, edge_dropout: float) -> None:
+    def __init__(self, hidden: int, edge_dim: int, edge_dropout: float, norm: str = "add",
+                 rel_scale: bool = False) -> None:
         super().__init__()
-        self.rel = nn.ModuleDict(
-            {r: _RelMessage(hidden, edge_dim, edge_dropout) for r in (*_PP_RELATIONS, _MEMBERSHIP)}
-        )
+        rels = (*_PP_RELATIONS, _MEMBERSHIP)
+        self.rel = nn.ModuleDict({r: _RelMessage(hidden, edge_dim, edge_dropout, norm=norm) for r in rels})
+        # One learnable scalar per relation, init 1.0 (identity at init, so this cannot shift a run on
+        # its own). It lets the model down-weight a whole evidence class — the thing an unnormalised
+        # `add` denies it, because there the weight is fixed by degree.
+        self.scale = nn.ParameterDict(
+            {r: nn.Parameter(torch.ones(())) for r in rels}) if rel_scale else None
         self.ffn_protein = _FFN(hidden)
         self.ffn_complex = _FFN(hidden)
+
+    def _s(self, rel: str):
+        return 1.0 if self.scale is None else self.scale[rel]
 
     def forward(self, h_p, h_c, edges):
         agg_p = torch.zeros_like(h_p)
@@ -99,16 +138,20 @@ class _GraphLayer(nn.Module):
         for rel in _PP_RELATIONS:
             ei, ea, al = edges[rel]
             if ei.numel():
-                agg_p = agg_p + self.rel[rel](h_p, h_p, ei, ea, al)
+                agg_p = agg_p + self._s(rel) * self.rel[rel](h_p, h_p, ei, ea, al)
         ei, ea, al = edges[_MEMBERSHIP]
         if ei.numel():
-            agg_c = agg_c + self.rel[_MEMBERSHIP](h_p, h_c, ei, ea, al)          # protein -> complex
-            agg_p = agg_p + self.rel[_MEMBERSHIP](h_c, h_p, ei.flip(0), ea, al)  # complex -> protein
+            s = self._s(_MEMBERSHIP)
+            agg_c = agg_c + s * self.rel[_MEMBERSHIP](h_p, h_c, ei, ea, al)          # protein -> complex
+            agg_p = agg_p + s * self.rel[_MEMBERSHIP](h_c, h_p, ei.flip(0), ea, al)  # complex -> protein
         return self.ffn_protein(h_p, agg_p), self.ffn_complex(h_c, agg_c)
 
 
 class TypedGraphEncoder(nn.Module):
-    def __init__(self, graph=None, gene_to_idx: dict[str, int] | None = None) -> None:
+    def __init__(self, graph=None, gene_to_idx: dict[str, int] | None = None, *,
+                 norm: str = "add", rel_scale: bool = False) -> None:
+        """``norm`` / ``rel_scale`` are the aggregation-scale knobs (see ``_RelMessage``). Defaults
+        reproduce the original encoder exactly, so an untouched call is bit-identical to before."""
         super().__init__()
         if graph is None:
             graph, gene_to_idx = build_hetero_graph()
@@ -124,7 +167,8 @@ class TypedGraphEncoder(nn.Module):
             {r: nn.Linear(config.CONDITION_EMBED_DIM + edge_dim, 1) for r in (*_PP_RELATIONS, _MEMBERSHIP)}
         )
         self.layers = nn.ModuleList(
-            [_GraphLayer(hidden, edge_dim, config.EDGE_DROPOUT) for _ in range(config.GRAPH_LAYERS)]
+            [_GraphLayer(hidden, edge_dim, config.EDGE_DROPOUT, norm=norm, rel_scale=rel_scale)
+             for _ in range(config.GRAPH_LAYERS)]
         )
         self.readout = GraphReadout(hidden, config.GRAPH_N_HEADS)
 

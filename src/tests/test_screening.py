@@ -643,3 +643,82 @@ def test_promote_does_not_crash_on_a_non_finite_metric(tmp_path):
     assert CONDITION_GATED not in [r["name"] for r in got["ranking"]], "a non-finite metric entered the ranking"
     assert json.loads((root / "promoted.json").read_text())["final"]["name"] == EXPRESSION_ONLY
 
+
+
+# --------------------------------------------------------------------------------------------------
+# The L_graph re-screen (2026-07-21): gate monitoring + the blast radius the 5-lane design rests on
+# --------------------------------------------------------------------------------------------------
+def _history(log_dir):
+    return json.loads((log_dir / "stage_a_history.json").read_text())
+
+
+def _run_lane(tmp_path, name, **cfg_over):
+    paths, cfgs = _configs(tmp_path, [name])
+    cfgs[0].update(cfg_over)
+    train_ds, val_ds = PerturbationDataset("train", **paths), PerturbationDataset("val", **paths)
+    res = screen_config(cfgs[0], train_ds, val_ds, collect_truth(train_ds)["delta_z"].mean(0),
+                        ckpt_dir=tmp_path / "ck", log_dir=tmp_path / "lg",
+                        predictions_root=tmp_path / "pred", screening_root=tmp_path / "scr")
+    return res, _history(tmp_path / "lg")
+
+
+def test_stage_a_history_records_a_per_epoch_gate_mean(tmp_path):
+    """The campaign's edge gates died inside epoch 0 in all 5 seeds and nothing recorded it. The gate
+    mean is now a first-class per-epoch quantity, so a collapse cannot recur silently."""
+    _, history = _run_lane(tmp_path, CONDITION_GATED, n_epochs=2)
+    assert len(history) == 2
+    for epoch in history:
+        for phase in ("train", "val"):
+            assert "gate_mean" in epoch[phase], f"{phase} epoch has no gate_mean — a collapse is unobservable"
+            assert epoch[phase]["gate_mean"] is not None
+            assert 0.0 < epoch[phase]["gate_mean"] <= 1.0, "gate mean outside a sigmoid's range"
+            assert 0.0 <= epoch[phase]["gate_frac_dead"] <= 1.0
+
+
+def test_gate_mean_is_none_not_zero_for_an_arm_with_no_gates(tmp_path):
+    """Absence of gates must never render as a collapsed gate. expression_only has no edge gates at
+    all; reporting 0.0 would read as total collapse — the exact inversion AGENTS.md forbids."""
+    _, history = _run_lane(tmp_path, EXPRESSION_ONLY, n_epochs=1)
+    assert history[0]["train"]["gate_mean"] is None, "a gateless arm reported a numeric gate mean"
+    assert history[0]["train"]["gate_frac_dead"] is None
+
+
+def test_screening_row_records_the_lambda_graph_the_run_actually_trained_under(tmp_path):
+    """Provenance: the re-screen runs at lambda_graph=0, and the artifact must say so — read off the
+    loss object that trained, not off a config the run might not have used."""
+    res, _ = _run_lane(tmp_path, CONDITION_GATED, lambda_graph=0.0)
+    assert res["lambda_graph"] == 0.0, "the row does not record the penalty weight it trained under"
+    (d := tmp_path / "d").mkdir()
+    default, _ = _run_lane(d, CONDITION_GATED)
+    assert default["lambda_graph"] == config.LAMBDA_GRAPH, "an unset lambda_graph did not record the default"
+
+
+def test_graph_penalty_carries_gradient_to_condition_gated_only(tmp_path):
+    """The 5-lane re-screen budget rests on this: L_graph perturbs the optimisation of exactly ONE arm,
+    so the campaign's other 15 lanes stay valid comparators. typed_static's gates are pinned to 1.0
+    (constant term, no grad) and untyped_gnn/expression_only emit no gates. If a future change makes
+    another arm's gates learnable, that arm's frozen lanes are silently invalidated too — fail here."""
+    paths, graph, g2i, gene_names = _fixture(tmp_path)
+    ds = PerturbationDataset("train", **paths)
+    batch, targets, conditions = PerturbationDataset.collate([ds[i] for i in range(len(ds))])[:3]
+    moved = {}
+    for name in (EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED, UNTYPED_GNN):
+        from tcell_pipeline.screening.screening import nested_family_factories
+        from tcell_pipeline.training.losses import StageALoss
+        from tcell_pipeline.training.trainer import seeded_init
+        with seeded_init(0):
+            model = nested_family_factories(gene_names, graph, g2i, basis_path=paths["basis_path"],
+                                            perturbation_encoder_factory=_ENC)[name]()
+        dec = model.decoder
+        loss = StageALoss(dec.gene_dim, dec.program_dim, h_do_dim=dec.h_do_dim)
+        out = model(batch, targets, conditions)
+        penalty = loss.lambda_graph * loss._graph(out.get("edge_gates"), out.get("edge_confidences"))
+        params = [p for p in model.parameters() if p.requires_grad]
+        model.zero_grad(set_to_none=True)
+        if penalty.requires_grad:
+            penalty.backward()
+        moved[name] = sum(1 for p in params if p.grad is not None and float(p.grad.abs().sum()) > 0)
+    assert moved[CONDITION_GATED] > 0, "the penalty reaches no parameter — the defect story is wrong"
+    assert moved[TYPED_STATIC] == 0, "typed_static's gates became learnable — its frozen lanes are now invalid"
+    assert moved[UNTYPED_GNN] == 0, "untyped_gnn now emits gates — its frozen lanes are now invalid"
+    assert moved[EXPRESSION_ONLY] == 0, "expression_only has no graph and must never see a graph gradient"

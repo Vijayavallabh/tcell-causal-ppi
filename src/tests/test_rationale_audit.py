@@ -173,3 +173,47 @@ def test_audit_rejects_expression_only_model(tmp_path):
     ds = PerturbationDataset("train", **paths)
     with pytest.raises(ValueError, match="graph model"):
         audit_rationale(model, RationaleHead().eval(), ds, n_cases=2, out_path=tmp_path / "a.json")
+
+
+# --------------------------------------------------------------------------------------------------
+# Dead gates make the whole audit undecidable BY CONSTRUCTION (feat-012, 2026-07-22)
+# --------------------------------------------------------------------------------------------------
+def _kill_gates(model, bias: float = -30.0):
+    """Drive every condition gate to ~0 the way the unnormalised L_graph did (sigmoid(-30) = 9.4e-14)."""
+    for lin in model.graph_encoder.gate.values():
+        torch.nn.init.constant_(lin.bias, bias)
+        torch.nn.init.zeros_(lin.weight)
+    return model
+
+
+def test_audit_refuses_a_model_whose_gates_have_collapsed(tmp_path):
+    """RationaleHead importance is gate x sigmoid(scorer). With gates at ~1e-13 every deletion is a
+    float32 no-op, so sufficiency/necessity/minimality/stability are all UNDECIDABLE BY CONSTRUCTION —
+    not negative. The 5-seed campaign's checkpoints are all in this state. Burning hours of GPU to
+    produce that garbage is the failure this refusal exists to prevent, and `undecidable` must never be
+    reported as a passed or failed audit."""
+    paths = _write_marts(tmp_path)
+    graph, g2i = _graph()
+    model = _kill_gates(_model(tmp_path, graph, g2i, paths))
+    ds = PerturbationDataset("train", **paths)
+    report = audit_rationale(model, RationaleHead().eval(), ds, n_cases=3, n_controls=5,
+                             sparsities=(0.3, 0.6), out_path=tmp_path / "audit.json")
+
+    assert report["gates_live"] is False, "a collapsed-gate model was audited as if it carried signal"
+    assert report["undecidable_by_construction"] is True
+    assert report["n_audited"] == 0, "cases were scored on gates that cannot move the prediction"
+    assert report["gate_mean"] < 1e-3
+    assert json.loads((tmp_path / "audit.json").read_text())["undecidable_by_construction"] is True
+
+
+def test_audit_reports_live_gates_and_proceeds(tmp_path):
+    """The same guard must not fire on a healthy model — a refusal that always fires is not a guard."""
+    paths = _write_marts(tmp_path)
+    graph, g2i = _graph()
+    report = audit_rationale(_model(tmp_path, graph, g2i, paths), RationaleHead().eval(),
+                             PerturbationDataset("train", **paths), n_cases=3, n_controls=5,
+                             sparsities=(0.3, 0.6), out_path=tmp_path / "audit.json")
+    assert report["gates_live"] is True
+    assert report["undecidable_by_construction"] is False
+    assert report["n_audited"] >= 1, "the guard refused a model whose gates are alive"
+    assert report["gate_mean"] > 1e-3
