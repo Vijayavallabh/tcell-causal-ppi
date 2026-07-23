@@ -1,5 +1,20 @@
 # Session Progress Log
 
+## 2026-07-23 (cont.) — forward experiment plan written (`NEXT_ACTIONS.txt`, E1–E6)
+
+The next actions for the AAAI main-conference submission are now an experiment-forward slate in
+`NEXT_ACTIONS.txt`, prioritised by impact-for-a-null × feasibility: **E1** MDE/power analysis (bounds the
+null; cheap, no GPU), **E2** λ_graph sweep → confound-collapse figure, **E3** edge-source decomposition,
+**E4** second Perturb-seq dataset (external validity; no infra exists — genuine ingestion), **E5** live-gate
+Stage-B rationale head + re-audit, **E6** sealed-split confirmation (steward-only). Two grounding checks
+shaped it: node features already carry PLM+PINNACLE (`graph_builder._protein_features` — the graph is not
+under-fed), and the 14-cell arch search refuted every encoder lever — so "improve the architecture" levers
+are spent; the honest remaining work is bounding + externally validating the null and turning the confound
+into a figure. Harness synced to route the next session here: `session-handoff.md` (Next Session Startup +
+Files + title A reconciliation) and `AGENTS.md` (startup + Required Artifacts) now point at `NEXT_ACTIONS.txt`.
+No code changed; `feature_list.json` statuses unchanged (feat-011/012 done, feat-013 in-progress at its
+governance terminal). Not committed (commit only when asked).
+
 ## 2026-07-23 — feat-011 + feat-012 DONE; feat-013 at its correct terminal
 
 The `lambda_graph=0` re-screen ran to completion (5 seeds, frozen fold, live gates). **feat-011 DONE**:

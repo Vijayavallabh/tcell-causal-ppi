@@ -26,7 +26,15 @@ replicate.
   governance; that is the right verdict, not a shortfall.
 
 **AAAI paper:** null/parity is the headline; abstract `[RESULT]` is filled (`docs/aaai-title-abstract.md`,
-take title B). The paper is the confound diagnosis + the robust valid null + the ablation.
+recommended **title A** — the balanced confound-diagnosis framing that survives either outcome; that doc
+marks A as recommended and `NEXT_ACTIONS.txt` agrees). The paper is the confound diagnosis + the robust
+valid null + the 14-cell ablation + the faithfulness-audited rationale (feat-012).
+
+**Next actions = experiments, in `NEXT_ACTIONS.txt` (E1–E6, prioritised for the AAAI main-conf submission):**
+E1 MDE/power analysis of the null (cheap, no GPU — do first) · E2 λ_graph sweep → confound-collapse figure ·
+E3 edge-source decomposition · E4 second Perturb-seq dataset (external validity; needs new data ingestion) ·
+E5 live-gate Stage-B rationale head + re-audit · E6 sealed-split confirmation (steward-only). Triage: E1
+alone if time for one; E1+E2+E5 if three (all runnable on current artifacts).
 
 **Remaining (docs sweep, unchanged from before):** README / the report / the walkthrough still frame the
 graph negative as a *finding*; that framing is now further out of date — they should cite the valid n=5
@@ -151,6 +159,11 @@ Also fixed: `systema` scored collapsed-to-the-mean predictors on floating-point 
 
 ## Blockers / Risks
 
+> **RESOLVED 2026-07-23 (see top section):** the regulariser decision was taken (option C, `lambda_graph=0`),
+> the re-screen ran on the frozen fold, and **feat-011 + feat-012 are DONE**. The next two bullets are kept
+> for the record but are no longer live blockers. Still live: feat-013's governance terminal and the
+> sealed-split / frozen-basis invariant.
+
 - **The regulariser decision (options A-D) is the user's and gates everything.** feat-008's last evidence
   line, feat-011 and feat-012 all wait on it. Do not pick one on the project's behalf.
 - **feat-011 and feat-012 are BLOCKED, not merely unfinished.** Both need a graph comparison that does not
@@ -170,19 +183,25 @@ Also fixed: `systema` scored collapsed-to-the-mean predictors on floating-point 
 - **Evidence blocks are append-only.** Verify the existing string stays a strict prefix before writing,
   and dump with `json.dumps(d, indent=2, ensure_ascii=True)` — non-ASCII is escaped inline, so an
   em-dash is not a reason to block a merge.
-- **Goal spec:** `next_goal_after_gate_collapse.txt` is the only one; five spent specs were deleted in
-  `de9ddf9` and are recoverable from history.
+- **Forward plan / experiment backlog:** `NEXT_ACTIONS.txt` (E1–E6 for the AAAI submission). The old goal
+  spec `next_goal_after_gate_collapse.txt` was spent and deleted in `692dd7f`; recoverable from history.
 - **Harness:** `AGENTS.md` (routing + invariants) → `docs/agent-lessons.md` (the long form).
 - **Per-feature notes:** `docs/feat00{5,6,8,13}-*.md`, `docs/h1-optimization-notes.md`.
 
 ## Next Session Startup
 
-1. Read this file's top section, then `next_goal_after_gate_collapse.txt`.
-2. `./init.sh` — expect **514 passed**, exit 0.
-3. Answer the regulariser question (A-D) before touching feat-008/011/012.
-4. Then the docs sweep: README, the report and the walkthrough still carry "no graph variant reliably
-   beats no-graph" as a *finding* rather than as a confounded measurement. Large; deserves its own session.
-5. Before reporting any process state — runs, monitors, whether something finished — RUN THE COMMAND.
+1. Read this file's top section, then `NEXT_ACTIONS.txt` (the E1–E6 experiment backlog).
+2. `./init.sh` — expect the last green baseline (**549 passed** at `692dd7f`); this session changed only
+   docs, so the count is unchanged. If it differs, a parallel session moved it — reconcile before building.
+3. Pick the next experiment from `NEXT_ACTIONS.txt`: **E1** (MDE/power analysis, cheap, no GPU) is the
+   highest-leverage first move; **E2** (λ_graph sweep) and **E5** (live-gate Stage-B rationale head) are the
+   other two runnable on current artifacts. **E4** (second dataset) needs new data ingestion — start early.
+   feat-011/012 are DONE; do NOT re-open the regulariser question (resolved: option C, `lambda_graph=0`).
+4. Docs sweep still pending: README, the report and the walkthrough still frame the graph negative as a
+   *finding* rather than the valid n=5 null — update them to cite h1_vs_no_graph = −0.0009, p=0.71 (parity).
+5. **feat-013 and the sealed split are steward-only** — never run `evaluation/sealed_eval.py`,
+   `run_module0.py`, or regenerate the frozen program basis.
+6. Before reporting any process state — runs, monitors, whether something finished — RUN THE COMMAND.
    Answering from memory was the single most repeated error of 2026-07-20/21.
 
 ---

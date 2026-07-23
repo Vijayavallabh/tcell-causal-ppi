@@ -1,46 +1,165 @@
-NEXT ACTIONS (written 2026-07-23)
-=================================
-
-STATE: feat-011 DONE, feat-012 DONE, feat-013 in-progress at its correct terminal (CANNOT_VERIFY).
-Repo: ./init.sh green at 549; main synced with origin (commits 3b2c12e, 7b8179e, ae531bb).
-Sealed challenge split: UNOPENED. promoted.json: UNCHANGED (still the old dead-gate seed-0 H1).
-
-
-0. CLOSE THE SESSION GOAL (you, now)
-   The /goal "complete all feat [11,12,13] rigorously" cannot mechanically auto-satisfy, because
-   feat-013's `done` requires an action your own rule forbids (see 1). Two of three are genuinely done;
-   the third is at its correct governance-bounded terminal. Run:  /goal clear
+NEXT ACTIONS — EXPERIMENTS FOR AAAI MAIN-CONFERENCE SUBMISSION
+==============================================================
+Rewritten 2026-07-23. Experiment-forward: supersedes the earlier housekeeping-oriented plan.
+Repo: main synced with origin @692dd7f; ./init.sh green (549). Single-A100 workers fan out via
+portable_artifacts.txt. COMMIT ONLY WHEN ASKED.
 
 
-1. feat-013 -> done  (STEWARD-ONLY, HUMAN — a one-way door; only if you choose)
-   Its `done` needs a definitive reproducibility verdict, which needs ONE run of the sealed evaluator on
-   the sequestered challenge split (5,608 rows). Your standing rule is "NEVER run evaluation/sealed_eval.py",
-   so an agent will not do this. If you (or a test steward) decide to:
-     a. DECIDE WHICH MODEL FIRST. promoted.json still points at the OLD dead-gate H1 (gate ~1e-7). Running
-        the sealed eval on THAT burns the held-out set on a model you have superseded. Either re-promote a
-        live-gate checkpoint from data/results/screening_lambda0/condition_gated/<seed>/ckpt/stage_a_best.pt
-        (research decision — the 5-seed result is PARITY, so there is no clear single winner to promote),
-        or explicitly decide the frozen H1 stays and accept that caveat.
-     b. Run evaluation/sealed_eval.py ONCE. It consumes the split; there is no second try.
-     c. Paste `decision` + `observed.decision` back; an agent merges them into the reproducibility manifest
-        with provenance=independent-rerun, and feat-013 gets a real REPRODUCIBLE / NOT_REPRODUCIBLE verdict.
-   ALSO (separate, at the next freeze): publish an independent sha256 for id_mapping and de_layers so those
-   two hash checks stop being self-derived (incomplete) and become independent (pass). Cannot be faked now
-   (hashing a file against itself is the self-derived trap the repo guards against).
+WHERE THE SCIENCE STANDS  (so every experiment below has a target it must move or fail to move)
+-----------------------------------------------------------------------------------------------
+- HEADLINE = a VALID NULL, live gates (mean ~0.57-0.77), n=5, frozen dev fold, both corrections:
+    h1_vs_no_graph (condition_gated - expression_only) = -0.0009  CI[-0.0072,+0.0054]  p=0.71  PARITY
+    h2a (typed_static - expression_only)               = -0.0131  SURVIVES FWER  (graph makes it WORSE)
+    h2b (condition_gated - typed_static)               = +0.0122  does NOT survive FWER
+    promotion_margin (untyped_gnn - expression_only)   = +0.0045  does NOT survive FWER
+    per-config: untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated 0.0848 > typed_static 0.0726
+    Source: data/results/screening_lambda0/robustness_5seed.{json,md}.
+- CONFOUND DIAGNOSED: the original campaign's L_graph (unnormalised sum over 16k-60k edges) at
+  lambda_graph=0.01 was ~103x the response term and annihilated the edge gates to ~1e-7 inside epoch 0
+  in all 5 seeds. Repairing it (lambda_graph=0) swung gate magnitude 4.5e6x and moved the headline ~0.001,
+  changing no conclusion -> the negative is ROBUST, not an artifact.
+- 14-CELL ARCH SEARCH REFUTED EVERY ARCHITECTURE LEVER: per-relation normalisation, edge-confidence
+  pruning, GCN edge-weights, GATv2 attention all made it worse or neutral on the inner holdout.
+  >>> DO NOT re-run these as "improvements." They are spent. (docs/feat011-arch-search-notes.md)
+- NODE FEATURES ARE ALREADY STRONG: _protein_features already concatenates PLM (protein-LM) + PINNACLE
+  embeddings + 3 degree features + baseline expression. The graph is NOT under-fed; "add ESM features"
+  is already done. Do not propose it.
+- feat-012 FAITHFUL RATIONALE (positive result): on a live-gate seed-3 ckpt, necessity 0.92 > random,
+  sufficiency < random, minimality 0.888, stability 1.0, STRING source-ablation dominant (0.365).
+- GOVERNANCE INVARIANTS (do not break): sealed challenge split (5,608 rows) UNOPENED; promoted.json
+  FROZEN (still the OLD dead-gate seed-0 H1); no agent runs evaluation/sealed_eval.py.
 
 
-2. DOCS SWEEP  (non-blocking; agent-doable whenever you ask)
-   README.md, perturbation_informed_causal_protein_program_graphs_report.md, and
-   EG_IPG_architecture_walkthrough.md still frame the graph negative as a FINDING. It is now a VALID n=5
-   null (parity), not a confounded measurement. Update those three to cite:
-     h1_vs_no_graph (condition_gated - expression_only) = -0.0009, CI [-0.0072,+0.0054], p=0.71 (parity);
-     robust because it nearly reproduces the confounded campaign. Source: robustness_5seed.{json,md}.
+THE THREE REVIEWER OBJECTIONS A NULL-RESULT MAIN-CONF PAPER MUST PRE-EMPT, AND WHICH E CLOSES EACH
+--------------------------------------------------------------------------------------------------
+  "Your study is just underpowered — absence of evidence."      -> E1 (MDE/power). CHEAP. DO FIRST.
+  "The null is one dataset / one fold — not a general finding." -> E4 (second dataset). BIG. START EARLY.
+  "Maybe your graph/encoder is just weak or mis-tuned."         -> E2 + E3 (confound curve + edge-source)
+                                                                    + the spent 14-cell search already on file.
+
+DEADLINE TRIAGE (do in this order; each stands alone as a paper improvement):
+  If time for ONE  : E1 (turns "we saw nothing" into "we could have seen X, we saw -0.0009").
+  If time for THREE: E1, E2, E5  (all runnable on current artifacts, no new data ingestion).
+  If time for ALL  : add E3, then E4, then E6 (steward-only).
 
 
-3. AAAI SUBMISSION  (you)
-   Title: A -> "Does the Graph Help? Diagnosing a Silent Regularizer Confound in Protein-Program Graphs
-   for T-Cell Perturbation Prediction". Abstract [RESULT] is filled with the real null numbers in
-   docs/aaai-title-abstract.md. The paper = confound diagnosis + robust valid null + 14-cell ablation +
-   faithfulness-audited rationale (feat-012).
-   OPTIONAL (sharpens feat-012, agent-doable): fit a Stage-B rationale head on a live-gate checkpoint and
-   re-audit; current audit uses the zero-init head (ranks by the frozen gate, faithful by construction).
+================================================================================================
+E1 — MINIMUM-DETECTABLE-EFFECT / POWER ANALYSIS OF THE n=5 NULL      [analysis only, no GPU, ~1h]
+================================================================================================
+WHAT : From the 5 paired per-seed differences already in robustness_5seed.json, compute the effect size
+       this design had 80% power to detect (two-sided, alpha and Bonferroni-across-4 matching the paper),
+       and report it beside the observed -0.0009. State the observed |Delta| as a fraction of the MDE.
+WHY  : A null is only publishable if it is a *bounded* null. This converts "no significant difference"
+       into "any graph benefit larger than +/-X programs/gene would have been detected; we observed
+       one 10-20x smaller." It is the cheapest, highest-credibility addition and gates E4's interpretation.
+HOW  : One script over robustness_5seed.json: paired-t MDE = (t_{crit}+t_{power}) * sd(diffs)/sqrt(5),
+       per contrast. No retrain. Emit a small table + one CI-vs-MDE figure. Cite in the abstract.
+GUARD: If the MDE is LARGER than a benefit anyone would care about, the honest conclusion is
+       "inconclusive, not null" — say that; do not upgrade parity to a claim the power can't support.
+
+
+================================================================================================
+E2 — lambda_graph SWEEP: TURN THE CONFOUND INTO A FIGURE            [runnable now, ~10 lanes, 1 A100]
+================================================================================================
+WHAT : Screen condition_gated at lambda_graph in {1e-4, 1e-3} x 5 seeds (we already hold 0 and 1e-2):
+       plot final gate_mean and the measured h1_vs_no_graph contrast vs lambda. Show the gate-collapse
+       threshold and that crossing it silently manufactures a false reading.
+WHY  : This is the paper's GENERALIZABLE METHODS LESSON — an unnormalised structural penalty can switch
+       off the very mechanism a study means to test, and the ablation still "runs" and reports a number.
+       A monotone gate-death curve makes that a figure other graph-ML authors will cite, lifting the
+       paper from "one negative result" to "a measurement pitfall + its fix."
+HOW  : run_screening.py --only condition_gated --lambda-graph 1e-4 --seed {0..4}  (then 1e-3), separate
+       SCREENING_ROOT; then multiseed.py aggregates. Fan the 10 lanes across A100 machines via
+       portable_artifacts.txt. gate_mean is already logged per epoch (trainer.py).
+GUARD: Pre-register that the sweep is a diagnostic, not a tuning search — you are NOT selecting the best
+       lambda for a headline. lambda=0 stays the reported operating point; the sweep only maps the failure.
+
+
+================================================================================================
+E3 — EDGE-SOURCE DECOMPOSITION: WHY NO SUBSET OF THE GRAPH HELPS    [runnable now, ~5-15 lanes, 1 A100]
+================================================================================================
+WHAT : Re-screen condition_gated with the 86%-of-edges functional_assoc tier progressively removed
+       (functional_min_score in {0.0, 0.4, 0.9, >1.0=drop-all-functional}), keeping physical + complex.
+       Does dropping the noisy functional edges move h1_vs_no_graph off parity?
+WHY  : Closes "your graph is 86% low-confidence STRING functional links — of course it's noise." The
+       screening-level confirmation of feat-012's inference-time source ablation. If high-confidence /
+       physical-only STILL gives parity, the null is a property of the *task-graph relationship*, not of
+       edge quality — a much stronger statement. If a subset DOES win, that is a real lead (see guard).
+HOW  : graph_builder already has functional_min_score (filters ONLY functional edges; node identity is
+       stable across thresholds by construction). Wire it through run_screening as a --functional-min-score
+       lane knob (a few lines) or via a small config sweep. NOTE: confidence *pruning as an improvement*
+       was refuted by the arch search — frame E3 strictly as a MECHANISM ablation explaining the null,
+       not as a tuning knob. A full physical-only / functional-only / complex-only 3-way split needs a
+       tiny per-source mask (~5 lines in graph_builder) if a reviewer wants the complete decomposition.
+GUARD: Any subset that beats no-graph and SURVIVES both corrections at 5 seeds is a NEW CANDIDATE and
+       owes the full protocol (same frozen fold, paired seeds, Bonferroni AND Holm) before any claim.
+       promoted.json stays frozen until then.
+
+
+================================================================================================
+E4 — SECOND PERTURB-SEQ DATASET: EXTERNAL VALIDITY OF THE NULL      [big: new data ingestion, START EARLY]
+================================================================================================
+WHAT : Reproduce the graph-vs-no-graph contrast (at minimum expression_only vs condition_gated@lambda=0,
+       paired seeds) on a second public Perturb-seq dataset. Report whether the parity holds off-dataset.
+WHY  : The single biggest lever for a MAIN-conference null. One dataset + one fold is a workshop result;
+       the same null on an independent dataset is a finding about the method, not the data. This is what
+       moves the paper from "diagnostic note" to "main-track claim."
+HOW  : NO second-dataset code exists in src/ today (grep for replogle/norman/adamson/K562/frangieh/jurkat
+       = 0 hits) — this is a genuine ingestion effort: build the STRING+complex graph over that dataset's
+       genes, fit a frozen program basis, cut a target-grouped fold, then run the 4-arm screen.
+       Candidates, tradeoff noted:
+         - Another T-CELL Perturb-seq (best external validity for a T-cell claim; scarcer to source).
+         - Replogle-2022 K562 / Norman-2019 (large, standard, well-curated; different cell type -> tests
+           the more general claim "graph priors don't add over expression for perturb-response").
+       Scope realistically: this likely does not finish before a tight deadline — if so, run it as the
+       camera-ready / rebuttal experiment and state single-dataset scope as an explicit limitation now.
+GUARD: Freeze that dataset's fold and basis before screening; its sealed split (if you cut one) stays
+       sequestered under the same governance. Do not reuse the T-cell program basis on the new genes.
+
+
+================================================================================================
+E5 — LIVE-GATE STAGE-B RATIONALE HEAD + RE-AUDIT: SHARPEN feat-012  [cheap, 1 ckpt, ~2-3h 1 A100]
+================================================================================================
+WHAT : Fit a Stage-B rationale head on a live-gate checkpoint (screening_lambda0/condition_gated/<seed>/
+       ckpt/stage_a_best.pt) and re-run the necessity/sufficiency/minimality/stability + source-ablation
+       audit, replacing the current zero-init head.
+WHY  : The published audit ranks edges by the frozen gate (faithful BY CONSTRUCTION but importance is the
+       gate itself). A TRAINED head tests the stronger claim: a learned importance signal, free to disagree
+       with the gate, still ranks STRING/physical edges as necessary. Turns feat-012 from "faithful by
+       identity" into "faithful and non-trivial" — the paper's clearest positive contribution.
+HOW  : Stage-B trainer on the chosen ckpt, then run_module8_real.py run_audit --ckpt <stageA>
+       --head-ckpt <stageB> (both flags exist). Compare the two audits side by side in the appendix.
+GUARD: If the trained head's importance de-correlates from the gate and necessity drops to random, that
+       is a REAL finding about the rationale, not a bug — report it. Keep the zero-init audit alongside.
+
+
+================================================================================================
+E6 — SEALED-SPLIT REPRODUCIBILITY CONFIRMATION (feat-013)   [STEWARD-ONLY, HUMAN, ONE-WAY DOOR]
+================================================================================================
+WHAT : One run of evaluation/sealed_eval.py on the sequestered challenge split (5,608 rows) to give
+       feat-013 a definitive REPRODUCIBLE / NOT_REPRODUCIBLE verdict for the reported model.
+WHY  : The only claim in the paper not yet confirmed out-of-development-fold. Optional for the story
+       (the dev-fold null is the contribution) but it is the strongest generalization evidence you can add.
+HOW  : (a) DECIDE THE MODEL FIRST. promoted.json still points at the OLD dead-gate H1 (gate ~1e-7);
+       running the sealed eval on that burns the held-out set on a superseded model. Either re-promote a
+       live-gate ckpt (research call — the 5-seed result is PARITY, so no single obvious winner), or
+       explicitly keep the frozen H1 and accept the caveat. (b) Run the evaluator ONCE — it consumes the
+       split, there is no second try. (c) Paste decision + observed.decision back; an agent merges them
+       into the reproducibility manifest (provenance=independent-rerun) and feat-013 resolves.
+       ALSO at the next freeze: publish independent sha256 for id_mapping and de_layers so those two hash
+       checks become independent (pass) instead of self-derived (incomplete).
+GUARD: An agent will NOT run this — standing rule "NEVER run evaluation/sealed_eval.py." It is a one-way
+       door; only a human steward opens it.
+
+
+SUBMISSION-CRITICAL, NON-EXPERIMENT (do before submit; agent-doable on request)
+-------------------------------------------------------------------------------
+- DOCS SWEEP (3 files still frame the graph negative as a raw FINDING, not a valid n=5 null):
+  README.md, perturbation_informed_causal_protein_program_graphs_report.md, EG_IPG_architecture_walkthrough.md.
+  Update to cite h1_vs_no_graph = -0.0009 CI[-0.0072,+0.0054] p=0.71 (parity), robust because it nearly
+  reproduces the confounded campaign. Source: robustness_5seed.{json,md}.
+- TITLE: option A -> "Does the Graph Help? Diagnosing a Silent Regularizer Confound in Protein-Program
+  Graphs for T-Cell Perturbation Prediction." Abstract [RESULT] already filled with the real null numbers
+  in docs/aaai-title-abstract.md.
+- PAPER SPINE = confound diagnosis (E2) + robust valid null (E1 bounds it) + edge-source mechanism (E3)
+  + faithful rationale (E5) + external validity (E4) + optional sealed confirmation (E6).

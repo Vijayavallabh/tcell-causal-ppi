@@ -11,7 +11,9 @@ Before writing code:
 3. **Read `README.md`** for project overview, data sources, and setup instructions
 4. **Run `./init.sh`** to verify environment is healthy
 5. **Read `feature_list.json`** to see current feature state
-6. **Review recent commits** with `git log --oneline -5`
+6. **Read `session-handoff.md` and `NEXT_ACTIONS.txt`** for the recommended next step and the current
+   experiment backlog (E1–E6 for the AAAI submission)
+7. **Review recent commits** with `git log --oneline -5`
 
 If baseline verification is failing, repair that first before adding new scope.
 
@@ -109,6 +111,7 @@ Key facts:
 - `progress.md` — Session continuity log
 - `init.sh` — Standard startup and verification path
 - `session-handoff.md` — For multi-session work
+- `NEXT_ACTIONS.txt` — Forward experiment backlog (current: E1–E6 for the AAAI main-conf submission)
 
 ## Definition of Done
 

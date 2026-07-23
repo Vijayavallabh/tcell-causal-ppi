@@ -788,7 +788,7 @@ after seeing which one rescues a claim):
 | promotion `untyped_gnn − expression_only` | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 | **no** |
 | **H1 vs no-graph** `condition_gated − expression_only` | −0.0019 | [−0.0042, **+0.0004**] | 0.0847 | 0.3389 | **no** |
 
-> ## ⚠️ CORRECTION (2026-07-21) — THIS COMPARISON DID NOT TEST THE GRAPH
+> ## ⚠️ CORRECTION (2026-07-21) — THIS COMPARISON DID NOT TEST THE GRAPH  ·  ✅ later RESOLVED (2026-07-23), see below
 >
 > Everything in this section is **confounded** and must not be read as a result about the graph. The graph
 > arms were trained with their message passing driven to ~0 **by their own regulariser**, inside epoch 0.
@@ -816,26 +816,36 @@ after seeing which one rescues a claim):
 > **What kind of evidence the pilot is.** In the λ=0 arm the graph demonstrably works, and held-out
 > response still moves only 0.07% with that arm marginally the worst — so the negative looks robust. But
 > the pilot is n=1 seed, 2 epochs, an inner holdout and the response loss, **not** the primary endpoint and
-> **not** the frozen fold, so it cannot outrank a 5-seed multiplicity-controlled result. Nor is the 5-seed
-> campaign confirmatory here, since its graph arms had dead gates. **No valid, powered test of the graph
-> exists yet.** The pilot supplies *admissibility* — it removes "the graph was broken" as a competing
-> explanation — not *strength*, and must not be cited as the headline evidence.
-> See `next_goal_after_gate_collapse.txt` and `session-handoff.md`.
+> **not** the frozen fold, so it cannot outrank a 5-seed multiplicity-controlled result. At the time this
+> box was written the 5-seed campaign was **not** confirmatory either, since its graph arms had dead gates —
+> **but that gap has since been closed** (see the ✅ RESOLVED result immediately below): `condition_gated`
+> was re-screened at `λ_graph=0` with live gates across 5 paired seeds, the first valid powered test of the
+> graph. See `NEXT_ACTIONS.txt` and `session-handoff.md`.
 
-Per-config mean `systema` (n=5) — **all of it measured with the edge gates dead, so read it as a
-confounded measurement, not a finding**: untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated
-0.0838 > typed_static 0.0726. **Bottom line as published: after multiplicity control, NO graph variant
-reliably beats no-graph** — a statement about these runs, which did not test the graph.
-The typed graph is reliably *worse* (H2a survives correction). The frozen H1 is at **statistical parity**
-with no-graph — it does not beat it, and (contrary to an earlier reading of the marginal means) it cannot
-be called *below* it either: that contrast crosses zero at p=0.085. H2b survives but only means gating
-*repairs* the damage typing did (0.0726 → 0.0838, still short of 0.0857). Convergence favours the negative:
-`expression_only`/`untyped_gnn` were 5/5 **capped** at 20/20 epochs (still improving), while
-`typed_static`/`condition_gated` early-stopped at 11–13 epochs — with patience=10 their best validation was
-**epoch 1–3**. The graph models plateaued early at a worse optimum and still lost. `promoted.json` is
-unchanged (the frozen H1 stays `condition_gated` seed 0); the deliverable is the separate
-`data/results/screening/robustness_5seed.{json,md}`, produced by `./run_multiseed_campaign.sh` +
-`python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4`.
+**✅ RESOLVED (2026-07-23) — the valid n=5 null.** The confound above was **repaired and re-measured.**
+`condition_gated` was re-screened at `--lambda-graph 0` (live gates, mean **0.57–0.77**) across the same 5
+paired seeds on the frozen fold (`data/results/screening_lambda0/robustness_5seed.{json,md}`, exit 0,
+`single_frozen_fold=True`). The pre-registered headline contrast is now a **valid** test:
+
+| contrast | mean Δ | 95% CI | raw p | Bonf / Holm | survives FWER |
+|---|---:|---|---:|---:|---|
+| **H1 vs no-graph** `condition_gated − expression_only` | **−0.0009** | [−0.0072, +0.0054] | 0.7091 | 1.000 / 0.709 | **no — parity** |
+| **H2a** `typed_static − expression_only` | −0.0131 | [−0.0190, −0.0072] | 0.0036 | 0.0142 / 0.0142 | **yes — reliably worse** |
+| H2b `condition_gated − typed_static` | +0.0122 | [+0.0028, +0.0215] | 0.0226 | 0.0905 / 0.0624 | no |
+| promotion `untyped_gnn − expression_only` | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 / 0.0624 | no |
+
+Per-config `systema` (n=5, **live gates**): untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated
+0.0848 > typed_static 0.0726. **The evidence-gated typed graph is at statistical parity with no-graph** (H1
+crosses zero, p=0.71); after multiplicity control **no graph variant reliably beats no-graph**, and the
+typed graph is reliably *worse* (H2a).
+
+**The negative is robust, not an artifact:** these corrected numbers **nearly reproduce the confounded
+campaign** (h1 was −0.0019; per-config near-identical), so repairing a 4.5e6× gate-magnitude swing moved the
+headline ~0.001 and changed no conclusion. `promoted.json` is unchanged (the frozen H1 stays
+`condition_gated` seed 0); the deliverable is the separate `robustness_5seed`, produced by the λ=0 re-screen
+in §1 below. **feat-011 + feat-012 are DONE; feat-013 sits at its governance terminal (`CANNOT_VERIFY` — the
+sealed split stays unopened).** The forward experiment plan (E1–E6 for the AAAI submission) is in
+`NEXT_ACTIONS.txt`.
 
 **The external-comparator test has also run (feat-010, 2026-07-18).** On the SAME development fold, both
 public comparators were scored through the same suite as `network_propagation` (fit on train responses
