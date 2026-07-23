@@ -1,0 +1,46 @@
+NEXT ACTIONS (written 2026-07-23)
+=================================
+
+STATE: feat-011 DONE, feat-012 DONE, feat-013 in-progress at its correct terminal (CANNOT_VERIFY).
+Repo: ./init.sh green at 549; main synced with origin (commits 3b2c12e, 7b8179e, ae531bb).
+Sealed challenge split: UNOPENED. promoted.json: UNCHANGED (still the old dead-gate seed-0 H1).
+
+
+0. CLOSE THE SESSION GOAL (you, now)
+   The /goal "complete all feat [11,12,13] rigorously" cannot mechanically auto-satisfy, because
+   feat-013's `done` requires an action your own rule forbids (see 1). Two of three are genuinely done;
+   the third is at its correct governance-bounded terminal. Run:  /goal clear
+
+
+1. feat-013 -> done  (STEWARD-ONLY, HUMAN — a one-way door; only if you choose)
+   Its `done` needs a definitive reproducibility verdict, which needs ONE run of the sealed evaluator on
+   the sequestered challenge split (5,608 rows). Your standing rule is "NEVER run evaluation/sealed_eval.py",
+   so an agent will not do this. If you (or a test steward) decide to:
+     a. DECIDE WHICH MODEL FIRST. promoted.json still points at the OLD dead-gate H1 (gate ~1e-7). Running
+        the sealed eval on THAT burns the held-out set on a model you have superseded. Either re-promote a
+        live-gate checkpoint from data/results/screening_lambda0/condition_gated/<seed>/ckpt/stage_a_best.pt
+        (research decision — the 5-seed result is PARITY, so there is no clear single winner to promote),
+        or explicitly decide the frozen H1 stays and accept that caveat.
+     b. Run evaluation/sealed_eval.py ONCE. It consumes the split; there is no second try.
+     c. Paste `decision` + `observed.decision` back; an agent merges them into the reproducibility manifest
+        with provenance=independent-rerun, and feat-013 gets a real REPRODUCIBLE / NOT_REPRODUCIBLE verdict.
+   ALSO (separate, at the next freeze): publish an independent sha256 for id_mapping and de_layers so those
+   two hash checks stop being self-derived (incomplete) and become independent (pass). Cannot be faked now
+   (hashing a file against itself is the self-derived trap the repo guards against).
+
+
+2. DOCS SWEEP  (non-blocking; agent-doable whenever you ask)
+   README.md, perturbation_informed_causal_protein_program_graphs_report.md, and
+   EG_IPG_architecture_walkthrough.md still frame the graph negative as a FINDING. It is now a VALID n=5
+   null (parity), not a confounded measurement. Update those three to cite:
+     h1_vs_no_graph (condition_gated - expression_only) = -0.0009, CI [-0.0072,+0.0054], p=0.71 (parity);
+     robust because it nearly reproduces the confounded campaign. Source: robustness_5seed.{json,md}.
+
+
+3. AAAI SUBMISSION  (you)
+   Title: A -> "Does the Graph Help? Diagnosing a Silent Regularizer Confound in Protein-Program Graphs
+   for T-Cell Perturbation Prediction". Abstract [RESULT] is filled with the real null numbers in
+   docs/aaai-title-abstract.md. The paper = confound diagnosis + robust valid null + 14-cell ablation +
+   faithfulness-audited rationale (feat-012).
+   OPTIONAL (sharpens feat-012, agent-doable): fit a Stage-B rationale head on a live-gate checkpoint and
+   re-audit; current audit uses the zero-init head (ranks by the frozen gate, faithful by construction).
