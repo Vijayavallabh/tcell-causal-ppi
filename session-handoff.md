@@ -1,5 +1,41 @@
 # Session Handoff
 
+## STOP — READ FIRST (2026-07-23): the re-screen RAN; the negative is now VALID, and feat-011/012 are DONE
+
+The confound below (2026-07-21) was real, and it has now been REPAIRED and RE-MEASURED. `condition_gated`
+was re-run at `lambda_graph=0` (live gates, mean 0.57–0.77) across 5 paired seeds on the frozen fold.
+
+**Official n=5 result** (`data/results/screening_lambda0/robustness_5seed.{json,md}`, exit 0,
+single_frozen_fold=True): `h1_vs_no_graph` = **−0.0009, CI [−0.0072,+0.0054], p=0.71 → PARITY** (does not
+survive FWER). Per-config: untyped_gnn 0.0902 > no-graph 0.0857 > condition_gated 0.0848 > typed_static
+0.0726. `h2a` (typed_static−no-graph) −0.0131 SURVIVES FWER (reliably worse). **The corrected numbers
+nearly reproduce the confounded campaign (h1 was −0.0019), so a 4.5e6× gate swing changed no conclusion —
+the graph negative is ROBUST, not an artifact.** The inner-holdout selection lead (+0.0051, n=1) did NOT
+replicate.
+
+**Feature state:**
+- **feat-011 DONE** — valid multiplicity-controlled graph-vs-no-graph comparison exists (parity). Plus the
+  14-cell architecture ablation (`docs/feat011-arch-search-notes.md`): no encoder lever beats the current
+  design. `promoted.json` stays frozen; the deliverable is the separate `robustness_5seed`.
+- **feat-012 DONE** — 50-case rationale audit on the seed-3 live-gate checkpoint
+  (`data/results/rationale_audit_lambda0/audit_report.json`): frac_sufficiency_below_random 0.04,
+  frac_necessity_above_random 0.92, minimality 0.888, stability 1.0, STRING dominates source ablation
+  (0.365). First valid audit on a functioning graph; correctly refuses the dead-gate frozen H1.
+- **feat-013 in-progress at its CORRECT terminal** — run_repro_real gives CANNOT_VERIFY (confirmatory
+  decision is on the sequestered split, steward-only). Cannot reach `done` from an agent session by
+  governance; that is the right verdict, not a shortfall.
+
+**AAAI paper:** null/parity is the headline; abstract `[RESULT]` is filled (`docs/aaai-title-abstract.md`,
+take title B). The paper is the confound diagnosis + the robust valid null + the ablation.
+
+**Remaining (docs sweep, unchanged from before):** README / the report / the walkthrough still frame the
+graph negative as a *finding*; that framing is now further out of date — they should cite the valid n=5
+null. `./init.sh` green at 549. Commits this session: 3b2c12e, 7b8179e (+ the triad + doc updates here).
+
+---
+
+## SUPERSEDED 2026-07-21 handoff (the confound, before the repair above) — kept for the record
+
 ## STOP — READ FIRST (2026-07-21): the graph negative is CONFOUNDED, not a result
 
 Five concurrent sessions ran 2026-07-20/21. The decisive finding supersedes the framing in every

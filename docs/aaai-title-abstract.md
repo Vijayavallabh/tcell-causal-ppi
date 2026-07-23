@@ -36,11 +36,13 @@ modeling: we show that a standard edge-sparsity regularizer—an unnormalized su
 gradient direction of the model's learnable edge gates and drives them to ~1e-7 within the first epoch in
 every seed, silently disabling message passing so that "graph" and "no-graph" models become identical up
 to spare parameters. A prior multi-seed comparison was therefore confounded by construction rather than
-informative. **[RESULT — fill from the campaign: see the two phrasings below.]** Under a pre-registered
-protocol—leakage-safe target-grouped splits, an architecture search confined to an inner training fold,
-five paired seeds, and family-wise error control (both Bonferroni and Holm)—we re-measure the graph's
-contribution honestly. Our diagnosis, correction, and evaluation protocol form a reusable template for
-claiming, or refuting, graph benefit in biological prediction.
+informative. Repairing the objective so the gates demonstrably function and re-running a pre-registered
+five-seed paired comparison—leakage-safe target-grouped splits, an architecture search confined to an
+inner training fold, and family-wise error control (both Bonferroni and Holm)—the evidence-gated graph
+does not reliably beat an expression-only baseline (Δsystema = −0.001, 95% CI [−0.007, +0.005], p = 0.71,
+crossing zero); the corrected result nearly reproduces the confounded one, so the negative is robust
+rather than an artifact of the broken regulariser. Our diagnosis, correction, and evaluation protocol
+form a reusable template for claiming, or refuting, graph benefit in biological prediction.
 
 ---
 

@@ -117,7 +117,38 @@ same path the control reproduction used. So when the real lanes land, aggregatio
 will not structurally fail. (The synthetic condition_gated values were fabricated to test plumbing and
 are NOT results.)
 
-## 5. Results
+## 5. Results — n=5, official, 2026-07-23
 
-*(to be written only after all five lanes land — from `multiseed.py` on the real root, never from the
-synthetic simulation above)*
+All five `condition_gated@lambda=0` lanes landed on the frozen fold (21,262/4,400); the launcher exited
+clean, `multiseed.py --seeds 0,1,2,3,4` returned exit 0, `single_frozen_fold=True`. Report:
+`data/results/screening_lambda0/robustness_5seed.{json,md}`. Per-seed systema: 0.08631 / 0.08755 /
+0.07555 / 0.08962 / 0.08482 (seed 2 low, not an outlier by Grubbs' eye; seed 4 central).
+
+Per-config systema (mean, 95% CI):
+- untyped_gnn      0.0902 [0.0865, 0.0939]
+- expression_only  0.0857 [0.0850, 0.0863]
+- condition_gated  0.0848 [0.0780, 0.0915]
+- typed_static     0.0726 [0.0665, 0.0787]
+
+Pre-registered contrasts (paired, both corrections; `survives_family_wise` requires BOTH):
+
+| contrast | Δ | 95% CI | p_raw | Bonf | Holm | FWER |
+|---|---|---|---|---|---|---|
+| **h1_vs_no_graph** (condition_gated − expression_only) | **−0.0009** | [−0.0072, +0.0054] | 0.7091 | 1.0000 | 0.7091 | **no — parity** |
+| h2a (typed_static − expression_only) | −0.0131 | [−0.0190, −0.0072] | 0.0036 | 0.0142 | 0.0142 | **yes — reliably worse** |
+| h2b (condition_gated − typed_static) | +0.0122 | [+0.0028, +0.0215] | 0.0226 | 0.0905 | 0.0624 | no |
+| promotion_margin (untyped_gnn − expression_only) | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 | 0.0624 | no |
+
+**Headline (VALID this time — live gates, mean gate ~0.57–0.77 across seeds):** the evidence-gated typed
+graph is at statistical **parity** with no-graph (h1_vs_no_graph −0.0009, CI crosses zero, p=0.71). No
+graph variant reliably beats no-graph after multiplicity control; typed_static is reliably *worse*.
+
+**The negative is robust, not an artifact.** The corrected n=5 numbers nearly REPRODUCE the confounded
+campaign (which had dead gates): h1 −0.0009 vs the confounded −0.0019; per-config untyped 0.0902 (same),
+expr 0.0857 (same), condition_gated 0.0848 vs 0.0838, typed_static 0.0726 (same); h2a/promotion_margin
+identical. So repairing the gate-annihilating regulariser — a 4.5e6× swing in gate magnitude — moved the
+headline by ~0.001 and changed no conclusion. The graph negative holds whether or not the gates function.
+
+This CLOSES feat-011's confirmatory comparison: a valid, multiplicity-controlled graph-vs-no-graph test
+now exists on the development fold. The inner-holdout selection lead (+0.0051, n=1) did NOT replicate.
+`promoted.json` stays frozen; this is the SEPARATE `robustness_5seed` deliverable. Sealed split untouched.

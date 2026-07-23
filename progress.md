@@ -1,5 +1,20 @@
 # Session Progress Log
 
+## 2026-07-23 — feat-011 + feat-012 DONE; feat-013 at its correct terminal
+
+The `lambda_graph=0` re-screen ran to completion (5 seeds, frozen fold, live gates). **feat-011 DONE**:
+`h1_vs_no_graph` = −0.0009, CI [−0.0072,+0.0054], p=0.71 → the graph is at **parity** with no-graph, and
+the result nearly reproduces the confounded campaign, so the negative is **robust, not an artifact**
+(`data/results/screening_lambda0/robustness_5seed.{json,md}`). Also: 14-cell architecture ablation
+(`docs/feat011-arch-search-notes.md`) — no encoder lever beats the current design. **feat-012 DONE**:
+50-case rationale audit on the seed-3 live-gate checkpoint — sufficiency<random 0.04, necessity>random
+0.92, minimality 0.888, stability 1.0, STRING dominant (`data/results/rationale_audit_lambda0/`); first
+valid audit on a functioning graph. **feat-013**: run_repro_real = CANNOT_VERIFY (sealed split,
+steward-only) — the correct terminal; cannot reach `done` from an agent session by governance. AAAI
+abstract `[RESULT]` filled with the null/parity numbers (`docs/aaai-title-abstract.md`). `./init.sh` green
+at 549. Commits: 3b2c12e, 7b8179e (+ this triad/doc sync). Remaining: docs sweep (README/report/walkthrough
+still frame the negative as a finding — now cite the valid n=5 null); steward-only sealed eval for feat-013.
+
 ## ⚠️ CORRECTION (2026-07-20) — two claims below were OVERSTATED; the numbers stand, the conclusions change
 
 An xhigh workflow `/code-review` of `f1a00dd` returned 15 verified findings, two of them claim-level. The
