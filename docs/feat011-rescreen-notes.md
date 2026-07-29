@@ -143,11 +143,13 @@ Pre-registered contrasts (paired, both corrections; `survives_family_wise` requi
 graph is at statistical **parity** with no-graph (h1_vs_no_graph −0.0009, CI crosses zero, p=0.71). No
 graph variant reliably beats no-graph after multiplicity control; typed_static is reliably *worse*.
 
-**The negative is robust, not an artifact.** The corrected n=5 numbers nearly REPRODUCE the confounded
-campaign (which had dead gates): h1 −0.0009 vs the confounded −0.0019; per-config untyped 0.0902 (same),
-expr 0.0857 (same), condition_gated 0.0848 vs 0.0838, typed_static 0.0726 (same); h2a/promotion_margin
-identical. So repairing the gate-annihilating regulariser — a 4.5e6× swing in gate magnitude — moved the
-headline by ~0.001 and changed no conclusion. The graph negative holds whether or not the gates function.
+**The correction does not manufacture the null.** A dead-gate run has the graph switched off, so its parity
+with no-graph is expected and says nothing on its own about whether a working graph helps; the live-gate n=5
+comparison is what carries the null. The confounded campaign (dead gates) is only a control on the fix: h1
+−0.0009 (live) vs −0.0019 (dead); per-config untyped 0.0902 (same), expr 0.0857 (same), condition_gated 0.0848
+vs 0.0838, typed_static 0.0726 (same); h2a/promotion_margin identical. So repairing the gate-annihilating
+regulariser, a 4.5e6× swing in gate magnitude, moved the headline by ~0.001 and changed no conclusion. The
+null is a property of the task, not an artifact of the broken regulariser or its repair.
 
 This CLOSES feat-011's confirmatory comparison: a valid, multiplicity-controlled graph-vs-no-graph test
 now exists on the development fold. The inner-holdout selection lead (+0.0051, n=1) did NOT replicate.

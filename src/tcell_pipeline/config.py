@@ -130,8 +130,11 @@ SPLIT_FRACTIONS: dict[str, float] = {"train": 0.60, "val": 0.15, "calibration": 
 SPLIT_SEED: int = 0
 # Centered ESM-2 cosine, representative (non-chaining) clustering: measured to give a 3.1% largest
 # family on the real marts. A tuning knob the leakage report calibrates (see docs/specs feat-003).
-SEQ_SIM_COSINE_THRESHOLD: float = 0.85
-GROUP_SIZE_CAP: float = 0.05          # max family-group size as a fraction of target genes
+# Env-overridable (like every root above) so a harder-OOD robustness sweep can regenerate STRICTER
+# splits into a FRESH SPLITS_ROOT without editing this default. Unset -> 0.85/0.05 = the frozen fold,
+# byte-for-byte unchanged. (AUTO 2026-07-29: added the env hooks; defaults are the original constants.)
+SEQ_SIM_COSINE_THRESHOLD: float = float(os.environ.get("SEQ_SIM_COSINE_THRESHOLD", 0.85))
+GROUP_SIZE_CAP: float = float(os.environ.get("GROUP_SIZE_CAP", 0.05))  # max family-group size as fraction of target genes
 BLOCKED_SPLIT_PATH: Path = SPLITS_ROOT / "blocked_target_ood.csv"
 RANDOM_SPLIT_PATH: Path = SPLITS_ROOT / "random.csv"
 SPLIT_MANIFEST_PATH: Path = SPLITS_ROOT / "manifest.json"

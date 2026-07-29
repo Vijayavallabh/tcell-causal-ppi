@@ -40,8 +40,8 @@ informative. Repairing the objective so the gates demonstrably function and re-r
 five-seed paired comparison—leakage-safe target-grouped splits, an architecture search confined to an
 inner training fold, and family-wise error control (both Bonferroni and Holm)—the evidence-gated graph
 does not reliably beat an expression-only baseline (Δsystema = −0.001, 95% CI [−0.007, +0.005], p = 0.71,
-crossing zero); the corrected result nearly reproduces the confounded one, so the negative is robust
-rather than an artifact of the broken regulariser. Our diagnosis, correction, and evaluation protocol
+crossing zero); correcting the regulariser barely moves the headline, so the null tracks the task
+rather than the broken regulariser. Our diagnosis, correction, and evaluation protocol
 form a reusable template for claiming, or refuting, graph benefit in biological prediction.
 
 ---

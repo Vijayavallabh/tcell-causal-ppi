@@ -839,9 +839,11 @@ Per-config `systema` (n=5, **live gates**): untyped_gnn 0.0902 > expression_only
 crosses zero, p=0.71); after multiplicity control **no graph variant reliably beats no-graph**, and the
 typed graph is reliably *worse* (H2a).
 
-**The negative is robust, not an artifact:** these corrected numbers **nearly reproduce the confounded
-campaign** (h1 was −0.0019; per-config near-identical), so repairing a 4.5e6× gate-magnitude swing moved the
-headline ~0.001 and changed no conclusion. `promoted.json` is unchanged (the frozen H1 stays
+**The correction does not manufacture the null:** the live-gate comparison above is what carries the null.
+A dead-gate run has the graph switched off, so its parity with no-graph is expected; the confounded campaign
+is only a control on the fix. Repairing a 4.5e6× gate-magnitude swing (dead gates to live) moved the headline
+from −0.0019 to −0.0009 and changed no conclusion, so the null is a property of the task, not an artifact of
+the bug or its repair. `promoted.json` is unchanged (the frozen H1 stays
 `condition_gated` seed 0); the deliverable is the separate `robustness_5seed`, produced by the λ=0 re-screen
 in §1 below. **feat-011 + feat-012 are DONE; feat-013 sits at its governance terminal (`CANNOT_VERIFY` — the
 sealed split stays unopened).** The forward experiment plan (E1–E6 for the AAAI submission) is in
