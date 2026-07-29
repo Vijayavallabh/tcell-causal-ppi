@@ -28,6 +28,7 @@ Key facts:
 - Data lives under `data/raw/` (gitignored, ~100 GB) — see README for download instructions
 - Derived artifacts go under `data/intermediate/`, `data/graphs/`, `data/splits/`, `data/results/`, `data/checkpoints/`
 - Only `data/manifests/` and `data/splits/` are tracked in git
+- **The paper deliverable is gitignored and never enters git:** `paper/` (LaTeX source, figures, `main.pdf`), `EG_IPG_architecture_walkthrough.md`, and `perturbation_informed_causal_protein_program_graphs_report.md` live on disk only. `git add`/commit never captures them and `git status` never shows paper edits, so committing does **not** publish paper changes. Edit and verify them in place; the paper's own build/invariant checks (pdflatex + bibtex, page count, abstract word cap, 0 errors/undefined/overfull, 0 banned words, 0 dashes) are documented in `NEXT_ACTIONS.txt`, separate from `./init.sh`.
 - The model name is **EG-IPG**, not EG-CProG (legacy name in some older comments)
 - Feature availability is split into `q_pre` (prediction-time, eligible) and `q_post` (response-derived, prohibited as H1 input) — see README
 - All response-derived transformations (program bases, scaling, feature selection) must be fit inside training folds only
@@ -176,7 +177,7 @@ Before ending a session:
 2. Update `feature_list.json` with new feature status
 3. Update `session-handoff.md` (completed work, evidence, blockers, recommended next step)
 4. Record any unresolved risks or blockers
-5. Commit with descriptive message once work is in safe state
+5. Commit with descriptive message once work is in safe state (note: `paper/` and the two root reports are gitignored, so the commit will NOT include paper edits even when they are complete on disk; see Project Context)
 6. Leave repo clean enough for next session to run `./init.sh` immediately
 
 Cross-check: whenever `feature_list.json` status changes, `progress.md` and `session-handoff.md`
