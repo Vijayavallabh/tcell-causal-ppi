@@ -273,3 +273,49 @@ attempted while a GPU campaign was in flight on the reference dataset.
 - Schmidt et al., *Science* 375:eabj4008 (2022), GEO GSE174292 / GSE190604 / GSE190846.
 - PINNACLE contexts: Li et al. (2024), Figshare article 22708126, local copy under
   `data/raw/pinnacle/pinnacle_embeds/`.
+
+---
+
+# L1 candidate pool, measured 2026-08-10 (supersedes section 5's portfolio)
+
+Prereg Amendment 2 corrected the DE unit, which changed which datasets are admissible. Everything
+below is measured from the files by `tcell_pipeline.replication.survey`, not read from papers.
+
+**Coverage numbers are PRE-EXTENSION.** `id_mapping` and the ESM-2 store were built for the reference
+screen's 11,526 targets, so replication targets outside that gene space resolve to nothing. The
+`L1-PRE` gate (extend both, by copy, never in place) has not run yet. Any "coverage too low" verdict
+here is therefore provisional and expected to improve.
+
+| dataset | cell type | targets >=25 cells | ESM-2 usable | 2nd factor | status |
+|---|---|---|---|---|---|
+| ReplogleWeissman2022_rpe1 | RPE1 epithelial | **2,122** | 1,216 (57%) | none | best-powered; needs L1-PRE |
+| FrangiehIzar2021 | melanocytes | 246 | 177 (72%) | **yes** (`perturbation_2`, 3 levels) | **only h1-capable dataset** |
+| TianKampmann2021_CRISPRi | iPSC-induced neuron | 184 | 131 (71%) | none | usable now |
+| NormanWeissman2019 | K562 lymphoblasts | 105 | 87 (83%) | none | usable; NO PINNACLE context |
+| TianKampmann2021_CRISPRa | iPSC-induced neuron | 100 | 66 (66%) | none | borderline; recheck after L1-PRE |
+| DatlingerBock2017 | Jurkat T | 31 | 31 (100%) | yes (`perturbation_2`) | below 50-family floor |
+| TianKampmann2019_day7neuron | iPSC-induced neuron | 26 | 19 (73%) | none | below floor |
+| TianKampmann2019_iPSC | iPSC | 26 | 19 (73%) | none | below floor |
+| PapalexiSatija2021 | THP-1 monocytes | 25 | 24 (96%) | replicate-shaped only | below floor |
+| ShifrutMarson2018 | primary human T | 21 | 18 (86%) | yes (`perturbation_2`) | below floor |
+| Adamson / Dixit / Replogle K562 x2 | K562 | pending | pending | pending | downloading |
+
+## What this means for the design
+
+**Cell-type diversity is achievable.** Clearing the 50-family floor: RPE1 epithelial, melanocyte,
+iPSC-induced neuron (x1-2), K562 lymphoblast, plus whatever the pending K562 files add. That is four
+to six lineages, which meets the L1 target.
+
+**h1 is the binding constraint, not the dataset count.** Only Frangieh has a confirmed second
+experimental factor. Every other admissible dataset is single-condition, where `condition_gated`
+degenerates to `typed_static` and **h1 is undefined**. So the multi-dataset result will be a pooled
+**h2a** across many cell types plus an h1 that pools over very few. The paper must say this plainly
+rather than presenting a pooled "the graph does not help" that quietly mixes the two.
+Worth checking the pending downloads specifically for a second factor; it is the cheapest way to widen
+the h1 pool, and cheaper than any additional dataset.
+
+**An unplanned contrast worth taking.** TianKampmann2021 supplies CRISPRi and CRISPRa on the same
+cell type. That is a within-cell-type comparison of perturbation DIRECTION (knockdown vs activation),
+which nothing in the plan anticipated and which the reference screen (CRISPRi only) cannot provide.
+If the graph's contribution differs between knockdown and activation, that is a mechanistic result
+rather than another null, and it costs nothing extra since both datasets are already downloaded.
