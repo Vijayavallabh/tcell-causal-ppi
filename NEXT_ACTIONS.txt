@@ -1,41 +1,50 @@
 =======================================================================
-OUTSTANDING GOAL ITEMS — carried over 2026-08-10. NEITHER DELIVERABLE IS DONE.
+OUTSTANDING GOAL ITEMS — updated 2026-08-10 after the replication campaign.
 =======================================================================
-The standing goal named two deliverables. Both remain open. Everything below is what is left.
 
---- OPEN 1: the multi-dataset EG-IPG null.  ZERO replication arms have been trained. -----------
-The data layer is finished; the training path is not. Seven per-dataset stages, 3 of 7 done:
-  1 DE matrix (Amendment-2 rule)          DONE, 9 datasets + genome-wide building
-  2 perturbation_condition table          DONE (replication/perturbation_table.py), smoke-verified
-  3 de_extraction -> de_layers/           DONE, verified isolated on Papalexi
-  4 program basis, refit IN the train fold    NOT DONE
-  5 z-scored responses (zscore_path)          NOT DONE
-  6 blocked target-OOD split per dataset      NOT DONE
-  7 screening lanes = THE ACTUAL TRAINING     NOT STARTED  <-- the deliverable
-ALWAYS `source ./run_replication_stage.sh <dataset> <pinnacle-ctx|none>` first. It pins the feature
-stores; without it INTERMEDIATE_ROOT isolation silently points them at an empty sandbox and every
-target gets a zero vector.
-Start with Papalexi (25 rows) to shake out stages 4-6, then scale. Budget for stage 7 is ~16 GPU-h per
-dataset for h2a at n=5 (extrapolated from DE rows, NOT measured - re-measure on the first real lane).
+--- OPEN 1: the multi-dataset EG-IPG null.  DONE. -----------------------------------------------
+52 lanes trained across four datasets, four seeds each, all landed, none dropped.
+  Frangieh melanoma (702 rows, 3 conditions, K=128, melanocyte ctx)  4 arms x 4 seeds
+  Replogle RPE1     (2,122 rows, K=128, RPE ctx)                     3 arms x 4 seeds
+  Replogle K562-ess (2,003 rows, K=128, no ctx)                      3 arms x 4 seeds
+  Tian CRISPRi      (184 rows, K=32 DEVIATION, no ctx)               3 arms x 4 seeds
+RESULT. h2a pooled k=4: FE +0.0031 [-0.0004,+0.0065], RE +0.0042 [-0.0105,+0.0189], I2=25.6%,
+Q p=0.26. A BOUNDED null, half-width +/-0.0035 systema across four cell types.
+h1 (Frangieh only, the sole multi-condition dataset): +0.0033 [-0.0829,+0.0894] — wide, read as
+underpowered rather than as a null. Every learnable gate ended ALIVE (0.36-1.00), so unlike the
+frozen H1 these are decidable experiments.
+RAIL 4 FIRED — see the banner atop RESULTS_SUMMARY.md. On Replogle RPE1 untyped_gnn beats
+expression_only by +0.0675 [+0.0316,+0.1033], all 4 seeds positive, surviving Bonferroni AND Holm at
+an honest family_size=2. The typed arm on the same dataset goes the OTHER way (-0.0196). Pooled it
+does not generalise (I2=88.2%, Q p<0.001), so it is reported as heterogeneity, not benefit.
+THE OPEN QUESTION FOR A HUMAN: does the RPE1 result warrant a follow-up before the paper commits to
+the reading that our typing-and-gating machinery is what discards a real graph benefit? The cheap
+test is untyped_gnn on the REFERENCE screen — one arm, ~6-7 GPU-h/seed. Nobody has run an untyped
+arm on the reference fold; if it wins there too, the paper's central claim changes again.
 
-ELIGIBLE POOL (on-target QC passed, coverage 94-100%, both gates closed):
-  Replogle RPE1 2,122 targets · Replogle K562-essential 2,003 · Frangieh 238 (the ONLY h1-capable
-  dataset, 3 conditions) · Tian CRISPRi 184 · Norman 105 (activation) · Tian CRISPRa 100 (activation)
-  · Papalexi 25 (below the 50-family floor, preliminary only)
-  EXCLUDED by on-target QC: Datlinger 2017, Shifrut 2018 - no detectable perturbation effect. Note the
-  cost: those were the pool's only T-cell screens, so the replication has NO T-cell replication of the
-  reference. Say so in the paper.
-  h1 pools over ONE dataset (Frangieh); h2a pools over six. Report them separately, never merged.
+--- OPEN 2: the ICBINB-BIO submission.  STILL NOT SUBMITTED. ----------------------------------
+paper/icbinb/main.tex now carries the multi-dataset result: new Section "Failure 3", updated abstract
+and Limitations, corrected appendix. Body is EXACTLY 8pp, 0 errors / 0 overfull / 0 undefined.
+Sources are now backed up in git (force-added past the paper/ ignore rule; .tex + .bib only).
+REMAINING, and all of it needs a human:
+  - DEADLINE IS STILL UNVERIFIED. openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO is a JS
+    app that returns an empty shell to any fetcher. 29 Aug 2026 AoE is the value on record and it was
+    always marked tentative. Open it in a browser and confirm before planning around it.
+  - Submit at OpenReview (double-blind, non-archival). Requires an authenticated account; an agent
+    cannot and should not do this.
+  - Replace the anonymous.4open.science placeholder with a real anonymised repo before submitting.
+  - Rebuild: PATH=/tmp/tl/current/bin/x86_64-linux:$PATH, then pdflatex x3 + bibtex.
+    NOTE the path: /tmp/tl/bin/... from earlier notes is WRONG, and /tmp is periodically cleaned, so
+    TeX Live may need reinstalling.
 
---- OPEN 2: the ICBINB-BIO submission.  NOTHING has been submitted. --------------------------
-paper/icbinb/main.tex compiles clean (0 errors/undefined/overfull>2pt/dashes, main text exactly 8pp)
-and now carries the measured cause-D result. It has never been uploaded.
-  - RE-CHECK the deadline; the site marks 29 Aug 2026 AoE *tentative*.
-  - Submit at OpenReview NeurIPS.cc/2026/Workshop/ICBINB-BIO. Double-blind, non-archival.
-  - Before submitting: replace the anonymous.4open.science placeholder with a real anonymised repo.
-  - paper/ IS GITIGNORED, so none of the paper is backed up in git. If that matters, decide
-    deliberately - it is a project convention, not an accident.
-  - The Limitations section still concedes "one dataset", correctly, until OPEN 1 lands.
+--- HOW TO RUN ANY OF THIS -------------------------------------------------------------------
+  ./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>     stages 2-6, idempotent, CPU
+  ./run_replication_lane.sh <gpu> <dataset> <ctx> <arm> <seed>    one training lane
+  ./run_replication_campaign.sh                                   all lanes, skips what landed
+  PYTHONPATH=src .venv/bin/python -m tcell_pipeline.replication.pool    FE/RE + heterogeneity
+Sourcing run_replication_stage.sh is MANDATORY and the other scripts do it for you. It pins the
+feature stores (without which every target silently gets a zero vector), redirects SPLITS_ROOT away
+from the frozen data/splits/, and reads CONDITIONS from the DE provenance.
 
 --- OPEN 3: everything in the limitation-closure plan below that L5 did not close --------------
 L5 (cause D / three-way ablation) is DONE and integrated. L1-PRE is CLOSED. Still open: L2 detection
