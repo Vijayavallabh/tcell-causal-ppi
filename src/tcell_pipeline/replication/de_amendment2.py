@@ -230,16 +230,24 @@ def build(dataset: str, target_col: str, condition_col: str | None,
 
 
 def on_target_qc(de_path: str, seed: int = 0) -> dict:
-    """Did the perturbations actually work? A dataset that fails this cannot inform any contrast.
+    """Did the perturbations actually do something specific to their own targets?
 
-    A CRISPRi/CRISPRa knockdown should move its OWN transcript. If it does not, the DE matrix carries
-    no perturbation-specific signal, and a graph-versus-no-graph comparison on it measures nothing -
-    it would return a null for reasons that have nothing to do with the graph. That is the
-    manufactured-null hazard arriving through assay quality rather than through features or mapping.
+    A dataset whose perturbations did not work cannot inform a graph-versus-no-graph contrast: it
+    would return a null for reasons having nothing to do with the graph. That is the manufactured-null
+    hazard arriving through assay quality.
 
-    Compares each row's own-gene log-fold-change against a random gene from the same row, paired.
-    Verified against a known positive (Frangieh: -0.61, 90% negative) and it correctly FAILS
-    Datlinger 2017, an early CROP-seq screen whose knockdown is too weak to detect here.
+    DIRECTION-AGNOSTIC BY DESIGN. A first version asserted own-gene log-fold-change < 0, which is the
+    CRISPRi/knockdown signature. It then failed TianKampmann2021_CRISPRa at +0.6575 with 88% of rows
+    POSITIVE - a textbook on-target ACTIVATION signature, i.e. the gate rejected a dataset for working
+    correctly in the other direction. The scPerturb files cannot rescue this: `perturbation_type` is
+    the string 'CRISPR' for CRISPRi, CRISPRa and knockout alike, so direction is not recoverable from
+    metadata and matching on the dataset NAME would be fragile. The gate therefore tests what actually
+    matters - that the effect on a target's own transcript is large and CONSISTENT in sign - and
+    reports the direction it inferred rather than assuming one.
+
+    Verified to discriminate: PASS on Frangieh (-0.61, 90% down) and CRISPRa (+0.66, 88% up),
+    FAIL on Datlinger 2017 (-0.02, 49% down, p=0.37 - an early CROP-seq screen with no detectable
+    knockdown).
     """
     import anndata as ad
     import numpy as np
@@ -258,9 +266,12 @@ def on_target_qc(de_path: str, seed: int = 0) -> dict:
     if len(own) < 5:
         return {"testable_rows": len(own), "verdict": "UNTESTABLE (too few rows map to a measured gene)"}
     own, rand = np.asarray(own), np.asarray(rand)
-    p = float(stats.ttest_rel(own, rand).pvalue)
-    frac = float((own < 0).mean())
-    passed = p < 0.01 and frac > 0.65 and own.mean() < -0.05
-    return {"testable_rows": len(own), "own_mean": float(own.mean()), "frac_negative": frac,
-            "random_mean": float(rand.mean()), "paired_p": p,
-            "verdict": "PASS" if passed else "FAIL - perturbations not detectably on-target"}
+    p = float(stats.ttest_rel(own, rand).pvalue)            # two-sided: either direction counts
+    frac_neg = float((own < 0).mean())
+    consistency = max(frac_neg, 1.0 - frac_neg)             # dominant direction, whichever it is
+    direction = "knockdown" if own.mean() < 0 else "activation"
+    passed = p < 0.01 and consistency > 0.65 and abs(float(own.mean())) > 0.05
+    return {"testable_rows": len(own), "own_mean": float(own.mean()),
+            "frac_negative": frac_neg, "direction_consistency": consistency,
+            "inferred_direction": direction, "random_mean": float(rand.mean()), "paired_p": p,
+            "verdict": "PASS" if passed else "FAIL - no consistent on-target effect"}
