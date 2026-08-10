@@ -22,20 +22,44 @@ the reading that our typing-and-gating machinery is what discards a real graph b
 test is untyped_gnn on the REFERENCE screen — one arm, ~6-7 GPU-h/seed. Nobody has run an untyped
 arm on the reference fold; if it wins there too, the paper's central claim changes again.
 
---- OPEN 2: the ICBINB-BIO submission.  STILL NOT SUBMITTED. ----------------------------------
-paper/icbinb/main.tex now carries the multi-dataset result: new Section "Failure 3", updated abstract
-and Limitations, corrected appendix. Body is EXACTLY 8pp, 0 errors / 0 overfull / 0 undefined.
-Sources are now backed up in git (force-added past the paper/ ignore rule; .tex + .bib only).
-REMAINING, and all of it needs a human:
-  - DEADLINE IS STILL UNVERIFIED. openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO is a JS
-    app that returns an empty shell to any fetcher. 29 Aug 2026 AoE is the value on record and it was
-    always marked tentative. Open it in a browser and confirm before planning around it.
-  - Submit at OpenReview (double-blind, non-archival). Requires an authenticated account; an agent
-    cannot and should not do this.
-  - Replace the anonymous.4open.science placeholder with a real anonymised repo before submitting.
-  - Rebuild: PATH=/tmp/tl/current/bin/x86_64-linux:$PATH, then pdflatex x3 + bibtex.
-    NOTE the path: /tmp/tl/bin/... from earlier notes is WRONG, and /tmp is periodically cleaned, so
-    TeX Live may need reinstalling.
+--- OPEN 2: the ICBINB-BIO submission.  PAPER IS READY. SUBMISSION NEEDS A HUMAN. ------------
+paper/icbinb/main.tex: body EXACTLY 8pp, 0 errors / 0 overfull / 0 undefined. Sources are in git
+(force-added past the paper/ ignore rule; .tex + .bib only, no build artifacts).
+
+VENUE REQUIREMENTS — verified 2026-08-10 from icbinb-bio.github.io/submit/, not from memory:
+  deadline   29 Aug 2026, 11:59 p.m. AoE   <- still says "subject to final confirmation"
+  length     up to 8 pages, EXCLUDING references and appendices          [paper: 8pp body. OK]
+  blinding   double-blind; linked material must also preserve anonymity  [paper: anonymous. OK]
+  archival   non-archival                                               [dual submission fine]
+  LLM        short paragraph disclosing LLM role, REQUIRED               [paper has one. OK]
+  portal     openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO
+
+THE FOUR THINGS LEFT, all of which need a human:
+ 1 Submit at the OpenReview link. Needs an authenticated account; an agent cannot and should not.
+ 2 The style file. The paper builds against neurips_2026.sty with [dblblindworkshop], which is what
+   the goal spec named. The workshop ALSO links its own template as a Google Drive zip. Download it
+   and diff against the .sty in paper/icbinb/ before submitting — if they differ, theirs wins.
+ 3 anonymous.4open.science is still a PLACEHOLDER. The repo is private; creating the anonymised
+   mirror needs a human through their web form, and the link must be live before submission because
+   the blinding requirement extends to linked material.
+ 4 Re-confirm the deadline nearer the date; the venue still marks it tentative.
+
+REBUILD:  export PATH=/tmp/tl/current/bin/x86_64-linux:$PATH   <- NOT /tmp/tl/bin, and /tmp gets
+          cleaned periodically, so TeX Live may need reinstalling
+          pdflatex main; bibtex main; pdflatex main; pdflatex main
+
+--- OPEN 3: the finding that changed the paper, and the one experiment nobody has run ---------
+The untyped graph (topology, no edge typing, no condition gating) is POSITIVE ON 5 OF 5 independent
+datasets: reference CD4 T cell +0.0045, K562-ess +0.0081, Frangieh +0.0194, Tian +0.0281,
+RPE1 +0.0675. Pooled random-effects +0.0209 [+0.0048, +0.0370] p=0.011, I2=87.5%. POST-HOC — the
+prereg fixes a per-dataset family and a pooled meta-analytic test is not in it.
+This flipped paper cause C from Refuted to Survives: the 14-cell architecture search varied HOW the
+typed gated encoder message-passes and never removed the typing and gating, so it excluded its own
+premise. See the banner and the post-hoc section in RESULTS_SUMMARY.md.
+WORTH RUNNING NEXT: the reference untyped_gnn result fails the both-corrections rule only on
+Bonferroni (Holm 0.042, Bonferroni 0.083) at n=5. Two more seeds would settle it, ~6-7 GPU-h each,
+fresh root, rail 2 keeps data/results/screening read-only. If it clears both, the paper's central
+claim gets materially stronger and cause C stops being post-hoc on the reference dataset.
 
 --- HOW TO RUN ANY OF THIS -------------------------------------------------------------------
   ./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>     stages 2-6, idempotent, CPU
