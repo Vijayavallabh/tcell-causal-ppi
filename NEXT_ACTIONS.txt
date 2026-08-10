@@ -37,6 +37,23 @@ failure-modes finding and it belongs in the paper. Then let P1 replace the whole
 DO THIS BEFORE running anything else; the paper must not sit in a false state.
 
 =======================================================================
+L0b. OPEN RIGHT NOW: main text is 9pp against an 8pp limit.
+=======================================================================
+The L0 correction landed (2026-08-10): the false Replogle paragraph is gone and replaced with the
+pre-registration-as-a-mistake finding, which is better content and ~4 lines longer net even after
+compressing the bounded-null and Scope paragraphs. Conclusion now starts on p9, so MAIN TEXT IS OVER
+THE LIMIT by about one page.
+
+Do NOT fix this by further prose shaving - that was tried and moved the boundary by nothing (twice).
+Lines-per-page is 72/48/53 on pp6-8, so there is no stranded float this time; it is genuine content.
+The venue gives UNLIMITED appendices, so the fix is a MOVE, not a cut. Highest-value candidates, in
+order: (a) the bounded-null paragraph's MDE detail -> appendix, leaving two sentences in the body;
+(b) Table 2 (the three folds) -> appendix, keeping the numbers inline in the text; (c) the
+architecture-search paragraph in Causes C -> it already has an appendix table, so cut the body copy to
+one sentence pointing there. Any one of those should be sufficient; (a) is cleanest.
+Verify after with: main text (through Conclusion + LLM disclosure) ends on p8.
+
+=======================================================================
 RAILS — never cross
 =======================================================================
 1. NEVER run evaluation/sealed_eval.py; NEVER open the sealed challenge split (5,608 rows).
