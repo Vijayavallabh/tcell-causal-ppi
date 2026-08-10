@@ -420,3 +420,96 @@ scored collapsed predictors on floating-point dust was fixed, blast radius measu
 concurrent-session committing, claims-about-process being invisible to test discipline, instrument blind
 spots (self-matching watchers, `ps` truncation, torch-vs-nvidia-smi device numbering), and cheap
 preconditions (read a checkpoint's gate mean before spending hours on it).
+
+## 2026-08-03/06 — ICBINB retarget + three-fold campaign (branch `icbinb-multidataset-2026-08-03`)
+
+Autonomous multi-day run on 4x A100. ~250 GPU-hours, 0 lane failures after the first hour. Everything
+uncommitted on the branch per rail 6. Full numbers in `RESULTS_SUMMARY.md`, routing in
+`session-handoff.md`, forward plan in `NEXT_ACTIONS.txt`.
+
+**Blocker cleared first.** Every `--device cuda` lane was dying in <60 s on an NVML assert naming
+PyTorch; root cause was a stray 535.309.01 driver tree on the library path against a 580.173.02 kernel
+module, reached via the allocator's `expandable_segments` path. Fixed with an `LD_PRELOAD` of the
+matching library. The same assert was already in a 2026-07-29 registry as `failed` rows, so it had
+cost lanes once before without being diagnosed. Written up in `docs/agent-lessons.md`.
+
+**Science.** The nested family now has three blocked target-OOD folds, all four arms, n=5 each:
+
+| Fold | h1 (cg − eo) | h2a (ts − eo) |
+|---|---|---|
+| 0.85/0.05 frozen | −0.0009 (p 0.71) | **−0.0131 (survives both)** |
+| 0.80/0.10 | +0.0082 (bonf 0.101) | −0.0122 (bonf 0.920) |
+| 0.75/0.15 | +0.0005 (p 0.904) | −0.0012 (p 0.614) |
+
+The parity result is robust across folds, metrics and split difficulty. **The one contrast that ever
+cleared Bonferroni and Holm — "the typed static graph is reliably worse" — does not replicate**, and
+the two failures differ in kind: on the intermediate fold the effect size reproduces (−0.0122 vs
+−0.0131) and dies from 3.5x the variance; on the hardest fold the effect itself collapses tenfold.
+Also measured: every graph arm carries 6 to 32x the across-seed variance of the no-graph arm at the
+same or lower mean, so the graph buys variance rather than accuracy.
+
+**The split-realization finding.** Three re-draws of one split specification (identical 0.80/0.10,
+only `SPLIT_SEED` varied) give difficulty statistics 0.759 / 0.793 / 0.862 — a spread of 0.103 against
+0.056 for the entire designed threshold range. Re-drawing moves difficulty ~1.85x further than
+changing the knob, and the third draw is easier than the frozen fold it was meant to sit below. This
+overturned a difficulty-curve framing already drafted into the paper.
+
+**Retractions.** Three interim values were published into working docs and withdrawn, every one in the
+favourable direction: h2a −0.0214 (n=2, true −0.0122), h2b `fwer=True` (n=2), and h1 `fwer=True` where
+`family_size` had silently collapsed to 1 because other arms were unrun. The last is the general
+hazard — check `family_size` before believing any FWER verdict.
+
+**Infrastructure.** New `src/tcell_pipeline/replication/`: scPerturb h5ad → DE-stats adapter with a
+mutation-tested self-check (3/3 mutants caught, plus a regression case for a real bug where two
+datasets label controls only in `perturbation` and leave `target` NaN), and a PINNACLE per-context
+extractor written because `embeddings_pinnacle.run()` takes a context argument but always writes to the
+production path. Eight `config.py` constants are now env-scoped with defaults verified byte-identical
+to the frozen values; 549 tests pass. `CONDITIONS` is read at import time into two encoders, so it must
+be set in the environment before first import.
+
+**Replication scope, honestly short.** Six scPerturb datasets were downloaded, measured from the files
+themselves, and run through the pre-registered rules; only two survive (Frangieh 216 targets x 3
+conditions, Norman 102 targets single-condition). Replogle RPE1 has the best target count (2,393) but
+~1.8 cells per (target, batch) pseudobulk, so only 12 targets clear the 25-cell floor — dropped, not
+rescued with pseudo-replicates. The goal asked for >=4 datasets; the data supports 2.
+
+**Deliverable.** `paper/icbinb/main.tex` for ICBINB-BIO (NeurIPS 2026 workshop, 29 Aug deadline),
+restructured to lead with the instrument failure, then the null, then a five-cause decomposition, then
+a checklist. Compiles clean, main text exactly 8pp. `paper/main.tex` (AAAI) untouched.
+
+## 2026-08-08/10 — the split re-draw experiment (same branch)
+
+Follow-on to the three-fold campaign, run because the fold ordering in the paper invited a
+difficulty-curve reading that had not been tested. Three re-draws of ONE split specification
+(threshold 0.80, cap 0.10, only `SPLIT_SEED` varied), full nested family, n=5 paired seeds each,
+0 failures, all gates alive. Roots `screening_c080c10_h1` / `_r2` / `_r3`.
+
+| re-draw | h1 Δ | uncorrected 95% CI | raw p | Bonferroni ×4 |
+|---|---|---|---|---|
+| seed 0 | +0.00824 | [+0.00168, +0.01480] | 0.025 | 0.101 |
+| seed 1 | +0.00260 | [+0.00048, +0.00472] | 0.027 | 0.109 |
+| seed 2 | +0.00206 | [−0.00237, +0.00650] | 0.266 | 1.000 |
+
+**The estimate spans fourfold and the qualitative verdict flips**: two re-draws give an interval
+excluding zero at p≈0.03, the third does not at p=0.27. Across the three genuinely different folds
+h1 was −0.0009 / +0.0082 / +0.0005, so re-draw noise is the same size as the between-fold differences
+that the difficulty framing rested on. What survived all three was the sign and the corrected verdict
+(none clears Bonferroni over the family of four) — the corrected verdict was stable under re-draw
+while the uncorrected one was not.
+
+The no-graph baseline moved 0.0991 / 0.0942 / 0.0845 across re-draws (spread 0.0146, larger than any
+contrast in the study) and tracked validation-set size, which the re-draws silently changed from 3,632
+to 7,216 targets, rather than the sequence-cosine statistic. The nominally hardest re-draw scored
+highest, so that statistic does not order the model's own difficulty.
+
+Paper updated with both halves in one edit, after holding the contrast half back for ~2 days until it
+reached n=5 — the third re-draw's CI crosses zero, and a two-re-draw write-up would have claimed a
+consistency that does not exist. Main text held at exactly 8pp throughout; one overflow was caused by
+a float/box layout issue rather than prose, diagnosed by lines-per-page.
+
+**Ops.** The box is shared. A co-tenant's job held 41.5 GB on one A100 and grew to 48.6 GB while
+`condition_gated` needs a measured 47-51 GB. The affected chain was stopped by process group after
+its cheap arm finished, that seed re-queued when the card genuinely freed, and the constrained card
+kept busy with `expression_only` (~2.5 GB) meanwhile. The co-tenant was never touched. Also fixed a
+~2.6-day idle gap in the record: the box only runs work when a session is active, so a self-refilling
+scheduler is the right answer before the next long campaign.

@@ -112,7 +112,10 @@ Key facts:
 - `progress.md` — Session continuity log
 - `init.sh` — Standard startup and verification path
 - `session-handoff.md` — For multi-session work
-- `NEXT_ACTIONS.txt` — Forward experiment backlog (current: E1–E6 for the AAAI main-conf submission)
+- `NEXT_ACTIONS.txt` — Forward experiment backlog (current: the ICBINB-BIO workshop submission and the
+  second-dataset replication; the old E1–E6 AAAI list is superseded)
+- `RESULTS_SUMMARY.md` — the running result record for autonomous campaigns: what ran, every contrast
+  with n and both corrections, gate health, and any contradiction-stop banner
 
 ## Definition of Done
 
@@ -231,6 +234,97 @@ multiply, because cmdline matching cannot distinguish a process from a process t
 `kill -0` answers *is it dead*, never *did it succeed*; pair it with an artifact check in the same loop
 and report which branch fired. Its cost is PID reuse — a bound, not a mechanism; state it when you rely
 on it.
+
+**Check `family_size` before believing any family-wise verdict.** `multiseed` corrects over the
+contrasts that are *testable*, so when some arms have not been run it corrects over a SMALLER family
+and can report `survives_family_wise: True` on an uncorrected p. On 2026-08-05 a raw p of 0.0252 was
+recorded as surviving because `family_size` had collapsed to **1**; over the pre-registered family of
+4 it is 0.101 and does not survive. The same run printed `INCOMPLETE COVERAGE` and `UNBALANCED` —
+those lines are the tell, and they are easy to scroll past when the verdict line says what you hoped.
+Read `family_size` out of the artifact and confirm it matches the pre-registered family before quoting
+any corrected p. This is the "a correction that passes everything has told you nothing" hazard
+arriving through missing lanes instead of through large n.
+
+**Every interim number this project has published early drifted in the FAVOURABLE direction.** Three
+were retracted in one campaign: h2a `−0.0214` at n=2 (true value −0.0122 at n=5, and the
+non-monotonicity it implied did not exist), h2b `survives_family_wise: True` at n=2 (does not survive
+at n=5), and the `family_size`-1 verdict above. Small-n reads on high-variance arms drift toward
+looking decisive, and the graph arms here carry 6 to 32x the across-seed variance of the no-graph arm.
+Hold every number to the pre-registered integration bar (n>=4 for BOTH arms), and apply that hardest
+when an interim looks decisive **in the direction you expect** — that is when it is least likely to be
+questioned and most likely to reach print.
+
+**Re-draw a split before interpreting a split sweep, and run the REAL comparison on the re-draw.**
+Difficulty knobs are not the only thing moving the fold. Three re-draws of ONE specification
+(identical threshold 0.80 and cap 0.10, only `SPLIT_SEED` varied) gave median train-to-challenge
+cosines of 0.759 / 0.793 / 0.862: a spread of 0.103 against 0.056 for the entire designed range across
+all three thresholds, with the third re-draw *easier* than the frozen fold it was built to sit below.
+Running the full family on all three (n=5 each) showed the diagnostic UNDERSTATED it: h1 came out
++0.00824 (raw p 0.025), +0.00260 (0.027) and +0.00206 (0.266). **The estimate spans fourfold and the
+qualitative verdict flips** — two re-draws exclude zero uncorrected, the third does not. Across the
+three genuinely different folds h1 was -0.0009 / +0.0082 / +0.0005, so **re-draw noise is the same
+size as the between-fold differences**, and a difficulty-curve framing was already drafted into the
+paper before this was measured. What stayed stable was the sign and the CORRECTED verdict (none
+survives Bonferroni), which is an argument for multiplicity control unrelated to false positives.
+Two details: the re-draws silently changed `n_val` from 3,632 to 7,216, and the baseline tracked THAT
+(0.0991/0.0942/0.0845) rather than the cosine statistic, the nominally hardest re-draw scoring
+highest. And the statistic is `sequence_train_to_challenge_cosine` — train to the SEQUESTERED split,
+not to val.
+
+**This is a SHARED box: match the arm to the free memory, and never evict a co-tenant.** Another
+user's job held 41.5 GB on one A100 and GREW to 48.6 GB mid-campaign. Measured per-lane peaks, from
+`nvidia-smi` during real lanes rather than estimated: `expression_only` ~2.5 GB, `untyped_gnn`
+~2-4 GB, `condition_gated` and `typed_static` **47-51 GB** (an earlier ~41 GB guess was low). A graph
+arm launched into what remained would have died, plausibly hours in rather than at allocation, since
+memory grows with subgraph size. Use
+`nvidia-smi --query-compute-apps=pid,used_memory` to map memory to OWNERS — per-card totals do not
+tell you whose it is. A constrained card can still run the cheap arms productively instead of idling.
+When a chain script runs a cheap arm then an expensive one on the same card, stop it by process group
+after the cheap arm lands: the finished work survives and only the chain dies. Then re-queue when the
+card genuinely frees. The co-tenant was there first, and starving another user is the more expensive
+half of the mistake.
+
+**A long-running script launched with `>` will silently EAT lines you append to the same log.** On
+2026-08-03 `run_c075c15_n5.sh` was started with `> data/logs/n5.nohup.log` and ran 15 h. Refill lanes
+launched later appended to that same file with `>>`. The two `[c080] ... START` lines they wrote were
+gone by morning: a `>` redirect gives the long-running shell its own file offset, and when it next
+wrote (hours later, at an offset behind EOF) it overwrote whatever had been appended past it. Nothing
+was lost from the experiments, only from the record, which is worse than it sounds because the record
+is what you reason from — the log said a card was idle when a 7 h lane was running on it. Fixes:
+append-mode (`>>`) for the long-running script too, or a separate file per launcher. And regardless,
+**the per-lane log written by each worker with its own `>` is the trustworthy record**; the aggregate
+launcher log is a convenience. To establish what is running, enumerate `/proc/<pid>/environ` and
+`cmdline` for the PIDs you actually started, never the launcher log.
+
+**A guard that tests a list's truthiness does not test its contents.** The same script's final
+gate-health block did `g = [... if "gate_mean" in e["train"]]` then `if not g: continue`. For
+`untyped_gnn`, which returns `edge_gates=None` by design, the key EXISTS with a `None` value, so `g`
+is `[None, None, ...]` — truthy — and the next f-string died with `unsupported format string passed
+to NoneType.__format__`, aborting the report for every lane after it. It failed loudly, so nothing
+was misreported, but the block silently covered only the arms that sort before `untyped_gnn`. Filter
+on the value (`e.get("train", {}).get("gate_mean") is not None`), and give the no-gate case its own
+printed line so its absence is visible rather than inferred.
+
+**A broken NVML kills every CUDA lane in under a minute, and the error names PyTorch, not the cause.**
+On 2026-08-03 all four lanes died in ~50 s with `NVML_SUCCESS == DriverAPI::get()->nvmlInit_v2_()
+INTERNAL ASSERT FAILED at "PeerToPeerAccess.cpp":83`, while a bare `torch` matmul on the same card
+succeeded — so "CUDA works" was true and useless. Chain: `run_screening.run()` does
+`os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")` for `--device cuda`
+(run_screening.py:117-120); expandable segments use the CUDA driver API; PyTorch's `DriverAPI::get()`
+calls `nvmlInit_v2_()`; NVML fails because the loader binds `libnvidia-ml.so.1` to a THIRD-PARTY
+535.309.01 driver tree another user left on the system library path
+(`/mnt/md0/IITM/ipcv/Rohith/nvidia/NVIDIA-Linux-x86_64-535.309.01/`) while the running kernel module is
+580.173.02. Confirm with `ldd /usr/bin/nvidia-smi | grep nvidia-ml` — and note that clearing
+`LD_LIBRARY_PATH` does NOT help, the stray tree wins anyway. FIX (per process, no root needed):
+
+    export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.580.173.02
+
+That restores `nvidia-smi` too. Two traps this laid: the same assert is already sitting in
+`data/results/screening_c075c15/experiment_registry.yaml` as `status: failed` rows from 2026-07-29, so a
+"transient, it retried fine" reading of history is wrong; and setting `PYTORCH_CUDA_ALLOC_CONF` yourself
+to dodge it is a SYMPTOM fix that also silently changes the allocator config the landed seeds trained
+under. Match the preload, not the flag. General rule: when a GPU job dies fast and the message names a
+PyTorch internal assert, ask what the *userspace driver libraries* resolve to before touching the code.
 
 **Instruments fail in the direction that reads as success.** `ps -eo args` truncates at terminal width
 (`/proc/<pid>/cmdline` is the full text). `ls --time-style` without a date makes yesterday's mtime look

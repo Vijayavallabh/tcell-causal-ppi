@@ -4,7 +4,9 @@
 > paper-experiment command). It was the top-level README through 2026-07-29; the short version now lives
 > in [`../README.md`](../README.md).
 
-**Perturbation-Informed Protein–Program Graphs for T Cell Interventions** — AAAI submission (AI track).
+**Perturbation-Informed Protein–Program Graphs for T Cell Interventions.** Two write-ups build from this
+tree: `paper/icbinb/main.tex` for the ICBINB-BIO NeurIPS 2026 workshop (the current target, framed around
+the failure analysis) and `paper/main.tex` for AAAI. Dual submission is cleared.
 
 > We introduce an intervention-informed heterogeneous graph predictor for biological systems. Given a
 > perturbation target, cell context, and typed protein-network neighborhood, it predicts transcriptional
@@ -834,9 +836,14 @@ paired seeds on the frozen fold (`data/results/screening_lambda0/robustness_5see
 | contrast | mean Δ | 95% CI | raw p | Bonf / Holm | survives FWER |
 |---|---:|---|---:|---:|---|
 | **H1 vs no-graph** `condition_gated − expression_only` | **−0.0009** | [−0.0072, +0.0054] | 0.7091 | 1.000 / 0.709 | **no — parity** |
-| **H2a** `typed_static − expression_only` | −0.0131 | [−0.0190, −0.0072] | 0.0036 | 0.0142 / 0.0142 | **yes — reliably worse** |
+| **H2a** `typed_static − expression_only` | −0.0131 | [−0.0190, −0.0072] | 0.0036 | 0.0142 / 0.0142 | **yes, on THIS fold only** † |
 | H2b `condition_gated − typed_static` | +0.0122 | [+0.0028, +0.0215] | 0.0226 | 0.0905 / 0.0624 | no |
 | promotion `untyped_gnn − expression_only` | +0.0045 | [+0.0011, +0.0079] | 0.0208 | 0.0832 / 0.0624 | no |
+
+† **H2a does not replicate off this fold (measured 2026-08-06).** At the same n=5 it is −0.0122
+(Bonferroni 0.920) at threshold 0.80/cap 0.10 and −0.0012 (p 0.614) at 0.75/0.15. It is the only
+contrast that ever cleared correction in this project, and it is fold-specific. See "Multi-fold and
+split-realization runs" below and `RESULTS_SUMMARY.md`.
 
 Per-config `systema` (n=5, **live gates**): untyped_gnn 0.0902 > expression_only 0.0857 > condition_gated
 0.0848 > typed_static 0.0726. **The evidence-gated typed graph is at statistical parity with no-graph** (H1
@@ -850,8 +857,14 @@ from −0.0019 to −0.0009 and changed no conclusion, so the null is a property
 the bug or its repair. `promoted.json` is unchanged (the frozen H1 stays
 `condition_gated` seed 0); the deliverable is the separate `robustness_5seed`, produced by the λ=0 re-screen
 in §1 below. **feat-011 + feat-012 are DONE; feat-013 sits at its governance terminal (`CANNOT_VERIFY` — the
-sealed split stays unopened).** The forward experiment plan (E1–E6 for the AAAI submission) is in
-`NEXT_ACTIONS.txt`.
+sealed split stays unopened).** The forward experiment plan is in `NEXT_ACTIONS.txt`; note that the
+E1–E6 list it once carried was for the AAAI submission and has been superseded by the ICBINB plan.
+
+**Superseded in scope (2026-08-06): the comparison now spans three folds, not one.** §1 below still
+describes the frozen fold correctly, but the result it produces is one of three. See "Multi-fold and
+split-realization runs" at the end of this section, and `RESULTS_SUMMARY.md` for the numbers. The short
+version: the parity result holds on all three folds, and h2a — the one contrast that ever cleared
+Bonferroni and Holm — does **not** replicate off the frozen fold.
 
 **The external-comparator test has also run (feat-010, 2026-07-18).** On the SAME development fold, both
 public comparators were scored through the same suite as `network_propagation` (fit on train responses
@@ -1002,6 +1015,106 @@ PYTHONPATH=src python -m tcell_pipeline.reproducibility.run_repro_real   # exit 
 On this checkout the reproduction axis is `CANNOT_VERIFY` **by design** — the confirmatory decision is
 defined on the sequestered challenge split, which is unopened. That is the correct verdict from a
 development checkout, not a defect.
+
+### Multi-fold and split-realization runs (2026-08-03/06)
+
+**On a box whose NVML is mismatched, do this first or every cuda lane dies in <60 s:**
+
+```bash
+ldd $(which nvidia-smi) | grep nvidia-ml          # does it resolve to your kernel module's version?
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.<driver-version>
+```
+
+Split difficulty is set by two env vars; the partition is set by a third. Each run needs a **fresh**
+`SPLITS_ROOT`, and each screening campaign a **fresh** `SCREENING_ROOT` seeded with a copy of the
+registry — the frozen roots are read-only inputs, and the launchers sha256-manifest the source before
+and after to prove it.
+
+```bash
+# a fold: pick threshold + cap. Lower threshold / higher cap => more paralogs blocked.
+SEQ_SIM_COSINE_THRESHOLD=0.75 GROUP_SIZE_CAP=0.15 \
+SPLITS_ROOT=data/results/splits_c075c15 \
+PYTHONPATH=src python -m tcell_pipeline.splits
+
+# a RE-DRAW of the same specification: identical threshold/cap, different partition seed
+SPLIT_SEED=1 SEQ_SIM_COSINE_THRESHOLD=0.80 GROUP_SIZE_CAP=0.10 \
+SPLITS_ROOT=data/results/splits_c080c10_r2 \
+PYTHONPATH=src python -m tcell_pipeline.splits
+
+# one arm x one seed on a fold (repeat per arm/seed; ~0.35 GPU-h for expression_only,
+# ~2 h untyped_gnn, ~7-11 h typed_static / condition_gated)
+SPLITS_ROOT=data/results/splits_c075c15 \
+SCREENING_ROOT=data/results/screening_c075c15_n5 \
+PREDICTIONS_ROOT=data/results/screening_c075c15_n5/predictions \
+REGISTRY_PATH=data/results/screening_c075c15_n5/experiment_registry.yaml \
+SUBGRAPH_CACHE_SIZE=8000 OMP_NUM_THREADS=4 PYTHONPATH=src \
+CUDA_VISIBLE_DEVICES=0 python -m tcell_pipeline.screening.run_screening \
+  --only condition_gated --seed 2 --epochs 20 --batch-size 8 --device cuda --lambda-graph 0
+
+# aggregate that fold (all four contrasts, Bonferroni AND Holm)
+SCREENING_ROOT=data/results/screening_c075c15_n5 \
+REGISTRY_PATH=data/results/screening_c075c15_n5/experiment_registry.yaml \
+SPLITS_ROOT=data/results/splits_c075c15 \
+PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
+```
+
+**Reading the aggregate output — two checks that are not optional.**
+
+1. **`family_size` in the JSON must equal the pre-registered family (4).** The aggregator corrects over
+   the contrasts that are *testable*, so if some arms have not been run it silently corrects over a
+   smaller family and can report `survives_family_wise: true` on a raw p. That happened here: at
+   `family_size: 1` a raw p of 0.0252 was reported as surviving; over the real family of 4 it is 0.101
+   and does not. The same run prints `INCOMPLETE COVERAGE` and `UNBALANCED` — read those lines.
+2. **Gate health per lane, before reading any contrast.** A final mean gate at or below 1e-3 means the
+   graph was switched off, so the arm measures nothing about the graph; that lane is *undecidable*, not
+   a null. Note `untyped_gnn` legitimately has no gate (`edge_gates=None`), so a reporter must filter on
+   the value being `None`, not on the key being absent.
+
+**Interpreting a threshold sweep: re-draw first, and run the real comparison on the re-draw.**
+Difficulty here is the median `sequence_train_to_challenge_cosine` in each `leakage_report.json`
+(train to the *sequestered* split, not to val). Three re-draws of the 0.80/0.10 specification gave
+0.759 / 0.793 / 0.862 — a spread of 0.103 against 0.056 for the whole designed range across all three
+thresholds, with the third re-draw *easier* than the 0.85 fold it was meant to sit below.
+
+Running the full family on all three re-draws (n=5 paired seeds each, roots `screening_c080c10_h1`,
+`_r2`, `_r3`) shows the diagnostic understated the problem:
+
+| re-draw | h1 Δ | uncorrected 95% CI | raw p | Bonferroni ×4 | no-graph baseline | n_val |
+|---|---|---|---|---|---|---|
+| seed 0 | +0.00824 | [+0.00168, +0.01480] | 0.025 | 0.101 | 0.0991 | 3,632 |
+| seed 1 | +0.00260 | [+0.00048, +0.00472] | 0.027 | 0.109 | 0.0845 | 7,216 |
+| seed 2 | +0.00206 | [−0.00237, +0.00650] | 0.266 | 1.000 | 0.0942 | 5,096 |
+
+The estimate spans fourfold and **the qualitative verdict flips** — two re-draws give an interval
+excluding zero, the third does not. Across the three genuinely different folds h1 was −0.0009 /
++0.0082 / +0.0005, so re-draw noise is the same size as the between-fold differences. Note also that
+the re-draws changed `n_val` from 3,632 to 7,216 at identical parameters, and the baseline tracks
+that rather than the cosine statistic. **This experiment is complete; do not re-run it.**
+
+**Shared-box memory.** Measured per-lane peaks: `expression_only` ~2.5 GB, `untyped_gnn` ~2–4 GB,
+`condition_gated` and `typed_static` **47–51 GB**. Map memory to owners with
+`nvidia-smi --query-compute-apps=pid,used_memory` before launching — per-card totals do not tell you
+whose memory it is. On a card with a co-tenant, run the cheap arms rather than idling it, and never
+evict the co-tenant.
+
+### Second-dataset (replication) path
+
+`src/tcell_pipeline/replication/` converts a harmonized scPerturb `.h5ad` into the DE-statistics matrix
+the pipeline consumes. The methodology is fixed in advance by `docs/replication-prereg.md` (frozen;
+amend only by dated append) and the candidate measurements are in `docs/replication-dataset-survey.md`.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.replication.adapter --self-check      # no data needed
+PYTHONPATH=src python -m tcell_pipeline.replication.adapter --dataset frangieh
+PYTHONPATH=src python -m tcell_pipeline.replication.pinnacle_contexts         # per-context embeddings
+```
+
+Two hazards worth stating plainly. **Never call `embeddings_pinnacle.run("<other context>")` to swap
+cell types**: it takes a `context` argument but always writes to `config.PINNACLE_EMBEDDINGS_PATH`, so
+it overwrites the CD4 store every reference lane reads. Use the `replication.pinnacle_contexts` module,
+which writes per-context files. And **`config.CONDITIONS` is read at import time** into `_COND_INDEX` in
+`encoders/context_encoder.py` and `graph/typed_graph_encoder.py`, so it must be set in the environment
+*before* the first import; patching `config` afterwards silently does nothing.
 
 ## Repository / data-mart layout
 

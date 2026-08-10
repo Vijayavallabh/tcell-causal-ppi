@@ -21,8 +21,13 @@ GRAPH_ROOT: Path = Path(os.environ.get("GRAPH_ROOT", DATA_DIR / "graphs"))
 MANIFEST_ROOT: Path = Path(os.environ.get("MANIFEST_ROOT", DATA_DIR / "manifests"))
 PPI_CACHE_ROOT: Path = Path(os.environ.get("PPI_CACHE_ROOT", DATA_ROOT / "ppi"))
 
-DE_STATS_PATH: Path = DATA_ROOT / "GWCD4i.DE_stats.h5ad"
-PSEUDOBULK_PATH: Path = DATA_ROOT / "GWCD4i.pseudobulk_merged.h5ad"
+# Dataset-scoped, so a replication dataset can coexist with the reference screen instead of
+# requiring an edit here (docs/replication-dataset-survey.md section 4). Defaults are the Marson
+# GWCD4i filenames, byte-identical to the hardcoded values these replaced, so an unset environment
+# reproduces the frozen behaviour exactly.
+DE_STATS_PATH: Path = Path(os.environ.get("DE_STATS_PATH", DATA_ROOT / "GWCD4i.DE_stats.h5ad"))
+PSEUDOBULK_PATH: Path = Path(os.environ.get("PSEUDOBULK_PATH",
+                                            DATA_ROOT / "GWCD4i.pseudobulk_merged.h5ad"))
 
 # --- Derived artifact locations ---
 ID_MAPPING_PATH: Path = INTERMEDIATE_ROOT / "id_mapping.parquet"
@@ -38,8 +43,8 @@ COMPLEX_MEMBERSHIP_PATH: Path = GRAPH_ROOT / "complex_membership.parquet"
 FEATURE_AVAILABILITY_PATH: Path = MANIFEST_ROOT / "feature_availability.yaml"
 
 # --- DE_stats geometry (verified in examples/inspect_de_stats.py) ---
-DE_N_OBS: int = 33983
-DE_N_VARS: int = 10282
+DE_N_OBS: int = int(os.environ.get("DE_N_OBS", 33983))
+DE_N_VARS: int = int(os.environ.get("DE_N_VARS", 10282))
 DE_LAYERS: tuple[str, ...] = ("log_fc", "zscore", "p_value", "adj_p_value", "baseMean", "lfcSE")
 # zscore / log_fc are clipped to this range then stored sparse; the rest stay dense.
 CLIPPED_SPARSE_LAYERS: tuple[str, ...] = ("zscore", "log_fc")
@@ -85,14 +90,21 @@ PLM_EMBED_DIM: int = 1280        # ESM-2 650M (t33) per-protein vector, mean-poo
 PINNACLE_EMBED_DIM: int = 128    # PINNACLE cell-type-contextualised protein embedding (real dim)
 GUIDE_SEQ_EMBED_DIM: int = 64    # placeholder guide-sequence embedding (zeros until available)
 H_DO_DIM: int = 256              # fused perturbation-condition embedding h_do
-CONDITIONS: list[str] = ["Rest", "Stim8hr", "Stim48hr"]
+# CLOSED vocabulary, sized into two nn.Embedding layers at import time
+# (encoders/context_encoder.py:19,42 and graph/typed_graph_encoder.py:31,164) and range-checked at
+# typed_graph_encoder.py:228. Because those module-level _COND_INDEX dicts are built on import, this
+# MUST be set in the environment BEFORE the first import; patching config afterwards does nothing.
+# A single-condition dataset degenerates condition_gated into typed_static, so h1 is undefined there
+# and h2a becomes the primary contrast (docs/replication-prereg.md section 1).
+CONDITIONS: list[str] = [c for c in os.environ.get("CONDITIONS", "Rest,Stim8hr,Stim48hr").split(",") if c]
 PLM_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "plm_embeddings.parquet"
-PINNACLE_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "pinnacle_embeddings.parquet"
+PINNACLE_EMBEDDINGS_PATH: Path = Path(os.environ.get(
+    "PINNACLE_EMBEDDINGS_PATH", INTERMEDIATE_ROOT / "pinnacle_embeddings.parquet"))
 # PINNACLE (Li et al. 2024) contextual protein embeddings — Figshare article 22708126.
 # The screen is CD4+ T cells, so we take the CD4 helper T-cell context.
 PINNACLE_RAW_DIR: Path = DATA_ROOT / "pinnacle" / "pinnacle_embeds"
 PINNACLE_FIGSHARE_URL: str = "https://ndownloader.figshare.com/files/48005749"
-PINNACLE_CONTEXT: str = "cd4-positive helper t cell"
+PINNACLE_CONTEXT: str = os.environ.get("PINNACLE_CONTEXT", "cd4-positive helper t cell")
 
 # --- Module 2 (Typed Graph Encoder) ---
 GRAPH_HOPS: int = 2               # neighbourhood radius sampled around each perturbation target
@@ -127,7 +139,13 @@ PROTEIN_FEATURE_DIM: int = PLM_EMBED_DIM + PINNACLE_EMBED_DIM + 4
 SPLITS_ROOT: Path = Path(os.environ.get("SPLITS_ROOT", DATA_DIR / "splits"))
 SPLIT_ROLES: tuple[str, ...] = ("train", "val", "calibration", "challenge")  # challenge == sequestered test
 SPLIT_FRACTIONS: dict[str, float] = {"train": 0.60, "val": 0.15, "calibration": 0.10, "challenge": 0.15}
-SPLIT_SEED: int = 0
+# Shuffles family-group order in assign_partitions, so changing it yields a DIFFERENT REALIZATION of
+# the split at the SAME difficulty. That is the control for the fold-vs-difficulty confound: three
+# folds that differ in both cannot attribute a contrast difference to difficulty, but two folds at
+# identical threshold/cap and different SPLIT_SEED measure the fold-noise floor directly.
+# NOTE this constant does double duty as the DEFAULT training seed (run_screening.py `--seed`), so
+# override it only to generate splits, and always pass `--seed` explicitly when training.
+SPLIT_SEED: int = int(os.environ.get("SPLIT_SEED", 0))
 # Centered ESM-2 cosine, representative (non-chaining) clustering: measured to give a 3.1% largest
 # family on the real marts. A tuning knob the leakage report calibrates (see docs/specs feat-003).
 # Env-overridable (like every root above) so a harder-OOD robustness sweep can regenerate STRICTER

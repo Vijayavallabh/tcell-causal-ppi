@@ -1,6 +1,113 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-07-23): the re-screen RAN; the negative is now VALID, and feat-011/012 are DONE
+## STOP — READ FIRST (2026-08-06): venue changed, three folds are done, and one published claim was retracted
+
+Everything below dated 2026-07-23 or earlier is SUPERSEDED. It is kept as the record, not as routing.
+
+**Where the work is.** Branch `icbinb-multidataset-2026-08-03`, all uncommitted (rail 6). Live plan:
+`NEXT_ACTIONS.txt`. Full numbers: `RESULTS_SUMMARY.md`. Read those two before anything else.
+
+**Venue: ICBINB-BIO (NeurIPS 2026 workshop), not AAAI.** Deadline 29 Aug 2026 AoE (site marks it
+tentative — RE-CHECK). 8pp main text, refs and appendices free, double-blind, non-archival, OpenReview
+`NeurIPS.cc/2026/Workshop/ICBINB-BIO`. New paper at `paper/icbinb/main.tex`; `paper/main.tex` (AAAI) is
+untouched and still valid for dual submission, which the user has cleared.
+
+**BEFORE ANY GPU WORK ON THIS BOX:**
+
+    export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.580.173.02
+
+Without it every `--device cuda` lane dies in <60s on an NVML assert naming PyTorch. Cause is a stray
+535.309.01 driver tree on the library path against a 580.173.02 kernel module. See AGENTS.md.
+
+### The science moved: three folds, and NOTHING survives correction on any of them
+
+| Fold (thr/cap) | h1 (cg − eo) | h2a (ts − eo) | survives FWER |
+|---|---|---|---|
+| frozen 0.85/0.05 | −0.0009 (p=0.71) | **−0.0131 (p=0.0036)** | h2a only |
+| intermediate 0.80/0.10 | +0.0082 (bonf 0.101) | −0.0122 (bonf 0.920) | none |
+| harder 0.75/0.15 | +0.0005 (p=0.904) | −0.0012 (p=0.614) | none |
+
+All four arms, n=5, gates alive, 0 failures. **The one contrast that ever cleared Bonferroni+Holm —
+"the typed static graph is reliably worse" — does NOT replicate.** That is now stated in the paper
+rather than buried. Note the two failures differ: on the intermediate fold the effect size replicates
+(−0.0122 vs −0.0131) and dies from 3.5× variance; on the hardest fold the effect itself collapses.
+
+### The finding that reframes the split sweep (COMPLETE 2026-08-10 — do not re-run)
+
+Three re-draws of the SAME split spec (0.80/0.10, only `SPLIT_SEED` varied), full family, n=5 each,
+0 failures, all gates alive. Roots: `screening_c080c10_h1` / `_r2` / `_r3`.
+
+| re-draw | h1 | uncorrected 95% CI | raw p | Bonf x4 | baseline | n_val | cosine |
+|---|---|---|---|---|---|---|---|
+| seed 0 | +0.00824 | [+0.00168,+0.01480] | 0.025 | 0.101 | 0.0991 | 3,632 | 0.7591 |
+| seed 1 | +0.00260 | [+0.00048,+0.00472] | 0.027 | 0.109 | 0.0845 | 7,216 | 0.7928 |
+| seed 2 | +0.00206 | [-0.00237,+0.00650] | 0.266 | 1.000 | 0.0942 | 5,096 | 0.8624 |
+
+**The qualitative verdict FLIPS between re-draws of an identical specification.** Two give an
+interval excluding zero at p~0.03; the third does not, at p=0.27. The estimate spans **4x**. For
+scale, h1 across the three genuinely DIFFERENT folds was −0.0009 / +0.0082 / +0.0005 — so **re-draw
+noise is the same size as the between-fold differences we were tempted to read as difficulty.**
+The difficulty statistic itself spans 0.759–0.862 across re-draws against 0.056 for the whole
+designed threshold range, and does not even order the baseline (the nominally hardest re-draw scores
+highest; the baseline tracks `n_val`, which the re-draws moved 3,632 → 7,216 unbidden).
+
+Stable across all three: the sign (all positive) and the corrected verdict (none survives). The
+paper leans on the corrected verdict and presents the uncorrected intervals as a cautionary exhibit.
+
+### DO NOT repeat these four mistakes
+
+1. **Do not quote interim n.** Three interim values were retracted this session — h2a `−0.0214`
+   (n=2, true −0.0122), h2b `fwer=True` (n=2, does not survive at n=5), and h1 `survives=True`
+   (family_size had collapsed to 1). **All three were in the favourable direction.** Small-n reads on
+   high-variance graph arms drift toward looking decisive. Wait for the rail-5 bar.
+2. **Check `family_size` before believing any FWER verdict.** With missing arms the aggregator
+   corrects over a family of 1 and reports `survives_family_wise: True` on a raw p. It also prints
+   `INCOMPLETE COVERAGE` / `UNBALANCED` on the same run — read those lines.
+3. **The aggregate launcher log is not the record.** A script launched with `>` holds its own offset
+   and overwrites lines other jobs append with `>>`. Two `[c080]` lines vanished and the log implied
+   an idle card while a 7.6h lane ran. Enumerate `/proc/<pid>/environ` + `cmdline`, or read the
+   per-lane logs under `data/logs/n5/`.
+4. **Do not trim prose to fix a page overflow before checking layout.** Six rounds of cuts moved the
+   boundary barely at all; the cause was an `\fbox{\begin{minipage}}` that could not break across
+   pages and stranded 26 lines. `pdftotext -f N -l N main.pdf - | grep -vc '^\s*$'` per page first.
+
+### State of the deliverables
+
+- `paper/icbinb/main.tex` — compiles clean (0 errors, 0 undefined, 0 overfull >2pt, 0 dashes), main
+  text exactly 8pp. Required LLM-usage disclosure written and honest about agent-authored code.
+- `docs/replication-prereg.md` — FROZEN. Amend only by dated append; never edit above the amendments.
+- `docs/replication-dataset-survey.md` — six scPerturb datasets measured from the files themselves.
+  Only **two** survive the pre-registered rules (Frangieh, Norman); Replogle RPE1 was **dropped**
+  (12 of 2,393 targets clear the 25-cell floor). The goal asked for ≥4; the data supports 2, and
+  manufacturing 4 would require weakening the discipline the paper is about.
+- `src/tcell_pipeline/replication/` — h5ad → DE-stats adapter, mutation-tested self-check, PINNACLE
+  context extractor. NEVER use `embeddings_pinnacle.run("melanocyte")` for a context swap: it takes a
+  context argument but always writes to `config.PINNACLE_EMBEDDINGS_PATH`, clobbering the CD4 store
+  every reference lane reads.
+- `config.py` — 8 constants now env-scoped, defaults verified byte-identical, 549 tests pass.
+  **`CONDITIONS` is read at IMPORT time** into `_COND_INDEX` in two encoders, so it must be set in the
+  environment before first import; patching config afterwards silently does nothing.
+
+**Next:** E1 in `NEXT_ACTIONS.txt` — train the replication arms. The config blocker is cleared; the
+remaining work is CPU prep (ID-map Frangieh's 43 unmapped targets, per-dataset splits and program
+basis) before any GPU. **Nothing is in flight as of 2026-08-10 15:30; all four cards are idle.**
+
+### Fifth mistake to avoid: this is a SHARED box, and memory is the constraint
+
+On 2026-08-08 a co-tenant (another user's text-to-3D job) held 41.5 GB on one A100 and grew to
+48.6 GB, while `condition_gated` needs **47–51 GB** (measured, not estimated). A lane launched there
+would have died, possibly hours in. `run_realization.sh` runs both arms on one card, so the fix was
+to let the cheap arm finish, then stop the chain by process group before the expensive arm allocated,
+and re-queue that seed when the card actually freed. Do NOT kill a co-tenant; it was there first, and
+starving another user is the more expensive half of the mistake. Do check free memory at launch AND
+match the ARM to what is available — `expression_only` needs ~2.5 GB and ran happily on the
+constrained card while `condition_gated` could not.
+
+---
+
+## SUPERSEDED 2026-07-23 handoff — kept for the record
+
+## (2026-07-23): the re-screen RAN; the negative is now VALID, and feat-011/012 are DONE
 
 The confound below (2026-07-21) was real, and it has now been REPAIRED and RE-MEASURED. `condition_gated`
 was re-run at `lambda_graph=0` (live gates, mean 0.57–0.77) across 5 paired seeds on the frozen fold.

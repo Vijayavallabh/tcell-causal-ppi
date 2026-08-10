@@ -1,5 +1,12 @@
 # AAAI title + abstract (draft, 2026-07-22)
 
+> **STATUS 2026-08-06 — superseded as the active deliverable.** The primary target is now the ICBINB-BIO
+> NeurIPS 2026 workshop (`paper/icbinb/main.tex`, deadline 29 Aug 2026 AoE), which is framed around the
+> failure analysis rather than the architecture. This document remains valid for the AAAI submission
+> (`paper/main.tex`, dual submission cleared), with one caveat: any phrasing here that calls the typed
+> static graph "reliably worse" describes the frozen fold only, and does not replicate on the two folds
+> run since. See `RESULTS_SUMMARY.md` and `session-handoff.md`.
+
 > **READ FIRST — integrity note.** Everything below is written from results that are IN HAND, except one
 > sentence marked `[RESULT — fill from the campaign]`. That sentence is the graph-vs-no-graph headline and
 > it is being computed right now by the 5-seed confirmatory val campaign. Do NOT submit with a fabricated

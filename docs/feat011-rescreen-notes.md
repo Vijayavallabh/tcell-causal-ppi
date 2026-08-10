@@ -1,5 +1,15 @@
 # feat-011 re-screen at `lambda_graph=0` — analysis plan, pre-registered
 
+> **UPDATE 2026-08-06 — h2a is FOLD-SPECIFIC; read this before quoting "reliably worse".**
+> The `h2a` verdict recorded in this document (typed_static − expression_only = −0.0131, surviving both
+> Bonferroni and Holm) is correct **for the frozen 0.85/0.05 fold**, and it is the only contrast that ever
+> cleared correction anywhere in this project. It does **not** replicate on either of the two folds run
+> since, both at the same n=5: −0.0122 (Bonferroni 0.920) at threshold 0.80/cap 0.10, and −0.0012
+> (p 0.614) at 0.75/0.15. Note the two failures differ in kind — on the intermediate fold the effect size
+> reproduces to within 7% and dies from 3.5× the across-seed variance, while on the hardest fold the
+> effect itself collapses tenfold. Everything else in this document stands. See `RESULTS_SUMMARY.md`.
+
+
 **Written 2026-07-22 00:04 IST, BEFORE any new lane produced a number.** The four lanes launched at
 00:04:08 and the first epoch lands ~00:45. Everything in §1–§4 is fixed as of that timestamp; §5 is the
 only section that may be written after results exist.

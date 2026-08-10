@@ -1,5 +1,82 @@
 =======================================================================
-STATUS — 2026-07-29 (evening): THIS CAMPAIGN IS COMPLETE. Do not re-run.
+STATUS — 2026-08-03: ICBINB-BIO retarget. Read RESULTS_SUMMARY.md section 0-3 first.
+=======================================================================
+TARGET VENUE CHANGED: ICBINB-BIO (NeurIPS 2026 workshop), deadline 29 Aug 2026 AoE (site marks it
+tentative, RE-CHECK). 8pp body, refs AND appendices free and unlimited, double-blind, non-archival,
+OpenReview NeurIPS.cc/2026/Workshop/ICBINB-BIO. AAAI dual submission is cleared by the user.
+
+BEFORE ANY GPU WORK ON THIS BOX:
+    export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.580.173.02
+Without it every --device cuda lane dies in <60s on an NVML assert (see AGENTS.md, "A broken NVML
+kills every CUDA lane"). This is not optional and it already cost lanes on 2026-07-29.
+
+COMPLETE (2026-08-03/05): three folds, all four arms, n=5 each, 0 failures, gates alive throughout.
+  frozen 0.85/0.05  -> data/results/screening_lambda0/
+  intermediate 0.80/0.10 -> data/results/screening_c080c10_h1/
+  harder 0.75/0.15  -> data/results/screening_c075c15_n5/
+  h1 = -0.0009 / +0.0082 / +0.0005. NOTHING survives Bonferroni+Holm on any fold, including the
+  frozen fold's h2a once you look across folds. Full numbers: RESULTS_SUMMARY.md.
+
+RE-DRAW EXPERIMENT: COMPLETE 2026-08-10. DO NOT RE-RUN. Three re-draws of ONE specification
+  (0.80/0.10, only SPLIT_SEED varied), full family, n=5 each, 0 failures, gates alive:
+      h1 = +0.00824 (raw p 0.025) / +0.00260 (0.027) / +0.00206 (0.266)
+  The estimate spans 4x and THE QUALITATIVE VERDICT FLIPS: two re-draws give an uncorrected interval
+  excluding zero, the third does not. None survives Bonferroni over the family of 4. Re-draw noise
+  is the same size as the between-fold differences (-0.0009 / +0.0082 / +0.0005) we were tempted to
+  read as difficulty. In the paper; full numbers in RESULTS_SUMMARY.md. Roots:
+  screening_c080c10_h1 / _r2 / _r3.
+
+NOTHING IS IN FLIGHT as of 2026-08-10 15:30. All four A100s are idle.
+
+SHARED-BOX RULE, learned 2026-08-08 (obey before launching anything):
+  Another user's job held 41.5 GB on one A100 and GREW to 48.6 GB. Measured arm requirements:
+      expression_only ~2.5 GB   untyped_gnn ~2-4 GB   condition_gated / typed_static 47-51 GB
+  Check free memory per card at launch, and MATCH THE ARM TO THE MEMORY: a constrained card can
+  still run expression_only productively. Never kill a co-tenant; it was there first. If a chain
+  script runs a cheap arm then an expensive one on the same card, stop it by process group after the
+  cheap arm lands rather than letting the expensive one allocate into too little memory.
+
+DONE 2026-08-03/05: docs/replication-dataset-survey.md, docs/replication-prereg.md (frozen; amend by
+dated append only), src/tcell_pipeline/replication/ (adapter + mutation-tested self-check + PINNACLE
+context extractor), DE matrices for 6 scPerturb datasets, paper/icbinb/main.tex (compiles clean,
+main text 8pp at the limit; float placement matters, see below), config dataset-scoping (E1 blocker,
+now cleared), SPLIT_SEED env-scoping.
+
+PAPER PAGE BUDGET, hard-won: main text is EXACTLY 8pp. If you add text and it overflows, do NOT
+start trimming prose. Check lines-per-page first:
+    for p in 6 7 8; do pdftotext -f $p -l $p main.pdf - | grep -vcE '^\s*[0-9]+\s*$|^\s*$'; done
+A page holding ~26 lines instead of ~50 means an unbreakable box or a stuck float, not verbose
+prose. The checklist was an \fbox{\begin{minipage}} that could not split across pages and stranded
+26 lines; converting it to \hrule-delimited text reclaimed more than six rounds of prose cuts.
+
+NEXT, IN ORDER:
+  E0. DONE 2026-08-03: cell-type-matched PINNACLE contexts extracted to
+      data/intermediate/replication/pinnacle_<context>.parquet via
+      tcell_pipeline.replication.pinnacle_contexts. NEVER call embeddings_pinnacle.run("melanocyte")
+      to do this: it takes a context argument but always writes to config.PINNACLE_EMBEDDINGS_PATH,
+      so it would overwrite the CD4 store every reference lane reads. Coverage is 48-52% of
+      replication targets vs 9.2% of reference rows (their targets are well-studied screen hits), so
+      the replication "no-graph" baseline is MORE graph-informed than the reference's.
+  E0b. DONE 2026-08-05: the config blocker below is CLEARED. DE_STATS_PATH, PSEUDOBULK_PATH,
+      DE_N_OBS, DE_N_VARS, CONDITIONS, PINNACLE_EMBEDDINGS_PATH, PINNACLE_CONTEXT and SPLIT_SEED are
+      all env-scoped with defaults verified byte-identical to the frozen constants (549 tests pass).
+      CRITICAL: CONDITIONS is read at IMPORT time into _COND_INDEX in encoders/context_encoder.py
+      and graph/typed_graph_encoder.py, so it MUST be set in the environment BEFORE the first
+      import. Patching config afterwards silently does nothing and you will lose a day to it.
+  E1. Train the replication arms. The remaining work is data, not config: ID-map to the PPI graph
+      (Frangieh maps 173/216 targets to UniProt, 165 have ESM-2; the 43 unmapped need symbol
+      resolution), swap the
+      PINNACLE context per dataset, refit the program basis INSIDE the train fold, generate a blocked
+      target-OOD split, run 4 arms x >=4 seeds. Only Frangieh (216 targets x 3 conditions) can test
+      h1; Norman (102 targets, 1 condition, NO PINNACLE context -> ESM-2-only) can test h2a only.
+  E2. Do NOT try to rescue Replogle RPE1. It was dropped by the pre-registration after measurement
+      (12 of 2,393 targets clear the 25-cell floor with >=2 replicates; no other replicate axis).
+      Rescuing it with random pseudo-replicates is exactly the failure the paper is about. If you
+      believe a different design is right, amend the prereg by dated append FIRST, and say so.
+  E3. Re-check the ICBINB deadline and the OpenReview submission form.
+
+=======================================================================
+STATUS — 2026-07-29 (evening): THAT CAMPAIGN IS COMPLETE. Do not re-run.
 =======================================================================
 The 12-13h robustness campaign below RAN and finished (~35 GPU-h, 0 failures). Full account: RESULTS_SUMMARY.md.
 Outcome: on the harder blocked-target-OOD split (thr 0.75 / cap 0.15) the graph stayed at parity with no-graph
