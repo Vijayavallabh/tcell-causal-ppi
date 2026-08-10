@@ -337,3 +337,33 @@ sixth h2a dataset, the remaining options are (a) check the two pending Replogle 
 factor, (b) ingest Schmidt 2022 from GEO, which has resting vs 24 h restimulated in primary human T
 cells but is not in scPerturb and needs its own adapter, or (c) accept the asymmetry and report it.
 Option (c) is honest and free; (b) is the only one that would materially change the h1 claim.
+
+## L1-PRE gate CLOSED (2026-08-10) — extended id_mapping + ESM-2
+
+`id_mapping` and the ESM-2 store were extended BY COPY (frozen files sha256-verified untouched;
+12,938 mapping rows, 12,744 accessions). Coverage before -> after:
+
+| dataset | cell type | targets >=25 | coverage before | after | gate |
+|---|---|---|---|---|---|
+| ReplogleWeissman2022_rpe1 | RPE1 epithelial | 2,122 | 57.3% | **99.5%** | PASS |
+| ReplogleWeissman2022_K562_essential | K562 | **2,003** | n/a | **96.0%** | PASS |
+| FrangiehIzar2021 | melanocytes | 246 | 72.0% | **94.7%** | PASS |
+| TianKampmann2021_CRISPRi | iPSC-induced neuron | 184 | 71.2% | **100%** | PASS |
+| NormanWeissman2019 | K562 | 105 | 82.9% | **99.0%** | PASS |
+| TianKampmann2021_CRISPRa | iPSC-induced neuron | 100 | 66.0% | **100%** | PASS |
+| Datlinger / Papalexi / Shifrut / Tian2019 x2 | various | 21-31 | - | 95-100% | below 50-family floor |
+
+The gate that mattered was Replogle RPE1: 43% of its graph arm would have had no graph node at all,
+biasing h1 toward zero. The fix was mostly gene-symbol nomenclature - Perturb-seq screens are annotated
+against the gene build current at publication, so an unresolved symbol is usually a rename
+(AARS -> AARS1, ATP5A1 -> ATP5F1A, C10orf54 -> VSIR) rather than a gene without a protein. Querying
+current symbols only would have shrunk the graph arm preferentially on the OLDER datasets, a bias
+correlated with dataset age and invisible in any aggregate.
+
+**Pool status: six datasets clear both gates**, spanning RPE1 epithelial, K562 lymphoblast (x2),
+melanocyte and iPSC-induced neuron (x2) - four lineages, meeting the >=5 cell-type target once the
+pending genome-wide K562 file is counted separately or a further lineage is added.
+
+**h1 remains constrained to Frangieh alone.** K562_essential has no second experimental factor, like
+every other large candidate. The multi-dataset result is therefore a pooled h2a over six datasets and
+an h1 over one, and the paper must present them separately rather than merging.
