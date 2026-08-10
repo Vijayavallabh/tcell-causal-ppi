@@ -54,39 +54,26 @@ REBUILD:  export PATH=/tmp/tl/current/bin/x86_64-linux:$PATH   <- NOT /tmp/tl/bi
           cleaned periodically, so TeX Live may need reinstalling
           pdflatex main; bibtex main; pdflatex main; pdflatex main
 
---- OPEN 3: the finding that changed the paper, and the one experiment nobody has run ---------
-The untyped graph (topology, no edge typing, no condition gating) is POSITIVE ON 5 OF 5 independent
-datasets: reference CD4 T cell +0.0045, K562-ess +0.0081, Frangieh +0.0194, Tian +0.0281,
-RPE1 +0.0675. Pooled random-effects +0.0209 [+0.0048, +0.0370] p=0.011, I2=87.5%. POST-HOC — the
-prereg fixes a per-dataset family and a pooled meta-analytic test is not in it.
-This flipped paper cause C from Refuted to Survives: the 14-cell architecture search varied HOW the
-typed gated encoder message-passes and never removed the typing and gating, so it excluded its own
-premise. See the banner and the post-hoc section in RESULTS_SUMMARY.md.
-RUNNING NOW (launched 2026-08-10 21:44): ./run_untyped_n7.sh takes the reference contrast from n=5
-to n=7. It fails the both-corrections rule on Bonferroni alone (Holm 0.042, Bonferroni 0.083), so two
-more paired seeds are the cheapest thing that could move cause C off post-hoc footing on the dataset
-the paper is actually about. BOTH arms run at both new seeds because the contrast is paired per seed;
-an unpaired untyped_gnn seed would silently drop from the aggregation. Fresh root
-data/results/screening_untyped_n7, seeded with copies of the landed lanes, source sha256-manifested
-before and after. ~6-7h on 4 cards. Log: data/logs/untyped_n7.nohup.log.
-  WHEN IT LANDS, two commands in this order:
-    1  .venv/bin/python merge_registry_n7.py
-    2  SCREENING_ROOT=data/results/screening_untyped_n7 \
-       REGISTRY_PATH=data/results/screening_untyped_n7/experiment_registry.yaml \
-       PREDICTIONS_ROOT=data/results/screening_untyped_n7/predictions \
-       SPLITS_ROOT=data/splits PYTHONPATH=src \
-       .venv/bin/python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4,5,6
-  STEP 1 IS NOT OPTIONAL. multiseed reads fold evidence from the registry, and the fresh root starts
-  with an empty one, so it already flags "NOT comparable" at n=5 even though the numbers reproduce the
-  reference EXACTLY (+0.0045, CI [+0.0011,+0.0079], bonf 0.0832, holm 0.0416 — verified 2026-08-10).
-  That flag would be wrong: every lane ran against SPLITS_ROOT=data/splits, the frozen fold. The merge
-  supplies the missing evidence instead of suppressing the check, and leaves the reference registry
-  untouched. Note the reference registry lives at data/results/experiment_registry.yaml, NOT inside
-  data/results/screening/ — the launcher's copy step silently found nothing there.
-  THEN: if promotion_margin clears BOTH Bonferroni and Holm at n=7, the paper's cause-C claim can drop
-  its post-hoc caveat on the reference dataset (Section "Failure 3" and cause C in Section 6). If it
-  does not, the caveat stays and nothing else changes — the result is informative either way, and n
-  must not shrink: report n=7 with all seven per-seed deltas whatever it says.
+--- OPEN 3: RESOLVED 2026-08-11. The untyped graph wins on the reference screen. ---------------
+n=7 on the frozen fold: untyped_gnn - expression_only = +0.0043 [+0.0017,+0.0069], all seven seeds
+positive, p=0.0068, Bonferroni 0.0273, Holm 0.0205, family_size 4, no seed dropped, fold comparability
+verified. SURVIVES BOTH. At n=5 it was +0.0045 with Bonferroni 0.083 and failed — the two added seeds
+tightened the interval rather than moving the estimate.
+Root: data/results/screening_untyped_n7/. Rail 2 held (source root byte-identical).
+Cause C is no longer post-hoc on the reference dataset. The POOLED 5-dataset claim (+0.0209
+[+0.0048,+0.0370], I2=87.5%) IS still post-hoc and keeps its caveat — the paper distinguishes them.
+
+STILL WORTH DOING, in priority order:
+ 1 typed_static and condition_gated are only at n=5 in the n7 root, so the per-config RANKING there is
+   unbalanced (common seeds 0-4). The promotion_margin contrast itself is clean at n=7 because both
+   its arms have all seven. If you want the ranking balanced, run those two arms at seeds 5 and 6:
+     ./run_replication_lane.sh is for replication datasets — for the reference use the pattern in
+     run_untyped_n7.sh with --only typed_static / condition_gated. ~6-7 GPU-h per lane, 4 lanes.
+ 2 An untyped arm on the four replication datasets is ALREADY run and is what gives the 5/5 pattern.
+   Nothing more is needed there.
+ 3 The obvious follow-up the paper now invites: WHY does typing/gating discard the signal? Candidates
+   are the per-relation normalisation (already known to depress gates 10x), the condition gate's
+   initialisation, and the mixture gate gamma. None of these has been isolated.
 
 --- HOW TO RUN ANY OF THIS -------------------------------------------------------------------
   ./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>     stages 2-6, idempotent, CPU
