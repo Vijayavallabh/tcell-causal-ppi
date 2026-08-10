@@ -29,6 +29,13 @@ import math
 from pathlib import Path
 
 ROOT = Path("data/results/replication")
+# The reference screen is a fifth INDEPENDENT dataset for the cross-dataset question, and the paper's
+# pooled untyped-graph figure includes it. It is not under ROOT, so it has to be named explicitly.
+# Fold RE-DRAWS of the reference (screening_c075c15*, screening_c080c10*) are deliberately NOT here:
+# they re-partition the same data, so pooling them would count one dataset several times and shrink
+# the interval on a fiction. Path is read-only; nothing here writes to it.
+EXTRA_DATASETS = {"reference_screen_n7": Path("data/results/screening_untyped_n7"),
+                  "reference_screen": Path("data/results/screening")}
 # Directories starting with "_" are snapshots and scratch, not datasets. Globbing them in
 # double-counts whichever dataset was snapshotted and silently inflates k.
 # Datasets with >= 2 experimental conditions, where condition_gated is not identical to typed_static.
@@ -40,7 +47,8 @@ CONTRASTS = {"h1_vs_no_graph": "condition_gated - expression_only",
 
 
 def _load(dataset: str) -> dict:
-    p = ROOT / dataset / "robustness_5seed.json"
+    base = EXTRA_DATASETS.get(dataset, ROOT / dataset)
+    p = base / "robustness_5seed.json"
     return json.loads(p.read_text()) if p.exists() else {}
 
 
@@ -115,11 +123,20 @@ def run(datasets: list[str], min_seeds: int = 4) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--datasets", nargs="+", default=sorted(p.name for p in ROOT.iterdir() if p.is_dir() and not p.name.startswith("_")))
+    ap.add_argument("--datasets", nargs="+",
+                    default=sorted(p.name for p in ROOT.iterdir() if p.is_dir() and not p.name.startswith("_")))
+    ap.add_argument("--with-reference", action="store_true",
+                    help="include the reference screen (n=7 root) as a fifth independent dataset. This is "
+                         "what the paper's pooled untyped-graph estimate uses; without it the pool is the "
+                         "four replication datasets only.")
     ap.add_argument("--min-seeds", type=int, default=4)
     ap.add_argument("--out", default=str(ROOT / "pooled.json"))
     a = ap.parse_args()
-    rep = run(a.datasets, a.min_seeds)
+    datasets = list(a.datasets)
+    if a.with_reference:
+        datasets = ["reference_screen_n7"] + datasets
+    rep = run(datasets, a.min_seeds)
+    rep["includes_reference_screen"] = bool(a.with_reference)
     Path(a.out).write_text(json.dumps(rep, indent=2))
     for name, p in rep["pooled"].items():
         if not p.get("k"):
