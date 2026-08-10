@@ -69,8 +69,24 @@ the paper is actually about. BOTH arms run at both new seeds because the contras
 an unpaired untyped_gnn seed would silently drop from the aggregation. Fresh root
 data/results/screening_untyped_n7, seeded with copies of the landed lanes, source sha256-manifested
 before and after. ~6-7h on 4 cards. Log: data/logs/untyped_n7.nohup.log.
-  When it lands: re-aggregate at --seeds 0,1,2,3,4,5,6 (the script does this itself and prints the
-  contrast), then decide whether the paper's cause-C claim can drop the post-hoc caveat.
+  WHEN IT LANDS, two commands in this order:
+    1  .venv/bin/python merge_registry_n7.py
+    2  SCREENING_ROOT=data/results/screening_untyped_n7 \
+       REGISTRY_PATH=data/results/screening_untyped_n7/experiment_registry.yaml \
+       PREDICTIONS_ROOT=data/results/screening_untyped_n7/predictions \
+       SPLITS_ROOT=data/splits PYTHONPATH=src \
+       .venv/bin/python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4,5,6
+  STEP 1 IS NOT OPTIONAL. multiseed reads fold evidence from the registry, and the fresh root starts
+  with an empty one, so it already flags "NOT comparable" at n=5 even though the numbers reproduce the
+  reference EXACTLY (+0.0045, CI [+0.0011,+0.0079], bonf 0.0832, holm 0.0416 — verified 2026-08-10).
+  That flag would be wrong: every lane ran against SPLITS_ROOT=data/splits, the frozen fold. The merge
+  supplies the missing evidence instead of suppressing the check, and leaves the reference registry
+  untouched. Note the reference registry lives at data/results/experiment_registry.yaml, NOT inside
+  data/results/screening/ — the launcher's copy step silently found nothing there.
+  THEN: if promotion_margin clears BOTH Bonferroni and Holm at n=7, the paper's cause-C claim can drop
+  its post-hoc caveat on the reference dataset (Section "Failure 3" and cause C in Section 6). If it
+  does not, the caveat stays and nothing else changes — the result is informative either way, and n
+  must not shrink: report n=7 with all seven per-seed deltas whatever it says.
 
 --- HOW TO RUN ANY OF THIS -------------------------------------------------------------------
   ./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>     stages 2-6, idempotent, CPU
