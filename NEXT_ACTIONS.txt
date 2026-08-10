@@ -94,6 +94,37 @@ PAGE BUDGET. Main text EXACTLY 8pp. On overflow check lines-per-page BEFORE trim
 THE LIMITATION-CLOSURE PLAN
 =======================================================================
 
+--- L1-CHAIN. What actually remains before a single replication lane can run (measured 2026-08-10) ---
+Earlier notes implied training was one step past the DE matrix. It is not. Per dataset the screening
+runner requires SEVEN artifacts (run_screening.py:121-123), and only the first exists:
+
+  1. DE_stats_v2.h5ad                  DONE for 5 datasets; Replogle x2 building
+  2. perturbation_condition table      NOT BUILT. The reference version is 33,983 rows x 58 COLUMNS.
+                                       Needs: the q_pre join (ensembl/uniprot/entrez from the extended
+                                       id_mapping), ppi_degree_{physical,functional,complex} computed
+                                       from the typed graph, control_baseline_expr from the raw data,
+                                       and 32 donor_pc_NN columns.
+  3. de_extraction -> de_layers/       NOT RUN. Reads DE_STATS_PATH, asserts geometry against
+                                       DE_N_OBS/DE_N_VARS (both env-scoped, so set them per dataset),
+                                       writes the sparse/dense layer files + de_obs/de_var parquets.
+  4. program basis, refit IN the train fold   NOT RUN
+  5. z-scored responses (zscore_path)  NOT RUN
+  6. blocked target-OOD splits         NOT RUN. Needs ESM-2 sequence similarity over THIS dataset's
+                                       targets; the extended store now covers them.
+  7. screening lanes                   NOT STARTED
+
+KNOWN BLOCKER IN STAGE 2: donor PCs. ContextEncoder consumes 32 donor PCA scalars
+(config.DONOR_PCA_DIMS) and no replication dataset has donor structure. Passing zeros is defensible -
+a constant contributes nothing and the arms are affected identically - but it must be an explicit,
+logged decision, not an accident of a missing column. Check first whether any candidate has a donor
+or subject axis that could fill it honestly; if not, zero it and record it in the paper alongside the
+PINNACLE/ESM-2 coverage numbers.
+
+REALISTIC SCOPE: stages 2-6 are new per-dataset code, not parameter changes. Budget a day of careful
+engineering plus a smoke run on the SMALLEST passing dataset (Papalexi, 25 rows) before touching the
+9,730-target genome-wide screen. The GPU cost of stage 7 (~16 GPU-h per dataset for h2a at n=5) is the
+cheap part; the wiring is the expensive part. Do not launch the big datasets first.
+
 --- L1-PRE. MANDATORY GATE, measured 2026-08-10: extend ID MAPPING + ESM-2 before ANY replication lane ---
 A cheap precondition check found a blocker that would have silently manufactured a null. Target ->
 UniProt -> ESM-2 coverage, for targets clearing the 25-cell floor:
