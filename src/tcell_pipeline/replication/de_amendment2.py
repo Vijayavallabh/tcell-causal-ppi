@@ -212,6 +212,15 @@ def build(dataset: str, target_col: str, condition_col: str | None,
 
     obs = pd.DataFrame(rows)
     obs["target_contrast"] = obs["target_contrast_gene_name"]
+    # de_extraction asserts every config.Q_POST_COLS column is present (de_extraction.py:92-93).
+    # Those are RESPONSE-DERIVED and prohibited as H1 input by the leakage fence, so a replication
+    # dataset has no business computing them -- but the schema check still has to pass. They are
+    # written as NaN: present in schema, empty in value, which is the honest encoding of "this
+    # dataset does not supply a quantity the model is forbidden to use anyway".
+    from tcell_pipeline import config as _cfg
+    for _c in _cfg.Q_POST_COLS:
+        if _c not in obs.columns:
+            obs[_c] = np.nan
     out = ad.AnnData(X=np.zeros((len(obs), genes.size), dtype=np.float32), obs=obs,
                      var=pd.DataFrame({"gene_name": genes}, index=genes))
     for k in DE_LAYERS:
