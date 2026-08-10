@@ -94,6 +94,36 @@ PAGE BUDGET. Main text EXACTLY 8pp. On overflow check lines-per-page BEFORE trim
 THE LIMITATION-CLOSURE PLAN
 =======================================================================
 
+--- L1-PRE. MANDATORY GATE, measured 2026-08-10: extend ID MAPPING + ESM-2 before ANY replication lane ---
+A cheap precondition check found a blocker that would have silently manufactured a null. Target ->
+UniProt -> ESM-2 coverage, for targets clearing the 25-cell floor:
+
+    Datlinger  31/31   100%      Papalexi   24/25    96%      Shifrut   18/21    86%
+    Norman     87/105   83%      Frangieh  177/246   72%      Replogle 1216/2122  57%  <-- BLOCKER
+
+Replogle RPE1, the dataset Amendment 2 unlocked as best-powered, loses 43% of its targets: 535 are
+absent from id_mapping entirely and 371 map but have no ESM-2 vector. The cause is structural, not a
+bug: `data/intermediate/id_mapping.parquet` and the ESM-2 store were built for the REFERENCE screen's
+11,526 targets, so any replication target outside that gene space resolves to nothing.
+
+WHY IT MANUFACTURES A NULL. A target with no UniProt has no PPI graph node. The graph encoder then has
+nothing to message-pass over, so condition_gated silently degenerates to expression_only for that row
+while still reporting a number. Across 43% of targets that biases h1 toward zero. This is exactly the
+"a silently weakened graph would manufacture the null" hazard the prereg names, arriving through ID
+mapping rather than through PINNACLE.
+
+DO THIS FIRST, PER DATASET, BEFORE ANY LANE:
+  1. Extend id_mapping to the dataset's target symbols (UniProt REST, same path Module 0 uses). Expect
+     genuine failures - deprecated symbols, novel transcripts like AC118549.1 - which is fine.
+  2. Run `python -m tcell_pipeline.embeddings_plm` to fill ESM-2 for the new accessions. It is
+     resumable and writes atomically. GPU, but cheap next to a training lane.
+  3. RE-MEASURE coverage and record it per dataset. If it stays below ~70% after step 2, either
+     RESTRICT the target set to mapped targets and say so explicitly in the paper, or drop the
+     dataset. Do NOT run the full family on a dataset where a large fraction of rows silently have no
+     graph: the result would be uninterpretable in the direction that flatters the paper's thesis.
+  4. Whatever coverage you end with, PUT IT IN THE PAPER per dataset. A reader cannot judge a pooled
+     null without knowing what fraction of each dataset's graph arm actually had a graph.
+
 --- L1. "One dataset." --------------------------------------------- CLOSE IT. Highest value. ---
 PAPER SAYS: the null is one screen; four of six candidates fell out; one dataset can test the graph
 contrast at all.
