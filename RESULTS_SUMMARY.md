@@ -3,6 +3,43 @@
 Branch `icbinb-multidataset-2026-08-03`. Everything uncommitted on disk. The 2026-07-29 campaign
 report follows below, unchanged.
 
+## L5 RESULT (2026-08-10): the "no graph" baseline is NOT graph-free, and the graph part WORKS
+
+Pre-specified analysis (`analyze_feature_ablation.py`, written before the lanes landed). Frozen fold,
+paired by seed against the unablated `expression_only` baseline (n=5, mean $0.085676$). Channels are
+ZEROED not removed, so out_dim and parameter count are identical and the contrast isolates
+information rather than capacity. Family of 3, Bonferroni and Holm.
+
+| variant | dropped | n | delta systema | 95% CI | bonf | verdict |
+|---|---|---|---|---|---|---|
+| nograph | PINNACLE + PPI degrees | 5 | $-0.003565$ | $[-0.004272,-0.002858]$ | **0.0005** | **SURVIVES: carried signal** |
+| nodegree | PPI degrees only | 4 | $-0.003465$ | $[-0.004298,-0.002631]$ | **0.0028** | **SURVIVES: carried signal** |
+| nopinnacle | PINNACLE only | 5 | $+0.000006$ | $[-0.000006,+0.000018]$ | 0.641 | inert |
+
+**Three readings, in order of importance.**
+
+1. **The graph information in the baseline is REAL and survives correction.** Removing it costs
+   $0.0036$ systema. For scale, h1 (message passing over the full ~8M-edge typed graph) is $-0.0009$
+   on this same fold and survives nothing. So a three-scalar summary of the network carries a
+   measurable, correction-surviving effect while the topology on top of it does not.
+2. **It is entirely the PPI degree scalars.** `nodegree` ($-0.00347$) reproduces `nograph`
+   ($-0.00357$) to within the CIs, so degrees account for essentially the whole effect.
+3. **PINNACLE is inert** ($+0.000006$, p=0.21). Consistent with the coverage audit: it is a zero
+   vector for 90.8% of rows, so a 128-d feature contributing nothing is the expected result, not a
+   surprise. The paper's cause-D argument should rest on degrees, not on PINNACLE.
+
+**This is the first interim in this project that did NOT drift favourably on converging**: nograph
+went $-0.00339$ (n=4) to $-0.00357$ (n=5), p $0.0008$ to $0.0002$. Recorded because the pattern has
+been the opposite four times and noting only the convenient direction would be selective.
+
+**Cost:** 15 lanes, ~5.4 GPU-h total. The paper currently claims this experiment "cannot be done
+without starving the graph arm too" — that sentence is wrong and must be replaced with the result.
+
+**Caveats.** One fold (frozen). The absolute effect is small ($0.0036$ on a baseline of $0.0857$,
+~4% relative); it clears correction because `expression_only` is the low-variance arm (sd $0.0005$).
+Comparator lanes predate a schema change and lack n_train/n_val, so fold identity is verified
+indirectly (ablated runs report n_train=21262, the frozen fold).
+
 ## RESOLVED (2026-08-05 05:20): the contradiction stop did NOT fire once the family was complete
 
 The escalation below was raised at `family_size = 1` and is now settled at `family_size = 4`, with
