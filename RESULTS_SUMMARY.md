@@ -1,3 +1,51 @@
+# UNEXPECTED — NEEDS HUMAN REVIEW (updated 2026-08-11)
+
+**On the REFERENCE screen, at n=7, the untyped graph beats the no-graph baseline and survives BOTH
+Bonferroni and Holm over the FULL pre-registered family of four.** This is the strongest form the
+result can take in this project: the reference dataset, the frozen fold, the complete family, no
+dropped seeds. Rail 4 applies — the null has not been rewritten around it.
+
+| | |
+|---|---|
+| contrast | `promotion_margin` = untyped_gnn − expression_only |
+| dataset | reference CD4+ T-cell screen, frozen blocked-target-OOD fold |
+| n | **7** (seeds 0-6, none dropped) |
+| effect | **+0.0043 systema**, 95% CI [+0.0017, +0.0069] |
+| per seed | +0.0090, +0.0050, +0.0022, +0.0031, +0.0033, +0.0066, +0.0008 — all seven positive |
+| correction | p=0.0068, **Bonferroni 0.0273, Holm 0.0205**, family_size **4** — survives BOTH |
+| fold | comparable: registry evidence present, fold sizes [21262, 4400] consistent, single frozen fold |
+| gate health | n/a — untyped_gnn has no learnable edge gate by construction |
+
+At n=5 this same contrast was +0.0045 with Bonferroni 0.0832 and it FAILED. Two more paired seeds did
+not change the estimate (+0.0045 -> +0.0043); they tightened it (CI half-width 0.0034 -> 0.0026). That
+is what an underpowered true effect looks like when you add power, and it is the opposite of what a
+fragile result looks like.
+
+`family_size: 4` is the full family — expression_only, untyped_gnn, typed_static, condition_gated —
+not the collapse-to-1 bug that produced three false "survives" earlier in this project.
+
+**What this establishes.** The arm that wins carries PPI topology with NO edge typing and NO condition
+gating. On this same fold the typed arms do not: typed_static is reliably worse and condition_gated is
+indistinguishable. Combined with the replication (untyped positive on 5/5 independent datasets, and
+outright winning on Replogle RPE1 where the typed arm goes negative), the conclusion is no longer
+hedged and is no longer post-hoc on the reference dataset:
+
+> The protein-interaction prior is not what failed. The typed, gated encoder built to exploit it is
+> what discards the signal the raw topology carries.
+
+This is now a pre-registered family contrast surviving both corrections on the dataset the project is
+about, so the paper's cause-C claim no longer needs its post-hoc caveat there. The POOLED
+cross-dataset statement remains post-hoc and keeps its caveat.
+
+**Human review is still wanted** on whether to promote this from a diagnosis in a failure paper to a
+positive claim in its own right. Everything needed to decide is in
+`data/results/screening_untyped_n7/robustness_5seed.json`.
+
+---
+
+<details>
+<summary>Superseded 2026-08-10 banner (RPE1 only) — kept verbatim</summary>
+
 # UNEXPECTED — NEEDS HUMAN REVIEW (2026-08-10)
 
 **The graph HELPS on Replogle RPE1, and it survives both Bonferroni and Holm.** Rail 4 of the standing
@@ -80,6 +128,9 @@ encoder message-passes, and not one removed the typing and gating themselves. Th
 own premise, so it could never have found this.
 
 ---
+
+
+</details>
 
 # Session 2026-08-03 — ICBINB-BIO retarget, harder-split n=5, multi-dataset replication
 
