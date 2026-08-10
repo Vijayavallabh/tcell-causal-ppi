@@ -29,6 +29,8 @@ import math
 from pathlib import Path
 
 ROOT = Path("data/results/replication")
+# Directories starting with "_" are snapshots and scratch, not datasets. Globbing them in
+# double-counts whichever dataset was snapshotted and silently inflates k.
 # Datasets with >= 2 experimental conditions, where condition_gated is not identical to typed_static.
 MULTI_CONDITION = {"FrangiehIzar2021_RNA"}
 CONTRASTS = {"h1_vs_no_graph": "condition_gated - expression_only",
@@ -113,7 +115,7 @@ def run(datasets: list[str], min_seeds: int = 4) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--datasets", nargs="+", default=sorted(p.name for p in ROOT.iterdir() if p.is_dir()))
+    ap.add_argument("--datasets", nargs="+", default=sorted(p.name for p in ROOT.iterdir() if p.is_dir() and not p.name.startswith("_")))
     ap.add_argument("--min-seeds", type=int, default=4)
     ap.add_argument("--out", default=str(ROOT / "pooled.json"))
     a = ap.parse_args()
