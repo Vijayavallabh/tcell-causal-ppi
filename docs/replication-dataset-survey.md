@@ -319,3 +319,21 @@ cell type. That is a within-cell-type comparison of perturbation DIRECTION (knoc
 which nothing in the plan anticipated and which the reference screen (CRISPRi only) cannot provide.
 If the graph's contribution differs between knockdown and activation, that is a mechanistic result
 rather than another null, and it costs nothing extra since both datasets are already downloaded.
+
+## Negative survey results (2026-08-10) — downloaded, measured, NOT usable
+
+Recording these so they are not re-downloaded or re-surveyed. Both were pulled as L1 candidates and
+neither helps.
+
+| dataset | cells | targets >=25 | 2nd factor | why it fails |
+|---|---|---|---|---|
+| AdamsonWeissman2016 (GSM2406681_10X010) | 65,337 | **1** | none | this sub-experiment has essentially one perturbation clearing the floor; the Adamson screen is a small UPR-focused CRISPRi study split across three files, and this one is not a target panel |
+| DixitRegev2016 | 51,898 | 33 | none | below the 50-family floor, single condition, K562 (a lineage already covered by Norman) |
+
+Neither adds a cell type the pool lacks and neither widens the h1 pool, which remains the binding
+constraint. **Only Frangieh has a confirmed second experimental factor**, so h1 stays poolable over
+essentially one dataset while h2a pools over five or more. If widening h1 matters more than adding a
+sixth h2a dataset, the remaining options are (a) check the two pending Replogle K562 files for a second
+factor, (b) ingest Schmidt 2022 from GEO, which has resting vs 24 h restimulated in primary human T
+cells but is not in scPerturb and needs its own adapter, or (c) accept the asymmetry and report it.
+Option (c) is honest and free; (b) is the only one that would materially change the h1 claim.
