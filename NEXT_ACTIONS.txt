@@ -36,9 +36,10 @@ VENUE REQUIREMENTS — verified 2026-08-10 from icbinb-bio.github.io/submit/, no
 
 THE FOUR THINGS LEFT, all of which need a human:
  1 Submit at the OpenReview link. Needs an authenticated account; an agent cannot and should not.
- 2 The style file. The paper builds against neurips_2026.sty with [dblblindworkshop], which is what
-   the goal spec named. The workshop ALSO links its own template as a Google Drive zip. Download it
-   and diff against the .sty in paper/icbinb/ before submitting — if they differ, theirs wins.
+ 2 [CLEARED 2026-08-10] Style file verified. Downloaded the workshop's own template zip and diffed:
+   paper/icbinb/neurips_2026.sty is BYTE-IDENTICAL to the official one. The preamble matches the
+   template too — \usepackage[dblblindworkshop]{neurips_2026} plus \workshoptitle{...}, and the
+   template requires both \title{} and \workshoptitle{}, which the paper has.
  3 anonymous.4open.science is still a PLACEHOLDER. The repo is private; creating the anonymised
    mirror needs a human through their web form, and the link must be live before submission because
    the blinding requirement extends to linked material.
@@ -56,10 +57,15 @@ prereg fixes a per-dataset family and a pooled meta-analytic test is not in it.
 This flipped paper cause C from Refuted to Survives: the 14-cell architecture search varied HOW the
 typed gated encoder message-passes and never removed the typing and gating, so it excluded its own
 premise. See the banner and the post-hoc section in RESULTS_SUMMARY.md.
-WORTH RUNNING NEXT: the reference untyped_gnn result fails the both-corrections rule only on
-Bonferroni (Holm 0.042, Bonferroni 0.083) at n=5. Two more seeds would settle it, ~6-7 GPU-h each,
-fresh root, rail 2 keeps data/results/screening read-only. If it clears both, the paper's central
-claim gets materially stronger and cause C stops being post-hoc on the reference dataset.
+RUNNING NOW (launched 2026-08-10 21:44): ./run_untyped_n7.sh takes the reference contrast from n=5
+to n=7. It fails the both-corrections rule on Bonferroni alone (Holm 0.042, Bonferroni 0.083), so two
+more paired seeds are the cheapest thing that could move cause C off post-hoc footing on the dataset
+the paper is actually about. BOTH arms run at both new seeds because the contrast is paired per seed;
+an unpaired untyped_gnn seed would silently drop from the aggregation. Fresh root
+data/results/screening_untyped_n7, seeded with copies of the landed lanes, source sha256-manifested
+before and after. ~6-7h on 4 cards. Log: data/logs/untyped_n7.nohup.log.
+  When it lands: re-aggregate at --seeds 0,1,2,3,4,5,6 (the script does this itself and prints the
+  contrast), then decide whether the paper's cause-C claim can drop the post-hoc caveat.
 
 --- HOW TO RUN ANY OF THIS -------------------------------------------------------------------
   ./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>     stages 2-6, idempotent, CPU
