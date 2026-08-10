@@ -198,3 +198,69 @@ passes, but with df = 1 on the treatment side its CIs will be very wide, which c
 target-axis limitation already recorded for it in section 4.
 
 No other section is changed.
+
+---
+
+## Amendment 3 — 2026-08-10 (BEFORE the first replication lane is trained)
+
+Written before any replication arm has been trained, so no result can have motivated it. Two
+decisions were forced by measurement during the stage 4-6 wire-up.
+
+### 3.1 Program dimension K is not portable across datasets
+
+The reference screen fits a K=128 fold-local program basis on 33,983 DE rows. A replication dataset
+has one DE row per (target x condition), so its row count is its target count times its condition
+count, and the train fold is 60% of that. K cannot exceed the number of train rows: the basis is
+rank-limited by its own input.
+
+Measured train-fold rows, and the K each dataset can carry:
+
+| Dataset | DE rows | train rows | K |
+|---|---|---|---|
+| ReplogleWeissman2022_rpe1 | 2,122 | ~1,273 | **128 (reference value)** |
+| ReplogleWeissman2022_K562_essential | 2,003 | ~1,201 | **128 (reference value)** |
+| FrangiehIzar2021_RNA | 702 | ~421 | **128 (reference value)** |
+| TianKampmann2021_CRISPRi | 184 | ~110 | 32 (deviation) |
+| TianKampmann2021_CRISPRa | 100 | ~60 | 16 (deviation) |
+| NormanWeissman2019_filtered | 105 | ~63 | 16 (deviation) |
+| PapalexiSatija2021_eccite_RNA | 25 | ~15 | 8 (chain smoke only, never headlined) |
+
+RULE: K = 128 wherever train rows >= 256; otherwise the largest power of two <= train_rows/2.
+Any dataset run at K != 128 is a **deviation from the reference architecture** and must be labelled
+as such wherever it appears. The pooled estimate is reported TWICE - over all datasets, and over the
+K=128 subset alone - and if those two disagree, the K=128 subset is the one that speaks to the
+reference architecture. Rationale for pre-registering the rule rather than dropping small datasets:
+silently shrinking capacity on some datasets and not others is exactly the kind of unlogged
+weakening that manufactures a null, and dropping them instead would leave the design at three.
+
+### 3.2 Primary contrast per dataset is fixed by its condition count, not chosen later
+
+The condition gate needs >= 2 contexts. On a single-condition dataset `condition_gated` is
+arithmetically identical to `typed_static` - it would report a number, and the number would be
+uninformative about gating. Fixed in advance:
+
+- **FrangiehIzar2021_RNA** (3 conditions) - PRIMARY h1: condition_gated vs expression_only.
+  This is the ONLY qualified dataset that can test h1 at all.
+- **every other dataset** (1 condition) - PRIMARY h2a: typed_static vs expression_only.
+  `condition_gated` is NOT run there; its absence is by design, not attrition.
+
+h1 and h2a are pooled SEPARATELY and never merged. h1 therefore pools over n=1 dataset, which is a
+stated limit of this replication, not a result about gating.
+
+### 3.3 PINNACLE context assignment (fixed now, logged per lane)
+
+| Dataset | Cell type | PINNACLE context used |
+|---|---|---|
+| FrangiehIzar2021_RNA | melanoma | `melanocyte` |
+| ReplogleWeissman2022_rpe1 | RPE1 | `retinal_pigment_epithelial_cell` |
+| ReplogleWeissman2022_K562_essential | K562 | **none** - ESM-2 features only |
+| TianKampmann2021_CRISPRi/a | iPSC neuron | matching context if present, else **none** |
+
+Where the context is `none` the graph arm carries ESM-2 node features and no PINNACLE channel. That
+is a weaker graph arm by construction and is reported as such; it is recorded here so it cannot
+later be mistaken for evidence about the graph.
+
+### 3.4 Kill criteria (unchanged in substance, restated for the replication lanes)
+
+A lane whose mean edge gate falls to <= 1e-3 is an UNDECIDABLE experiment and is reported as such -
+never as evidence the graph does not help. Gate mean is logged every epoch on every graph arm.
