@@ -64,11 +64,16 @@ Cause C is no longer post-hoc on the reference dataset. The POOLED 5-dataset cla
 [+0.0048,+0.0370], I2=87.5%) IS still post-hoc and keeps its caveat — the paper distinguishes them.
 
 STILL WORTH DOING, in priority order:
- 1 typed_static and condition_gated are only at n=5 in the n7 root, so the per-config RANKING there is
-   unbalanced (common seeds 0-4). The promotion_margin contrast itself is clean at n=7 because both
-   its arms have all seven. If you want the ranking balanced, run those two arms at seeds 5 and 6:
-     ./run_replication_lane.sh is for replication datasets — for the reference use the pattern in
-     run_untyped_n7.sh with --only typed_static / condition_gated. ~6-7 GPU-h per lane, 4 lanes.
+ 1 RUNNING (launched 2026-08-11 02:17): ./run_balance_n7.sh brings typed_static and condition_gated
+   to n=7 in the n7 root, which balances the per-config ranking AND takes h1 and h2a to n=7 on the
+   frozen fold for the first time. MEASURED PACE: ~50 min/epoch, so at the 11-16 epochs these arms
+   historically need before early stopping this is 9-13h, NOT the 6-7h I first estimated. Expect it
+   around midday 2026-08-11. Log: data/logs/balance_n7.nohup.log. Gates alive at epoch 1
+   (condition_gated 0.6031; typed_static is fixed at 1.0 by construction).
+   The headline promotion_margin contrast does NOT depend on this run — it is already clean at n=7.
+   WHEN IT LANDS: same two commands as below (merge_registry_n7.py, then re-aggregate at
+   --seeds 0,1,2,3,4,5,6). Then check whether h1 behaves like promotion_margin did between n=5 and
+   n=7 — estimate stable, interval tighter — or drifts. Report n=7 with all seven deltas either way.
  2 An untyped arm on the four replication datasets is ALREADY run and is what gives the 5/5 pattern.
    Nothing more is needed there.
  3 The obvious follow-up the paper now invites: WHY does typing/gating discard the signal? Candidates
