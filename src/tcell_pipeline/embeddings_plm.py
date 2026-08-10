@@ -16,6 +16,9 @@ from __future__ import annotations
 import urllib.parse
 import urllib.request
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -28,8 +31,21 @@ ESM_LAYER = 33               # esm2_t33_650M final representation layer
 
 
 def _unique_uniprot_ids() -> list[str]:
-    df = pd.read_parquet(config.PERTURBATION_CONDITION_PATH, columns=["uniprot_id"])
-    return sorted({str(u) for u in df["uniprot_id"].dropna().unique()})
+    """Accessions to embed. Defaults to the REFERENCE screen's perturbation table.
+
+    PLM_UNIPROT_SOURCE overrides it with any parquet carrying a `uniprot_id` column, which is what a
+    replication dataset needs: its targets live outside the reference gene space, so the reference
+    table does not mention them and they would silently never be embedded. Without this the extended
+    id_mapping is inert -- targets would map to UniProt and still have no ESM-2 vector, leaving the
+    graph arm with no node features for those rows.
+
+    Pair it with PLM_EMBEDDINGS_PATH pointed at a COPY of the frozen store, never the frozen store
+    itself, which is a read-only input to every result in the project.
+    """
+    src = os.environ.get("PLM_UNIPROT_SOURCE")
+    path = Path(src) if src else config.PERTURBATION_CONDITION_PATH
+    df = pd.read_parquet(path, columns=["uniprot_id"])
+    return sorted({str(u) for u in df["uniprot_id"].dropna().unique()} - {"nan", "None", ""})
 
 
 def _parse_fasta(text: str) -> dict[str, str]:
