@@ -398,3 +398,40 @@ too few points.
 single-condition. Adding datasets buys h2a power and cell-type breadth; it does not buy h1 power. The
 honest framing is a well-powered multi-dataset h2a across four lineages, plus an h1 that remains a
 single-dataset result on a 246-target screen.
+
+## On-target QC (2026-08-10): two datasets fail, and the pool has a perturbation-DIRECTION axis
+
+Every DE matrix is checked for whether the perturbations did anything specific to their own targets.
+A dataset that fails cannot inform a graph-versus-no-graph contrast, because it would return a null
+for reasons having nothing to do with the graph.
+
+| dataset | own-gene log2FC | direction consistency | inferred direction | verdict |
+|---|---|---|---|---|
+| NormanWeissman2019 | **+1.71** | 97% | **activation** | PASS |
+| TianKampmann2021_CRISPRa | +0.66 | 88% | **activation** | PASS |
+| TianKampmann2021_CRISPRi | -0.57 | 92% | knockdown | PASS |
+| PapalexiSatija2021 | -0.65 | 88% | knockdown | PASS |
+| FrangiehIzar2021 | -0.61 | 90% | knockdown | PASS |
+| ShifrutMarson2018 | -0.03 | 50% | - | **FAIL** |
+| DatlingerBock2017 | -0.02 | 51% | - | **FAIL** |
+
+**The gate had to be rewritten mid-flight.** Its first version asserted the knockdown signature
+(own-gene log2FC < 0) and consequently FAILED TianKampmann2021_CRISPRa, which shows $+0.66$ with 88%
+of rows positive - a textbook on-target ACTIVATION result. The gate was rejecting a dataset for
+working. scPerturb cannot disambiguate this: `perturbation_type` is the string `CRISPR` for CRISPRi,
+CRISPRa and knockout alike. The gate now tests magnitude and sign CONSISTENCY and reports the
+direction it infers.
+
+**Consequence for the design, unplanned and better than planned.** The pool is not
+knockdown-only. Norman (K562) and TianKampmann2021_CRISPRa (neuron) are activation screens; the
+reference and the rest are knockdown. TianKampmann2021 supplies both directions in the SAME cell
+type. So the replication can ask whether the graph's contribution depends on perturbation DIRECTION,
+not only on cell type - a question the CRISPRi-only reference screen cannot pose, and one where a
+difference would be mechanistic rather than another null.
+
+**The two failures are the two oldest and smallest T-cell screens** (Datlinger 2017 Jurkat CROP-seq,
+Shifrut 2018 primary T), both already below the 50-family floor. They are now excluded for a
+principled reason - no detectable perturbation effect - rather than only for being small. Note the
+cost of this: the pool loses BOTH of its primary/near-primary T-cell datasets, so the replication
+tests transfer to other lineages but contains no T-cell replication of the reference screen. That
+should be stated in the paper rather than left for a reader to notice.
