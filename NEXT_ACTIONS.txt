@@ -37,21 +37,21 @@ failure-modes finding and it belongs in the paper. Then let P1 replace the whole
 DO THIS BEFORE running anything else; the paper must not sit in a false state.
 
 =======================================================================
-L0b. OPEN RIGHT NOW: main text is 9pp against an 8pp limit.
+L0b. CLOSED 2026-08-10: main text back inside 8pp.
 =======================================================================
-The L0 correction landed (2026-08-10): the false Replogle paragraph is gone and replaced with the
-pre-registration-as-a-mistake finding, which is better content and ~4 lines longer net even after
-compressing the bounded-null and Scope paragraphs. Conclusion now starts on p9, so MAIN TEXT IS OVER
-THE LIMIT by about one page.
-
-Do NOT fix this by further prose shaving - that was tried and moved the boundary by nothing (twice).
-Lines-per-page is 72/48/53 on pp6-8, so there is no stranded float this time; it is genuine content.
-The venue gives UNLIMITED appendices, so the fix is a MOVE, not a cut. Highest-value candidates, in
-order: (a) the bounded-null paragraph's MDE detail -> appendix, leaving two sentences in the body;
-(b) Table 2 (the three folds) -> appendix, keeping the numbers inline in the text; (c) the
-architecture-search paragraph in Causes C -> it already has an appendix table, so cut the body copy to
-one sentence pointing there. Any one of those should be sufficient; (a) is cleanest.
-Verify after with: main text (through Conclusion + LLM disclosure) ends on p8.
+Fixed structurally, not by shaving (shaving was tried twice and moved the boundary by nothing). Two
+appendix sections now carry the detail the body had no room for:
+  app:prereg  - the full pre-registration-as-a-mistake account, including the argument the body could
+                not fit: ML discusses pre-registration almost entirely as a guard against post-hoc
+                flexibility, but it also forces a commitment at the point of MINIMUM understanding of
+                the data, and the commitment that makes it valuable is what makes an error durable.
+                Ends with a concrete recommendation: audit each rule against how the REFERENCE data
+                were constructed before freezing it.
+  app:power   - what the bound is and is not; why an MDE estimated from 5 seeds (own span 0.005-0.025)
+                cannot discipline a claim about an effect of size 0.001, and why the seed-variance-only
+                assumption is false given the re-draw component.
+Verified: Conclusion on p8, compiles clean (0 errors / 0 undefined / 0 overfull>2pt / 0 dashes).
+LESSON REINFORCED: with unlimited appendices, an over-length body is a MOVE problem, not a CUT problem.
 
 =======================================================================
 RAILS — never cross
