@@ -148,3 +148,119 @@ def _self_check() -> None:
 
 if __name__ == "__main__":
     _self_check()
+
+
+# ----------------------------------------------------------------------------------------------
+# Builder: scPerturb h5ad -> the six-layer DE-statistics h5ad the pipeline consumes.
+# ----------------------------------------------------------------------------------------------
+DE_LAYERS = ("log_fc", "zscore", "p_value", "adj_p_value", "baseMean", "lfcSE")
+CONTROL_LABELS = {"control", "ctrl", "non-targeting", "nontargeting", "nt"}
+
+
+def build(dataset: str, target_col: str, condition_col: str | None,
+          collapse_guides: bool, raw_root: str = "data/raw/scperturb",
+          out_root: str = "data/intermediate/replication") -> tuple[str, dict]:
+    """Build one dataset's DE matrix under Amendment 2. Returns (path, provenance)."""
+    import json
+    import os
+    import re
+
+    import anndata as ad
+    import pandas as pd
+
+    a = ad.read_h5ad(f"{raw_root}/{dataset}.h5ad")
+    o = a.obs
+    # Control identity comes from `perturbation`, never target_col: Datlinger and Shifrut label
+    # controls there while leaving `target` NaN, and reading controls off target_col drops every one.
+    ctrl_src = o["perturbation"] if "perturbation" in o.columns else o[target_col]
+    is_ctrl = ctrl_src.astype(str).str.strip().str.lower().isin(CONTROL_LABELS).to_numpy()
+
+    tgt = o[target_col].astype(str)
+    if collapse_guides:
+        tgt = tgt.str.replace(r"g\d+$", "", regex=True).str.replace(r"-\d+$", "", regex=True)
+    tgt = tgt.to_numpy()
+    cond = (o[condition_col].astype(str).to_numpy() if condition_col
+            else np.full(len(o), "single", dtype=object))
+    combo = np.array([f"{t}||{c}" for t, c in zip(tgt, cond)], dtype=object)
+    multi = np.array([("_" in str(t)) for t in tgt])          # combinatorial perturbations excluded
+    valid_t = ~np.isin(tgt.astype(str), ["nan", "None", ""]) & ~multi
+
+    X = log1p_cpm(a.X)
+    genes = np.asarray(a.var.index, dtype=object)
+    del a
+
+    rows, layers, skipped = [], {k: [] for k in DE_LAYERS}, []
+    base_all = np.asarray(X.mean(axis=0)).ravel()
+    for c in sorted(set(cond)):
+        cmask = cond == c
+        cidx = np.where(cmask & is_ctrl)[0]
+        if cidx.size < MIN_CELLS:
+            skipped.append({"condition": c, "reason": f"only {cidx.size} control cells"}); continue
+        _, mc, vc = _group_moments(X[cidx], np.zeros(cidx.size, int), 1)
+        for t in sorted({str(x) for x in tgt[cmask & valid_t & ~is_ctrl]}):
+            tidx = np.where(cmask & valid_t & ~is_ctrl & (tgt.astype(str) == t))[0]
+            if tidx.size < MIN_CELLS:
+                skipped.append({"condition": c, "target": t, "reason": f"{tidx.size} cells"}); continue
+            _, mt, vt = _group_moments(X[tidx], np.zeros(tidx.size, int), 1)
+            lfc, z, p, se, _ = welch(mt[0], vt[0], tidx.size, mc[0], vc[0], cidx.size)
+            for k, v in zip(DE_LAYERS, (lfc, z, p, bh(p), base_all, se)):
+                layers[k].append(np.asarray(v, dtype=np.float32))
+            rows.append({"target_contrast_gene_name": t, "culture_condition": c,
+                         "n_cells_target": int(tidx.size), "n_cells_control": int(cidx.size)})
+    if not rows:
+        raise RuntimeError(f"{dataset}: no (target, condition) cell survived the Amendment-2 filters")
+
+    obs = pd.DataFrame(rows)
+    obs["target_contrast"] = obs["target_contrast_gene_name"]
+    out = ad.AnnData(X=np.zeros((len(obs), genes.size), dtype=np.float32), obs=obs,
+                     var=pd.DataFrame({"gene_name": genes}, index=genes))
+    for k in DE_LAYERS:
+        out.layers[k] = np.vstack(layers[k])
+    os.makedirs(out_root, exist_ok=True)
+    dest = f"{out_root}/{dataset}.DE_stats_v2.h5ad"
+    out.write_h5ad(dest)
+    prov = {"dataset": dataset, "rule": "prereg Amendment 2 (all cells per (target,condition) vs "
+                                        "pooled same-condition controls, cell-level Welch)",
+            "n_rows": len(obs), "n_genes": int(genes.size),
+            "n_targets": int(obs["target_contrast_gene_name"].nunique()),
+            "conditions": sorted(obs["culture_condition"].unique().tolist()),
+            "min_cells": MIN_CELLS, "n_skipped": len(skipped), "skipped": skipped[:50]}
+    json.dump(prov, open(dest.replace(".h5ad", ".provenance.json"), "w"), indent=2)
+    return dest, prov
+
+
+def on_target_qc(de_path: str, seed: int = 0) -> dict:
+    """Did the perturbations actually work? A dataset that fails this cannot inform any contrast.
+
+    A CRISPRi/CRISPRa knockdown should move its OWN transcript. If it does not, the DE matrix carries
+    no perturbation-specific signal, and a graph-versus-no-graph comparison on it measures nothing -
+    it would return a null for reasons that have nothing to do with the graph. That is the
+    manufactured-null hazard arriving through assay quality rather than through features or mapping.
+
+    Compares each row's own-gene log-fold-change against a random gene from the same row, paired.
+    Verified against a known positive (Frangieh: -0.61, 90% negative) and it correctly FAILS
+    Datlinger 2017, an early CROP-seq screen whose knockdown is too weak to detect here.
+    """
+    import anndata as ad
+    import numpy as np
+    from scipy import stats
+
+    a = ad.read_h5ad(de_path)
+    lfc = a.layers["log_fc"]
+    genes = list(a.var["gene_name"])
+    gi = {g: i for i, g in enumerate(genes)}
+    tg = a.obs["target_contrast_gene_name"].to_numpy()
+    rng = np.random.default_rng(seed)
+    own, rand = [], []
+    for r, t in enumerate(tg):
+        if t in gi:
+            own.append(lfc[r, gi[t]]); rand.append(lfc[r, rng.integers(0, len(genes))])
+    if len(own) < 5:
+        return {"testable_rows": len(own), "verdict": "UNTESTABLE (too few rows map to a measured gene)"}
+    own, rand = np.asarray(own), np.asarray(rand)
+    p = float(stats.ttest_rel(own, rand).pvalue)
+    frac = float((own < 0).mean())
+    passed = p < 0.01 and frac > 0.65 and own.mean() < -0.05
+    return {"testable_rows": len(own), "own_mean": float(own.mean()), "frac_negative": frac,
+            "random_mean": float(rand.mean()), "paired_p": p,
+            "verdict": "PASS" if passed else "FAIL - perturbations not detectably on-target"}
