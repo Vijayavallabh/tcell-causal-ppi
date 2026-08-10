@@ -101,15 +101,17 @@ The reference screen already had an `untyped_gnn` arm — nobody had read it in 
 
 | dataset | n | untyped_gnn - expression_only | 95% CI | note |
 |---|---|---|---|---|
-| reference (CD4 T cell, frozen fold) | 5 | **+0.0045** | [+0.0011, +0.0079] | 5/5 seeds positive; Holm 0.042 but Bonferroni 0.083, so it FAILS the both-corrections rule |
+| reference (CD4 T cell, frozen fold) | **7** | **+0.0043** | [+0.0017, +0.0069] | 7/7 seeds positive; Bonferroni 0.027, Holm 0.021 — **now SURVIVES both** (was n=5, +0.0045, Bonferroni 0.083, failed) |
 | Replogle K562-essential | 4 | +0.0081 | [-0.0034, +0.0197] | ns |
 | Frangieh melanoma | 4 | +0.0194 | [-0.1220, +0.1608] | ns |
 | Tian iPSC neuron | 4 | +0.0281 | [-0.0929, +0.1491] | ns |
 | Replogle RPE1 | 4 | **+0.0675** | [+0.0316, +0.1033] | survives BOTH corrections |
 
-Pooled over the five: fixed-effect +0.0056 [+0.0033, +0.0078]; **random-effects +0.0209
-[+0.0048, +0.0370], p=0.011**; I2 = 87.5%, tau2 = 0.00018, Q = 31.9, Q p < 0.001. Sign test 5/5,
-p = 0.0625. Fold re-draws (c075c15, c080c10) are EXCLUDED — they re-draw the same dataset and are not
+Pooled over the five: fixed-effect +0.0051 [+0.0031, +0.0071]; **random-effects +0.0208
+[+0.0047, +0.0369], p=0.0112**; I2 = 87.7%, Q p < 0.001. Sign test 5/5, p = 0.0625.
+Reproduce with: `PYTHONPATH=src .venv/bin/python -m tcell_pipeline.replication.pool --with-reference`.
+(These supersede the +0.0209 [+0.0048,+0.0370] first reported on 2026-08-10, which used the reference
+at n=5; the script uses the n=7 result. The conclusion is unchanged.) Fold re-draws (c075c15, c080c10) are EXCLUDED — they re-draw the same dataset and are not
 independent units; both are also positive (+0.0028, +0.0094).
 
 Read it carefully. The random-effects interval excludes zero, which is a stronger statement than the
