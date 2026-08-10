@@ -1,3 +1,86 @@
+# UNEXPECTED — NEEDS HUMAN REVIEW (2026-08-10)
+
+**The graph HELPS on Replogle RPE1, and it survives both Bonferroni and Holm.** Rail 4 of the standing
+goal says a positive replication is a finding and the null does not get rewritten around it. It has not
+been. This banner is the flag; the numbers below are reported as measured.
+
+| | | |
+|---|---|---|
+| contrast | `promotion_margin` = untyped_gnn − expression_only | |
+| dataset | ReplogleWeissman2022_rpe1 (2,122 targets, RPE1, knockdown) | |
+| effect | **+0.0675 systema**, 95% CI [+0.0316, +0.1033] | |
+| per seed | +0.0356, +0.0724, +0.0887, +0.0731 — all four positive, none dropped | |
+| correction | p=0.0093, Bonferroni 0.0186, Holm 0.0186, family_size **2** | survives BOTH |
+| gate health | n/a — untyped_gnn has no learnable edge gate by construction | |
+
+`family_size: 2` is honest, not a collapse. RPE1 is single-condition, so `condition_gated` is
+arithmetically identical to `typed_static` and was not run (prereg Amendment 3.2); only `h2a` and
+`promotion_margin` are testable there, and 0.0093 x 2 = 0.0186 is the arithmetic you would expect.
+This is NOT the `family_size: 1` bug that produced three false "survives" earlier in the project.
+
+**What is and is not established.**
+
+The arm that wins is `untyped_gnn` — PPI topology with NO edge typing and NO condition gating. The
+typed arm on the same dataset goes the other way (`h2a` = −0.0196). So the finding is not "the graph
+helps"; it is narrower and more interesting: **on RPE1 the graph's raw topology helps, and this
+project's typing-and-gating machinery is what discards the benefit.** That is a statement about the
+architecture, not about biological priors, and it is the first direct evidence for it.
+
+Pooled across all four datasets the untyped effect does NOT hold up: fixed-effect +0.0139
+[+0.0072, +0.0206] excludes zero, but random-effects +0.0326 [−0.0105, +0.0758] does not, with
+**I² = 88.2%** and Cochran's Q p < 0.001. At that heterogeneity the random-effects reading is the
+honest one, so the pooled claim is heterogeneity, not benefit: real and large on RPE1 (+0.0675), small
+on Frangieh (+0.0194), Tian (+0.0281) and Replogle K562-essential (+0.0081). Reporting the
+fixed-effect interval alone here would be the single most misleading thing this report could do.
+
+**The main null is unchanged and is now tighter than it has ever been.** `h2a` (typed_static −
+expression_only) pooled over four datasets: fixed-effect **+0.0031, 95% CI [−0.0004, +0.0065]**,
+random-effects +0.0042 [−0.0105, +0.0189], I² = 25.6%, Q p = 0.26. A half-width of ±0.0035 systema
+across four cell types is a *bounded* null rather than an absence of evidence — the thing the
+single-dataset result could never be.
+
+**Human review is wanted on one question:** whether the RPE1 result warrants a follow-up lane
+(untyped_gnn on the remaining datasets at more seeds, or an untyped arm on the reference screen) before
+the paper commits to the architecture reading above.
+
+## POST-HOC (2026-08-10): the untyped graph is positive on 5 of 5 independent datasets
+
+Not pre-registered. The prereg fixes a PER-DATASET contrast family; a pooled meta-analytic test is not
+in it. Hypothesis-generating, not confirmatory. Recorded because it is the strongest pattern in the
+data and hiding it until it could be dressed as confirmatory would be worse.
+
+The reference screen already had an `untyped_gnn` arm — nobody had read it in this light.
+
+| dataset | n | untyped_gnn - expression_only | 95% CI | note |
+|---|---|---|---|---|
+| reference (CD4 T cell, frozen fold) | 5 | **+0.0045** | [+0.0011, +0.0079] | 5/5 seeds positive; Holm 0.042 but Bonferroni 0.083, so it FAILS the both-corrections rule |
+| Replogle K562-essential | 4 | +0.0081 | [-0.0034, +0.0197] | ns |
+| Frangieh melanoma | 4 | +0.0194 | [-0.1220, +0.1608] | ns |
+| Tian iPSC neuron | 4 | +0.0281 | [-0.0929, +0.1491] | ns |
+| Replogle RPE1 | 4 | **+0.0675** | [+0.0316, +0.1033] | survives BOTH corrections |
+
+Pooled over the five: fixed-effect +0.0056 [+0.0033, +0.0078]; **random-effects +0.0209
+[+0.0048, +0.0370], p=0.011**; I2 = 87.5%, tau2 = 0.00018, Q = 31.9, Q p < 0.001. Sign test 5/5,
+p = 0.0625. Fold re-draws (c075c15, c080c10) are EXCLUDED — they re-draw the same dataset and are not
+independent units; both are also positive (+0.0028, +0.0094).
+
+Read it carefully. The random-effects interval excludes zero, which is a stronger statement than the
+four-dataset replication pool alone supported (that one included zero). But I2 = 88% means the
+MAGNITUDE does not transport: the pooled estimate says a benefit exists somewhere in this family of
+datasets, not that +0.02 is what you would get on yours.
+
+**Why this matters more than the number.** Set it beside the typed arm on the same datasets: h2a
+pooled is +0.0031 with a 95% CI half-width of 0.0035 — a tight bounded null. Raw PPI topology carries
+a small consistent positive signal; the typed, gated encoder built to exploit that signal removes it.
+
+This FLIPS candidate cause C (architecture) in the paper from "Refuted within the searched space" to
+**Survives**. The 14-cell architecture search that refuted it varied per-relation normalisation,
+confidence pruning, edge-weighted convolution and attention — every cell varied HOW the typed gated
+encoder message-passes, and not one removed the typing and gating themselves. The search excluded its
+own premise, so it could never have found this.
+
+---
+
 # Session 2026-08-03 — ICBINB-BIO retarget, harder-split n=5, multi-dataset replication
 
 Branch `icbinb-multidataset-2026-08-03`. Everything uncommitted on disk. The 2026-07-29 campaign
@@ -642,3 +725,84 @@ Docs brought into consistency: `README.md`, `docs/aaai-title-abstract.md`, `docs
 `perturbation_informed_causal_protein_program_graphs_report.md` (a dated 2026-07-29 resolution block was
 prepended; the historical CONFOUND blocks are preserved). Dated archival material under `docs/history/`,
 `docs/reviews/`, and dated `docs/specs/` was left untouched as historical record.
+
+## Multi-dataset replication — the measured result (2026-08-10)
+
+Four datasets, four seeds per arm, 20-epoch cap with early stopping, `lambda_graph=0`, blocked
+target-OOD split refit per dataset, program basis refit inside each dataset's own train fold.
+Every lane listed landed; none was dropped. Arms per prereg Amendment 3.2.
+
+| dataset | cells | rows | K | PINNACLE ctx | arms x seeds |
+|---|---|---|---|---|---|
+| FrangiehIzar2021_RNA | melanoma, 3 conditions | 702 | 128 | melanocyte | 4 x 4 |
+| ReplogleWeissman2022_rpe1 | RPE1, 1 condition | 2,122 | 128 | RPE cell | 3 x 4 |
+| ReplogleWeissman2022_K562_essential | K562, 1 condition | 2,003 | 128 | none | 3 x 4 |
+| TianKampmann2021_CRISPRi | iPSC neuron, 1 condition | 184 | 32 *(deviation)* | none | 3 x 4 |
+
+### Per-dataset contrasts (n, per-seed deltas, both corrections)
+
+| dataset | contrast | n | mean | 95% CI | p | Bonf | Holm | family | survives | per-seed |
+|---|---|---|---|---|---|---|---|---|---|---|
+| FrangiehIzar2021_RNA | h1_vs_no_graph | 4 | +0.0033 | [-0.0829, +0.0894] | 0.9111 | 1.0000 | 1.0000 | 4 | no | +0.0076, +0.0409, -0.0746, +0.0392 |
+| FrangiehIzar2021_RNA | h2a | 4 | +0.0256 | [-0.0494, +0.1005] | 0.3572 | 1.0000 | 1.0000 | 4 | no | +0.0935, -0.0146, +0.0069, +0.0164 |
+| FrangiehIzar2021_RNA | h2b | 4 | -0.0223 | [-0.1371, +0.0926] | 0.5809 | 1.0000 | 1.0000 | 4 | no | -0.0858, +0.0555, -0.0815, +0.0228 |
+| FrangiehIzar2021_RNA | promotion_margin | 4 | +0.0194 | [-0.1220, +0.1608] | 0.6920 | 1.0000 | 1.0000 | 4 | no | -0.1127, +0.0782, +0.0488, +0.0633 |
+| ReplogleWeissman2022_rpe1 | h2a | 4 | -0.0196 | [-0.0759, +0.0367] | 0.3490 | 0.6981 | 0.3490 | 2 | no | -0.0115, +0.0138, -0.0111, -0.0697 |
+| ReplogleWeissman2022_rpe1 | promotion_margin | 4 | +0.0675 | [+0.0316, +0.1033] | 0.0093 | 0.0186 | 0.0186 | 2 | **YES** | +0.0356, +0.0724, +0.0887, +0.0731 |
+| ReplogleWeissman2022_K562_essential | h2a | 4 | +0.0030 | [-0.0027, +0.0087] | 0.1932 | 0.3864 | 0.2230 | 2 | no | +0.0070, +0.0021, -0.0015, +0.0044 |
+| ReplogleWeissman2022_K562_essential | promotion_margin | 4 | +0.0081 | [-0.0034, +0.0197] | 0.1115 | 0.2230 | 0.2230 | 2 | no | +0.0177, +0.0090, +0.0005, +0.0052 |
+| TianKampmann2021_CRISPRi | h2a | 4 | +0.0332 | [-0.0457, +0.1121] | 0.2727 | 0.5453 | 0.5453 | 2 | no | +0.0861, +0.0627, +0.0046, -0.0205 |
+| TianKampmann2021_CRISPRi | promotion_margin | 4 | +0.0281 | [-0.0929, +0.1491] | 0.5138 | 1.0000 | 0.5453 | 2 | no | +0.1414, -0.0041, -0.0224, -0.0026 |
+
+### Pooled across datasets
+
+| contrast | k | fixed-effect | random-effects | RE p | I2 | tau2 | Q p |
+|---|---|---|---|---|---|---|---|
+| h1_vs_no_graph | 1 | +0.0033 [-0.0498, +0.0563] | +0.0033 [-0.0498, +0.0563] | 0.9034 | 0.0% | 0.00000 | None |
+| h2a | 4 | +0.0031 [-0.0004, +0.0065] | +0.0042 [-0.0105, +0.0189] | 0.5749 | 25.6% | 0.00008 | 0.258 |
+| h2b | 1 | -0.0223 [-0.0930, +0.0485] | -0.0223 [-0.0930, +0.0485] | 0.5372 | 0.0% | 0.00000 | None |
+| promotion_margin | 4 | +0.0139 [+0.0072, +0.0206] | +0.0326 [-0.0105, +0.0758] | 0.1385 | 88.2% | 0.00136 | 0.0 |
+
+`h1` and `h2b` pool over k=1 because Frangieh is the only qualified multi-condition dataset;
+they are single-dataset results reported as such, not pooled claims.
+
+### Gate health — the thing that made the frozen H1 undecidable
+
+| dataset | arm | seed | epochs | gate first | gate last | verdict |
+|---|---|---|---|---|---|---|
+| FrangiehIzar2021_RNA | condition_gated | 0 | 16 | 0.6788 | 0.3630 | ALIVE |
+| FrangiehIzar2021_RNA | condition_gated | 1 | 13 | 0.4786 | 0.4461 | ALIVE |
+| FrangiehIzar2021_RNA | condition_gated | 2 | 12 | 0.5098 | 0.4682 | ALIVE |
+| FrangiehIzar2021_RNA | condition_gated | 3 | 11 | 0.5522 | 0.5752 | ALIVE |
+| FrangiehIzar2021_RNA | typed_static | 0 | 18 | 1.0000 | 1.0000 | ALIVE |
+| FrangiehIzar2021_RNA | typed_static | 1 | 11 | 1.0000 | 1.0000 | ALIVE |
+| FrangiehIzar2021_RNA | typed_static | 2 | 12 | 1.0000 | 1.0000 | ALIVE |
+| FrangiehIzar2021_RNA | typed_static | 3 | 12 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_K562_essential | typed_static | 0 | 20 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_K562_essential | typed_static | 1 | 20 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_K562_essential | typed_static | 2 | 20 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_K562_essential | typed_static | 3 | 20 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_rpe1 | typed_static | 0 | 11 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_rpe1 | typed_static | 1 | 13 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_rpe1 | typed_static | 2 | 12 | 1.0000 | 1.0000 | ALIVE |
+| ReplogleWeissman2022_rpe1 | typed_static | 3 | 11 | 1.0000 | 1.0000 | ALIVE |
+| TianKampmann2021_CRISPRi | typed_static | 0 | 12 | 1.0000 | 1.0000 | ALIVE |
+| TianKampmann2021_CRISPRi | typed_static | 1 | 15 | 1.0000 | 1.0000 | ALIVE |
+| TianKampmann2021_CRISPRi | typed_static | 2 | 16 | 1.0000 | 1.0000 | ALIVE |
+| TianKampmann2021_CRISPRi | typed_static | 3 | 13 | 1.0000 | 1.0000 | ALIVE |
+
+Every graph lane with a learnable gate ended ALIVE. That is the difference between this
+campaign and the frozen H1, whose gates were annihilated inside epoch 0 by an unnormalised
+`L_graph` roughly 103x the response term. With `lambda_graph=0` there is no such term, so these
+nulls are decidable experiments rather than instrument failures. `untyped_gnn` has no learnable
+edge gate by construction and is absent from the table by design.
+
+### What was excluded, and why
+
+- `condition_gated` was NOT run on the three single-condition datasets. The condition gate needs
+  >= 2 contexts; with one it is arithmetically `typed_static`. Pre-registered, not attrition.
+- Datlinger 2017 and Shifrut 2018 failed on-target QC (51% / 50% direction consistency) and are
+  out of the pool entirely. They were the only T-cell screens, so **this replication contains no
+  T-cell replication of the reference result.**
+- One lane (rpe1 / typed_static / s2) OOM'd when another user's process took 66 GiB of the card;
+  it was re-run to completion and is included. No lane is missing from any reported n.
