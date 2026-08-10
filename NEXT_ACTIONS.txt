@@ -1,215 +1,230 @@
 =======================================================================
-GOAL — make the ICBINB-BIO paper undeniable. Autonomous. Deadline 29 Aug 2026 AoE (18 days).
+GOAL — a MULTI-DATASET null with a measured detection floor. Autonomous. 29 Aug 2026 AoE (18 days).
 =======================================================================
 Repo: /mnt/md0/IITM/BackUp/Home/vijayavallabh/tcell-causal-ppi
-Branch: icbinb-multidataset-2026-08-03 (HEAD 7f2f0fe). 4x A100 80GB, SHARED with other users.
-Paper: paper/icbinb/main.tex (gitignored). Venue: ICBINB-BIO @ NeurIPS 2026, 8pp main text,
-refs + appendices free, double-blind, non-archival. Deadline marked *tentative* on the site: RE-CHECK IT.
+Branch: icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED with other users.
+Paper: paper/icbinb/main.tex (gitignored). ICBINB-BIO @ NeurIPS 2026, 8pp main text, refs + appendices
+free, double-blind, non-archival. Deadline marked *tentative* on the site: RE-CHECK IT FIRST.
 
-AUTONOMY. Work for hours unattended. Never ask, wait, or present options: at each fork take the best
+AUTONOMY. Work for days unattended. Never ask, wait, or present options: at each fork take the best
 choice on your own judgement and log the reason. On failure, skip and move on. Keep all four cards
-busy subject to the memory rule below. This file is your standing authority.
+busy subject to the memory rule. This file is your standing authority.
 
-WHAT THE PAPER IS. Not "we built EG-IPG and got a null." It is: *a graph prior does not help here, and
-here is a forensic account of why, including three of our own claims that did not survive.* The venue
-scores cause-characterisation above the number and gives an award for surprising negatives. Every task
-below is chosen to serve that, not to chase a positive result.
+THE THESIS TO EARN. Right now the paper says "a graph prior does not help on one screen, three folds."
+That is a fold study wearing the language of a general claim, and a reviewer will say so. The target is:
+**a typed protein-interaction prior does not improve perturbation-response prediction across N public
+Perturb-seq datasets spanning M cell types, with a measured sensitivity floor showing what size of
+benefit we WOULD have detected, and a specification surface showing the answer does not depend on
+defensible analysis choices.** Everything below serves that sentence.
 
 -----------------------------------------------------------------------
 RAILS — never cross
 -----------------------------------------------------------------------
-1. NEVER run evaluation/sealed_eval.py. NEVER open the sealed challenge split (5,608 rows). It is a
-   one-shot pre-registered test of a POSITIVE hypothesis; spending it on a null buys nothing.
+1. NEVER run evaluation/sealed_eval.py; NEVER open the sealed challenge split (5,608 rows).
 2. READ-ONLY: data/results/screening_lambda0/, data/results/screening/, data/splits/, promoted.json,
-   paper/figures/eg_ipg_architecture.pdf, and every screening_c0* root that already has results.
-   EVERY new run gets a FRESH root, seeded with a COPY of the registry, sha256-manifested before/after.
-3. docs/replication-prereg.md is FROZEN. Amend only by dated append at the bottom, never by editing
-   above it. If you want a different design, append the amendment BEFORE running, and say why.
+   paper/figures/eg_ipg_architecture.pdf, and every screening_c0* root that already holds results.
+   EVERY new run gets a FRESH root seeded with a COPY of the registry, sha256-manifested before/after.
+3. docs/replication-prereg.md governs the replication. It is frozen; amend ONLY by dated append at the
+   bottom, BEFORE running, stating why and whether the change is outcome-symmetric. Amendment 2
+   (2026-08-10) already corrected the DE-unit rule — read it, it is why this plan is possible.
 4. CONTRADICTION STOP: if the graph HELPS and survives BOTH Bonferroni and Holm over the full
-   pre-registered family of 4, do NOT rewrite the null and do NOT re-run hoping it reverses. Snapshot,
-   put an UNEXPECTED - NEEDS HUMAN REVIEW banner at the top of RESULTS_SUMMARY.md, keep going. A
-   positive replication is a finding, not an emergency.
-5. Headline a result only at n>=4 seeds for BOTH arms of the contrast. Fewer = "preliminary", in
-   RESULTS_SUMMARY.md only, never in the paper.
-6. Git: commit and push to THIS BRANCH ONLY. Never commit to main, never push main, never open a PR.
-   Commit by explicit path (never `git add .` / `git commit -a`) - the checkout is shared. Message
-   BEFORE the `--`. Verify with `git show --name-only HEAD` afterwards.
-7. Paper edits: you own paper/icbinb/. Do NOT touch paper/main.tex (the AAAI version).
+   pre-registered family of 4 on any dataset, do NOT rewrite the null, do NOT re-run hoping it
+   reverses. Snapshot, banner it at the top of RESULTS_SUMMARY.md as UNEXPECTED - NEEDS HUMAN REVIEW,
+   continue the remaining datasets. A positive replication is a finding.
+5. Headline a per-dataset result only at n>=4 seeds for BOTH arms. Fewer = preliminary, in
+   RESULTS_SUMMARY.md only, never the paper.
+6. Git: commit and push to THIS BRANCH ONLY. Never main, never a PR. Commit by explicit path (never
+   `git add .` / `-a`); the checkout is shared. Message BEFORE the `--`. Verify with
+   `git show --name-only HEAD`. Commit as you go; do not leave a week uncommitted.
+7. You own paper/icbinb/. Do NOT touch paper/main.tex (AAAI).
 
 -----------------------------------------------------------------------
 OPS PRECONDITIONS — obey before touching a GPU
 -----------------------------------------------------------------------
-NVML. Without this every cuda lane dies in <60s on a PyTorch-named assert:
+NVML, or every cuda lane dies in <60s on a PyTorch-named assert:
     export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.580.173.02
-Cause: a stray 535.309.01 driver tree on the library path vs a 580.173.02 kernel module. Verify with
-`ldd $(which nvidia-smi) | grep nvidia-ml`. Clearing LD_LIBRARY_PATH does NOT fix it.
+(stray 535.309.01 tree on the library path vs a 580.173.02 kernel module; clearing LD_LIBRARY_PATH
+does not help; check `ldd $(which nvidia-smi) | grep nvidia-ml`).
 
-SHARED BOX. Measured per-lane peaks: expression_only ~2.5 GB (0.36 GPU-h), untyped_gnn ~2-4 GB
-(4.1 h), typed_static 47-51 GB (6.2 h), condition_gated 47-51 GB (11.7 h). Map memory to OWNERS with
-`nvidia-smi --query-compute-apps=pid,used_memory` - per-card totals do not say whose it is. Match the
-ARM to the free memory; a co-tenant'd card can still run cheap arms. NEVER kill a co-tenant.
+SHARED BOX. Measured peaks: expression_only ~2.5 GB / 0.36 h, untyped_gnn ~2-4 GB / 4.1 h,
+typed_static 47-51 GB / 6.2 h, condition_gated 47-51 GB / 11.7 h. Map memory to OWNERS with
+`nvidia-smi --query-compute-apps=pid,used_memory`. Match the ARM to the free memory - a co-tenant'd
+card still runs cheap arms. NEVER kill a co-tenant. If a chain runs a cheap then an expensive arm on
+one card, stop it by process group after the cheap arm lands rather than OOM the expensive one.
 
-FWER. Before quoting any corrected p, read `family_size` out of the artifact and confirm it is 4.
-With arms unrun the aggregator corrects over a SMALLER family and reports survives_family_wise=true on
-a raw p. This has fired three times. It prints INCOMPLETE COVERAGE / UNBALANCED on the same run.
+FWER. Read `family_size` out of the artifact and confirm it is 4 before quoting any corrected p. With
+arms unrun the aggregator corrects over a smaller family and reports survives_family_wise=true on a
+raw p. This has fired three times. It prints INCOMPLETE COVERAGE / UNBALANCED on the same run.
 
-INTERIM VALUES. Every interim number this project published early drifted in the FAVOURABLE direction
-(h2a -0.0214 at n=2 vs -0.0122 at n=5; h2b fwer=true at n=2; h1 fwer=true at family_size=1). Quote
-nothing below the rail-5 bar, and apply that hardest when an interim looks decisive in the direction
-you want.
+INTERIM VALUES. Every interim this project published early drifted FAVOURABLY (h2a -0.0214 at n=2 vs
+-0.0122 at n=5; h2b fwer=true at n=2; h1 fwer=true at family_size=1). Quote nothing below the rail-5
+bar, hardest when it looks decisive in the direction you want.
 
-GATES. Log mean edge gate every epoch on every graph arm. Final gate <=1e-3 means the graph was off:
-that lane is UNDECIDABLE, not a null. untyped_gnn legitimately has no gate (None) - filter on the
-VALUE being None, not on the key being absent.
+GATES. Log mean edge gate every epoch on every graph arm. Final <=1e-3 = the graph was off = the lane
+is UNDECIDABLE, not a null. untyped_gnn has no gate by design (None): filter on the VALUE.
 
-PAGE BUDGET. Main text is EXACTLY 8pp. If it overflows, do NOT trim prose first - check lines-per-page
-(`pdftotext -f N -l N main.pdf - | grep -vcE '^\s*[0-9]+\s*$|^\s*$'`). A page at ~26 lines where
-neighbours hold ~50 is a stuck float or an unbreakable box. Six rounds of prose cuts once moved the
-boundary by nothing; one \fbox -> \hrule change reclaimed 26 lines.
+SCHEDULER. Do not hand-launch batches; a ~2.6-day idle gap happened that way. Write a saturating
+scheduler: a queue of (dataset, arm, seed), a card->pid map, and a loop that pops the next job whose
+memory fits the freest card. One --out and one logfile per process; never two processes on one file.
+Long-running launchers must use `>>` (a `>` redirect holds an offset and silently overwrites lines
+other jobs append - it once hid a 7.6 h lane and made a busy card look idle).
 
 -----------------------------------------------------------------------
-WHERE THINGS STAND (do not re-run any of this)
+WHERE THINGS STAND (do not re-run)
 -----------------------------------------------------------------------
-THREE FOLDS, full family, n=5 each, 0 failures, gates alive:
-    h1 (condition_gated - expression_only) = -0.0009 / +0.0082 / +0.0005. Nothing survives on any fold.
-    h2a (typed_static - expression_only) = -0.0131 (SURVIVES, frozen fold) / -0.0122 (bonf 0.920) /
-    -0.0012 (p 0.614). Our ONLY corrected-significant result does not replicate. The two failures
-    differ in kind: on one fold the effect size reproduces within 7% and dies from 3.5x variance; on
-    the other the effect itself collapses tenfold.
-THREE RE-DRAWS of ONE specification (0.80/0.10, only SPLIT_SEED varied), n=5 each:
-    h1 = +0.00824 (raw p 0.025) / +0.00260 (0.027) / +0.00206 (0.266). Estimate spans 4x and the
-    QUALITATIVE VERDICT FLIPS. Re-draw noise equals the between-fold differences. Baseline moves
-    0.0146 (larger than any contrast) and tracks n_val (3,632-7,216, changed silently by the re-draw)
-    not the cosine statistic. Roots: screening_c080c10_h1 / _r2 / _r3.
-ALSO IN HAND: the silent-regulariser confound (unnormalised L_graph ~103x the response term, gates to
-1e-7 in epoch 0, all seeds) + its 22-epoch lambda sweep; a 14-cell architecture search where every
-lever is neutral or worse; a 50-case rationale audit (STRING carries ~all sufficiency mass); every
-graph arm carries 6-32x the across-seed variance of no-graph at the same or lower mean.
+THREE FOLDS of the reference screen, full family, n=5, gates alive:
+  h1 = -0.0009 / +0.0082 / +0.0005; nothing survives correction on any fold.
+  h2a = -0.0131 (SURVIVES, frozen fold) / -0.0122 (bonf 0.920) / -0.0012 (p 0.614) — our ONLY
+  corrected-significant result does not replicate, and the two failures differ in kind (variance grew
+  on one fold, the effect collapsed on the other).
+THREE RE-DRAWS of one specification (only SPLIT_SEED varied), n=5 each:
+  h1 = +0.00824 (p 0.025) / +0.00260 (0.027) / +0.00206 (0.266). Estimate spans 4x, the qualitative
+  verdict FLIPS, re-draw noise equals the between-fold differences. Baseline moves 0.0146 and tracks
+  n_val, not the cosine statistic.
+ALSO: the silent-regulariser confound + lambda sweep; a 14-cell architecture search (every lever
+neutral or worse); a rationale audit (STRING carries ~all sufficiency mass); every graph arm carries
+6-32x the across-seed variance of no-graph at the same or lower mean.
 INFRASTRUCTURE: config.py has 8 env-scoped constants (defaults byte-identical; CONDITIONS is read at
-IMPORT time into two encoders - set it before first import). src/tcell_pipeline/replication/ has the
-scPerturb -> DE-stats adapter (mutation-tested) and a per-context PINNACLE extractor. DE matrices built
-for 6 datasets; only Frangieh (216 targets x 3 conditions) and Norman (102, 1 condition, no PINNACLE
-context) survive the prereg. 549 tests pass.
+IMPORT time - set it before first import). src/tcell_pipeline/replication/ has the scPerturb adapter
+(mutation-tested) + a per-context PINNACLE extractor. 549 tests pass.
 
 -----------------------------------------------------------------------
-THE WORK — in priority order. Each entry says WHY it raises acceptance odds.
+P1. THE MULTI-DATASET NULL — this is the paper's spine. Everything else is support.
 -----------------------------------------------------------------------
+WHY IT DOMINATES. One screen with three folds is a fold study. Ten datasets across six cell types with
+a pooled estimate is an external-validity claim, and it converts the paper's single biggest limitation
+into its main result. It also makes the h2a non-replication far more interesting: a contrast that
+holds on one fold of one screen and nowhere else is a much sharper cautionary tale with ten datasets
+behind it than with three folds.
 
-== P1. THE DETECTION FLOOR: prove the pipeline CAN find a graph benefit ====================
-COST ~60-100 GPU-h + 2 days build. HIGHEST VALUE. Do this first.
+TARGET: >=8 datasets, >=5 cell types. Realistic candidate pool from scPerturb (Zenodo 7041849,
+CC-BY-4.0), with target counts under the corrected DE rule:
+  IN HAND, downloaded:  ReplogleWeissman2022_rpe1 (2,122 targets, RPE1 epithelial)
+                        FrangiehIzar2021 (246 x 3 CONDITIONS, melanoma)
+                        NormanWeissman2019 (105, K562) — no PINNACLE context, ESM-2 only, log it
+                        PapalexiSatija2021 (25, THP-1 monocytes) — below the family floor, preliminary
+                        DatlingerBock2017 (31, Jurkat) / ShifrutMarson2018 (21, primary T) — preliminary
+  TO DOWNLOAD (same Zenodo record, verify each from the file, not the paper):
+                        ReplogleWeissman2022_K562_gwps (~9,867 perturbations, 8.8 GB) <- the big one
+                        ReplogleWeissman2022_K562_essential (~2,058, 1.5 GB)
+                        TianKampmann2021_CRISPRi / _CRISPRa (neurons) — a genuinely different lineage
+                        TianKampmann2019_day7neuron / _iPSC
+                        AdamsonWeissman2016, DixitRegev2016, SchraivogelSteinmetz2020
+Disk: ~1.6 TB free; the two big Replogle files are ~10 GB. Check `df -h` before pulling.
 
-Every null paper dies on one reviewer sentence: "maybe your setup just cannot detect anything." The
-paper currently answers with a minimum-detectable-effect calculation from 5 seeds, which is
-assumption-laden and whose own CI spans 0.005-0.025. Replace it with an EMPIRICAL detection floor.
+PER DATASET, FIXED (deviations require a prereg append BEFORE running):
+  - DE via the corrected rule (Amendment 2): all cells per (target, condition) vs pooled controls of
+    the same condition, 25-cell floor. Record the replicate axis in provenance if one exists.
+  - Program basis refit INSIDE the train fold. Blocked target-OOD split, generated per dataset.
+  - PINNACLE context matched to the cell type (extractor already written); where none exists, ESM-2
+    only, logged as an explicit ablation. A silently weakened graph would MANUFACTURE the null.
+  - Same 4 arms, >=4 seeds, same 4-contrast family, BOTH corrections.
+  - Single-condition datasets: condition_gated degenerates to typed_static, so **h2a is primary and
+    h1 is not defined**. Say so per dataset; do not report an h1 there as if it meant something.
+  - Log gate health every epoch. Collapse = undecidable, excluded from pooling, not counted as a null.
 
-Build a positive control. Take the real DE matrix and inject a known, graph-dependent component at
-controlled effect sizes: for each target, add delta * (mean response of its k-hop PPI neighbours,
-computed INSIDE the train fold only), for delta in a ladder (e.g. 0, 0.02, 0.05, 0.10, 0.20, 0.40 in
-units of the response SD). Re-run condition_gated vs expression_only at n>=4 on each rung, same
-protocol, same corrections. Report the smallest delta at which the contrast reliably clears both
-corrections. That is the pipeline's measured sensitivity.
+BUDGET. condition_gated is 11.7 h/seed, typed_static 6.2, untyped_gnn 4.1, expression_only 0.36. A full
+family at n=5 is ~113 GPU-h/dataset — 8 datasets would be ~900 GPU-h, more than 18 days on 4 cards.
+SO PRIORITISE HONESTLY: run **expression_only + typed_static at n=5 on every dataset** (h2a, the
+primary contrast for single-condition data, ~33 GPU-h each) and add condition_gated + untyped_gnn only
+on the multi-condition datasets where h1 is defined (currently Frangieh; check the others for a second
+factor). That is ~8 datasets x 33 h + ~2 x 80 h = ~420 GPU-h, which fits. Log the choice and its
+consequence: h1 is pooled over fewer datasets than h2a, and the paper must say so.
 
-Then state the null in those units: "the graph benefit, if any, is below the delta we demonstrably
-detect." If the floor turns out HIGH (the pipeline is insensitive), that is ALSO a finding and a more
-honest paper - say so plainly and it becomes a limitation with a number instead of a hedge.
-Leakage discipline: the injected signal must be computed from TRAIN-fold responses only, or you have
-built a leak and the control is worthless. Write that check as a test and watch it fail first.
-Novelty: empirical sensitivity floors are rare in this literature; most nulls stop at a power formula.
-
-== P2. THE THREE-WAY ABLATION: is the "no-graph" baseline actually graph-free? ===== 1.8 GPU-h ==
-COST ~2 GPU-h. Absurd value/cost. Do this immediately, it may run while P1 is being built.
-
-The paper already argues (cause D) that expression_only is NOT graph-free: it receives three PPI
-degree scalars (nonzero for 96.5%/98.4% of rows) and a 128-d PINNACLE embedding (real for only 9.2%).
-It flags the three-way ablation as future work. DO IT - expression_only costs 0.36 GPU-h, so five
-seeds of a stripped variant is under two hours.
-
-Add a `--drop-graph-features` path (TARGET_SCALAR_KEYS minus the three ppi_degree_* entries, and a
-zeroed PINNACLE store) and run:
-    (i)  expression_only MINUS graph-derived node features   <- the true no-graph floor
-    (ii) expression_only as-is (graph summary features)      <- already have n=5 on 3 folds
-    (iii) condition_gated (summary + message passing)        <- already have n=5 on 3 folds
-If (ii) > (i) and survives correction, the graph DOES help - just through node features, not message
-passing - and the field has been running the wrong ablation. That is a genuinely surprising positive
-inside a null paper, which is exactly the Entropic-award shape. If (ii) == (i), then the degree
-scalars are inert and cause D shrinks; say so and drop the claim to a footnote. Either outcome
-improves the paper. Run on all three folds if cheap; at minimum the frozen fold, n=5.
-
-== P3. THE SPECIFICATION CURVE: measure the researcher-degrees-of-freedom surface ==========
-COST ~mostly re-scoring + <=40 GPU-h. The most methodologically novel thing available.
-
-You have an anecdote that the verdict flips under a re-draw. Generalise it into a measured surface.
-Enumerate the defensible analysis choices a competent researcher could have made, and compute h1 under
-every combination: split re-draw seed (3 in hand), metric (systema / Pearson-delta / program cosine -
-all already computable from stored predictions), early-stop rule (best-epoch vs last-epoch checkpoint),
-and which arm is called the baseline (expression_only vs untyped_gnn). Most cells are RE-SCORING
-existing predictions, not new training - do the cheap cells first and report how many cells are real
-vs re-scored.
-
-Plot the specification curve (sorted h1 estimates with their CIs, marked by which choices produced
-them) and report: the fraction of defensible specifications where the graph appears to help, where it
-appears to hurt, and where it survives correction. If, as expected, the corrected verdict is stable
-across the whole surface while the uncorrected one is not, you have a quantitative argument for
-multiplicity control that has nothing to do with the usual false-positive story - and a figure that
-reviewers will remember.
-Cite the method honestly: Simonsohn et al. specification curve / Steegen et al. multiverse analysis.
-Verify those citations against primary sources before using them; do not cite from memory.
-
-== P4. SIMULATION-BASED POWER, using the variance structure you actually measured ====== CPU only ==
-The paper's MDE is a closed-form t calculation on 5 seeds. You now have far better inputs: measured
-per-arm across-seed SDs on three folds (no-graph 0.0003-0.0027, graph arms 6-32x that), plus the
-re-draw variance component. Run a Monte-Carlo power analysis with that two-level structure (seed
-variance nested in re-draw variance) and answer the question a reader actually has: *how many seeds,
-and how many independent re-draws, would be needed to detect the benefit that graph-prior papers
-report?* If the answer is "more than anyone runs", that is the paper's most quotable sentence.
-The statistical-power skill in this repo covers simulation-based designs; use it.
-
-== P5. RELEASE THE DIAGNOSTIC ============================================================= cheap ==
-The checklist is good but abstract. Ship a small, dependency-light module (or a documented ~50-line
-snippet in the appendix + repo) that logs mechanism health for any gated/masked architecture and
-raises on collapse: mean gate per epoch, fraction below threshold, and the ratio of each regularisation
-term to the task loss. That last one is the general form of our confound and nobody logs it. Make it
-the thing a reader can adopt in ten minutes. Link it from the reproducibility statement.
-
-== P6. HOW COMMON IS THE CONFOUND? ================================================== careful ==
-Survey public implementations of graph-prior perturbation models for unnormalised structural penalties
-(a sum over edges divided by batch size rather than edge count). Report the count and the pattern.
-FRAMING IS MANDATORY AND NON-NEGOTIABLE: report only what the code does, never that anyone's published
-result is wrong. "K of N public implementations contain an unnormalised structural penalty; whether
-this affected their results depends on weight and graph size, which we did not evaluate." Do NOT
-name-and-shame, do NOT speculate about their numbers. If the framing cannot be kept strictly factual,
-DROP P6 entirely - the paper does not need it and a sloppy version would be both unfair and a
-reviewer's reason to reject.
-
-== P7. REPLICATION ARMS (Frangieh, Norman) ============================================ optional ==
-Only if P1-P4 are done and time remains. The config blocker is cleared; remaining work is CPU prep
-(ID-map Frangieh's 43 unmapped targets, per-dataset splits, program basis refit INSIDE the train fold,
-PINNACLE context per dataset - Norman has none, so ESM-2-only and log it). On single-condition data
-condition_gated degenerates to typed_static, so h2a is primary there, not h1. Two datasets is what the
-data supports; do not manufacture four.
+POOLING. Once >=4 datasets land, pool per contrast with BOTH fixed-effect and random-effects
+(DerSimonian-Laird) estimates plus a heterogeneity statistic (Q, I^2). Pool h1 and h2a SEPARATELY over
+their own eligible datasets; never merge them into one "the graph does not help" number. Weight by the
+inverse variance and report per-dataset target counts so the reader sees which dataset dominates. A
+pooled bounded null across cell types is the strongest claim available; substantial heterogeneity is
+MORE interesting, not less, and must be reported rather than smoothed - if the graph helps in neurons
+and hurts in K562, that is the paper.
 
 -----------------------------------------------------------------------
-INTEGRATION RULES
+P2. THE DETECTION FLOOR — the sentence that saves the paper from "you just can't measure"
 -----------------------------------------------------------------------
-- A result enters the paper only at n>=4 both arms, live gates, family_size=4, and only after you have
-  re-derived every number from the persisted artifact rather than from a log or a prior claim.
-- When a new result contradicts something already in the paper, FIX THE PAPER, and record the
-  retraction in RESULTS_SUMMARY.md rather than silently overwriting. This project's credibility rests
-  on having reported three of its own retractions.
-- Keep the abstract, the causes table (Table 3) and the checklist in sync with the body. A cause whose
-  verdict changes must change in all three places.
-- Re-run the invariants after every paper edit: 0 errors, 0 undefined, 0 overfull >2pt, 0 em/en dashes,
-  0 banned words, main text exactly 8pp.
+COST ~60-100 GPU-h. Run in parallel with P1; it is the second-highest value item.
+
+Every null dies on: "maybe your setup cannot detect anything." The paper currently answers with an MDE
+from 5 seeds whose own CI spans 0.005-0.025. Replace it with a measured floor. Inject a known
+graph-dependent component into the real DE matrix at a ladder of effect sizes — for each target, add
+delta * (mean response of its k-hop PPI neighbours, computed from TRAIN-FOLD RESPONSES ONLY) for delta
+in {0, 0.02, 0.05, 0.10, 0.20, 0.40} response SDs — and re-run condition_gated vs expression_only at
+n>=4 per rung. Report the smallest delta that reliably clears both corrections.
+Then state the null in those units: the benefit, if any, is below a floor you can point at.
+LEAKAGE: if the injected signal touches val responses the control is worthless. Write that check as a
+test and WATCH IT FAIL before trusting it.
+If the floor comes out high, that is also a finding — a limitation with a number instead of a hedge.
 
 -----------------------------------------------------------------------
-REPORTING
+P3. THE THREE-WAY ABLATION — 1.8 GPU-h, and it may overturn the framing
 -----------------------------------------------------------------------
-Keep RESULTS_SUMMARY.md and session-handoff.md current. Every result carries: n, per-seed values, BOTH
-corrections, family_size, gate health, epochs run, and the name and reason of any dropped seed. Never
-let n shrink silently. Commit to this branch with an explicit path list as you go; do not leave a
-week of work uncommitted.
+Do this first; it is nearly free and it tests the paper's own most interesting untested claim.
+The paper argues (cause D) that expression_only is NOT graph-free: it gets three PPI degree scalars
+(nonzero for 96.5%/98.4% of rows) and a 128-d PINNACLE embedding (real for only 9.2%). Add a
+`--drop-graph-features` path (TARGET_SCALAR_KEYS minus ppi_degree_*, zeroed PINNACLE store) and run
+five seeds — 0.36 h each — giving:
+  (i) no graph information at all   (ii) graph SUMMARY features   (iii) summary + message passing
+If (ii) > (i) under correction, the graph DOES help, through node features rather than message
+passing, and the field's standard ablation measures the wrong thing. That is a surprising positive
+inside a null paper and squarely the Entropic-award shape. If (ii) == (i) the degree scalars are inert
+and cause D drops to a footnote. Both outcomes improve the paper.
 
-WHAT SUCCESS LOOKS LIKE. A paper whose central claim is not "the graph didn't help" but "here is how
-much benefit we could have detected, here is the surface of analysis choices over which the answer
-moves, here is which of our own claims failed, and here is the check that would have caught it." That
-is a paper a failure-modes venue accepts and other people cite.
+-----------------------------------------------------------------------
+P4. THE SPECIFICATION SURFACE — turn the re-draw anecdote into a measurement
+-----------------------------------------------------------------------
+Mostly re-scoring stored predictions, <=40 GPU-h of new training. Enumerate the defensible analysis
+choices and compute h1 under every combination: split re-draw seed (3 in hand), metric (systema /
+Pearson-delta / program cosine, all computable from stored predictions), checkpoint rule (best-epoch
+vs last-epoch), and which arm is called the baseline (expression_only vs untyped_gnn). Plot the
+specification curve — sorted estimates with CIs, marked by the choices that produced them — and report
+the fraction of defensible specifications in which the graph appears to help, appears to hurt, and
+survives correction. Report how many cells are re-scored vs newly trained.
+Cite the method properly (specification curve / multiverse analysis) and VERIFY the citations against
+primary sources; do not cite from memory.
+
+-----------------------------------------------------------------------
+P5. SIMULATION POWER, from the variance structure you measured        (CPU only)
+-----------------------------------------------------------------------
+You now have measured per-arm seed variance on three folds (no-graph 0.0003-0.0027, graph arms 6-32x
+that) AND a re-draw variance component AND, after P1, a between-dataset component. Run a Monte-Carlo
+power analysis over that three-level structure and answer: how many seeds, re-draws and datasets would
+be needed to detect the benefit graph-prior papers report? If the answer exceeds what anyone runs,
+that is the paper's most quotable sentence. Use the statistical-power skill in this repo.
+
+-----------------------------------------------------------------------
+P6. RELEASE THE DIAGNOSTIC                                              (cheap, raises citability)
+-----------------------------------------------------------------------
+Ship a small dependency-light module that logs mechanism health for any gated/masked architecture:
+mean gate per epoch, fraction below threshold, and **the ratio of each regularisation term to the task
+loss** — the general form of our confound, which nobody logs. Make it adoptable in ten minutes; link
+it from the reproducibility statement and the anonymised repo.
+
+-----------------------------------------------------------------------
+P7. HOW COMMON IS THE CONFOUND?                                    (only with strict framing)
+-----------------------------------------------------------------------
+Survey public graph-prior perturbation models for unnormalised structural penalties (a sum over edges
+divided by batch size rather than edge count). Report the count and the pattern ONLY:
+"K of N public implementations contain an unnormalised structural penalty; whether this affected their
+results depends on weight and graph size, which we did not evaluate." Never claim anyone's published
+result is wrong, never name-and-shame. If that framing cannot be held exactly, DROP P7 — the paper
+does not need it and a sloppy version is both unfair and a reason to reject.
+
+-----------------------------------------------------------------------
+INTEGRATION + REPORTING
+-----------------------------------------------------------------------
+- Into the paper only at n>=4 both arms, live gates, family_size=4, every number re-derived from the
+  persisted artifact rather than a log or a prior claim.
+- When a new result contradicts something already in the paper, FIX THE PAPER and record the retraction
+  in RESULTS_SUMMARY.md. This project's credibility rests on having reported three of its own.
+- Abstract, causes table and checklist must stay in sync with the body; a cause whose verdict changes
+  changes in all three.
+- After every paper edit: 0 errors, 0 undefined, 0 overfull >2pt, 0 em/en dashes, 0 banned words, main
+  text EXACTLY 8pp. If it overflows, check lines-per-page BEFORE trimming prose - a page at ~26 lines
+  beside neighbours at ~50 is a stuck float or unbreakable box, not verbosity.
+- RESULTS_SUMMARY.md and session-handoff.md stay current. Every result carries n, per-seed values, both
+  corrections, family_size, gate health, epochs, and the name and reason of any dropped seed.
+
+WHAT SUCCESS LOOKS LIKE. Not "the graph didn't help." Rather: *across N datasets and M cell types the
+graph does not help; here is the effect size we would have detected; here is the surface of analysis
+choices over which that answer is stable; here are three of our own claims that failed; and here is
+the ten-minute check that would have caught the bug that nearly published itself.*

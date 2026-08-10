@@ -131,6 +131,46 @@ the name and reason of any dropped seed.
 
 ## Amendments
 
+### AMENDMENT 2 (2026-08-10): the replicate-pseudobulk rule was stricter than the reference itself
+
+**This amendment RELAXES a rule, which is the direction that deserves scrutiny, so the justification
+and the timing are both stated explicitly.**
+
+**The error.** Section 3 required "two or more replicate pseudobulks per (target, condition)" with a
+25-cell floor, and section 4 dropped any dataset that could not meet it. That rule was never applied
+to the reference dataset. The reference's supervised target is
+`data/raw/GWCD4i.DE_stats.h5ad`, a 16.8 GB artifact **downloaded from the source publication** and
+produced by the authors' own differential-expression pipeline over all cells per (perturbation,
+condition) against matched controls. So the design compared replication datasets, held to a
+per-replicate pseudobulk standard, against a reference held to no such standard. That is not a
+conservative choice; it is an inconsistent one, and it discards datasets for failing a test the
+reference never took.
+
+**The correction.** The DE unit becomes: **all cells for a (target, condition) against the pooled
+control cells of the same condition**, which is the standard Perturb-seq contrast and what the
+reference uses. The 25-cell floor is retained, now applied per (target, condition) rather than per
+(target, condition, replicate). Uncertainty comes from the cell-level fit rather than from replicate
+pseudobulks. Where a dataset does carry a genuine replicate axis (donor for Shifrut, gemgroup for
+Norman, batch for Replogle), it is recorded in the provenance and used as a covariate if the DE
+method supports one, but its absence no longer excludes a dataset.
+
+**Why this is not result-shopping.** No replication model has been trained. Zero replication arms have
+run, so no replication result exists that this amendment could have been chosen to favour. The change
+was prompted by an audit of how the reference target was constructed, not by any outcome. It is also
+outcome-symmetric: it admits datasets that could support a positive replication just as readily as a
+null. The pre-registered contrast family, the n>=4 bar, both corrections, the gate-collapse kill
+criterion, the blocked target-OOD split, and the fold-local basis refit are all UNCHANGED.
+
+**What it changes in practice.** Under the corrected rule, targets clearing the floor:
+Replogle RPE1 **2,122** (was 12), Frangieh **246** (was 216), Norman **105**, Papalexi 25,
+Datlinger 31, Shifrut 21. Replogle RPE1 moves from "dropped" to the best-powered candidate available,
+within an order of magnitude of the reference's 11,526 targets.
+
+**What does NOT change.** The target-axis floor of section 4 still applies: a dataset yielding fewer
+than 50 held-out family groups is reported as preliminary and barred from any headline or pooled
+estimate. On these numbers that still binds on Shifrut, Datlinger and Papalexi. Single-condition
+datasets still make h2a the primary contrast, because `condition_gated` degenerates there.
+
 ### AMENDMENT (2026-08-03), before any replication lane launched
 
 Section 3 fixed the DE unit as "(target, condition, replicate)" without saying what *replicate*
