@@ -40,9 +40,14 @@ THE FOUR THINGS LEFT, all of which need a human:
    paper/icbinb/neurips_2026.sty is BYTE-IDENTICAL to the official one. The preamble matches the
    template too — \usepackage[dblblindworkshop]{neurips_2026} plus \workshoptitle{...}, and the
    template requires both \title{} and \workshoptitle{}, which the paper has.
- 3 anonymous.4open.science is still a PLACEHOLDER. The repo is private; creating the anonymised
-   mirror needs a human through their web form, and the link must be live before submission because
-   the blinding requirement extends to linked material.
+ 3 anonymous.4open.science is still a PLACEHOLDER, but the repo CONTENT is now ready for it.
+   [DONE 2026-08-10] Six deanonymizing strings removed from tracked files: two clone URLs carrying
+   the GitHub username, three absolute home-directory paths, and one that quoted ANOTHER user's
+   driver-tree path on this shared box. A rescan returns zero. 553 tests pass.
+   [STILL NEEDS A HUMAN] Creating the mirror itself, through their web form with a GitHub account,
+   and pasting the resulting URL over the placeholder in main.tex. Do this BEFORE submitting: the
+   venue's blinding requirement covers linked material, so a dead or non-anonymous link is a
+   compliance failure, not a cosmetic one.
  4 Re-confirm the deadline nearer the date; the venue still marks it tentative.
 
 REBUILD:  export PATH=/tmp/tl/current/bin/x86_64-linux:$PATH   <- NOT /tmp/tl/bin, and /tmp gets
