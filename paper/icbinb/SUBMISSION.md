@@ -30,6 +30,20 @@ verified; nothing below has to be re-derived.
 - Build is clean: 0 errors, 0 overfull boxes, 0 undefined references, no multiply-defined labels,
   every `\ref` resolves.
 
+## Why an agent cannot do either step (checked 2026-08-11, not assumed)
+
+I verified this on the machine rather than inferring it, so nobody has to repeat the check:
+
+| probe | result |
+|---|---|
+| `OPENREVIEW_*` env vars | none set |
+| `~/.openreview`, `~/.config/openreview*` | absent |
+| `openreview-py` in the venv | not installed |
+| credential store in the repo (`.env`, `.secrets`, config files) | none |
+| `gh` CLI (needed for the 4open.science mirror) | not installed |
+
+So neither step is reachable from here even in principle. Both need your accounts.
+
 ## Step 1 — the anonymised repository (do this FIRST)
 
 The paper links `https://anonymous.4open.science/r/tcell-causal-ppi`, which is currently a
