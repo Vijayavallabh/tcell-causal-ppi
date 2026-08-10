@@ -84,7 +84,7 @@ L7 (sealed split) stays deliberately open by rail 1.
 =======================================================================
 GOAL — CLOSE EVERY LIMITATION IN THE PAPER BY MEASURING IT. Autonomous. 29 Aug 2026 AoE (18 days).
 =======================================================================
-Repo: /mnt/md0/IITM/BackUp/Home/vijayavallabh/tcell-causal-ppi
+Repo: <checkout root>
 Branch: icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED with other users.
 Paper: paper/icbinb/main.tex (gitignored). ICBINB-BIO @ NeurIPS 2026: 8pp main text, refs + appendices
 free, double-blind, non-archival. The deadline is marked *tentative* on the site: RE-CHECK IT FIRST.

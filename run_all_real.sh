@@ -27,7 +27,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 LOG=data/logs; mkdir -p "$LOG"
 NESTED_NMAX=${NESTED_NMAX:-2000}     # common fold for the nested family (H2a/H2b need ONE shared fold)
 EPOCHS=${EPOCHS:-1}
-SCREEN_ONE=${SCREEN_ONE:-/tmp/claude-1001/-mnt-md0-IITM-BackUp-Home-vijayavallabh-tcell-causal-ppi/ccd16b6c-f04a-44eb-8794-7b71f9b96c70/scratchpad/screen_one.py}
+SCREEN_ONE=${SCREEN_ONE:-${SCRATCH:-/tmp}/screen_one.py}
 say(){ echo "[all-real $(date +%H:%M:%S)] $*"; }
 
 say "START  nested_nmax=$NESTED_NMAX epochs=$EPOCHS"

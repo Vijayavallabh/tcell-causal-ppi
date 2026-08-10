@@ -37,7 +37,7 @@ export OMP_NUM_THREADS=4                    # NEVER the core count: 64 here prod
 # for --device cuda; expandable segments go through the CUDA driver API; PyTorch's DriverAPI::get() calls
 # nvmlInit_v2_(); NVML then fails because the loader binds nvidia-smi/libtorch to a THIRD-PARTY 535.309.01
 # driver tree another user left on the system library path
-# (/mnt/md0/IITM/ipcv/Rohith/nvidia/NVIDIA-Linux-x86_64-535.309.01/libnvidia-ml.so.535.309.01) while the
+# (a stray third-party 535.309.01 libnvidia-ml.so elsewhere on the library path) while the
 # running kernel module is 580.173.02. Unsetting LD_LIBRARY_PATH does NOT help — the stray tree wins
 # anyway. Preloading the CORRECT, already-installed 580 library fixes it, and also restores nvidia-smi.
 # Setting PYTORCH_CUDA_ALLOC_CONF ourselves is NOT a fix worth preferring: the landed seeds all trained

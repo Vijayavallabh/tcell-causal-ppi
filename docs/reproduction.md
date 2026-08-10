@@ -358,7 +358,7 @@ assumed for the graph encoders and embeddings; CPU-only works for the tabular ba
 
 ```bash
 # 1. Environment (details: "Create the environment" below)
-git clone https://github.com/Vijayavallabh/tcell-causal-ppi && cd tcell-causal-ppi
+git clone https://github.com/ANONYMIZED/tcell-causal-ppi && cd tcell-causal-ppi
 uv venv --python 3.12 && source .venv/bin/activate
 uv pip install -r requirements.txt && uv tool install awscli
 # GPU torch build matching your driver — see the "GPU" note below (False from torch.cuda.is_available() -> fix here)
@@ -417,7 +417,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Create the environment:
 
 ```bash
-git clone https://github.com/Vijayavallabh/tcell-causal-ppi
+git clone https://github.com/ANONYMIZED/tcell-causal-ppi
 cd tcell-causal-ppi
 uv venv --python 3.12
 source .venv/bin/activate

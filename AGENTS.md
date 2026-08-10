@@ -313,7 +313,7 @@ succeeded — so "CUDA works" was true and useless. Chain: `run_screening.run()`
 (run_screening.py:117-120); expandable segments use the CUDA driver API; PyTorch's `DriverAPI::get()`
 calls `nvmlInit_v2_()`; NVML fails because the loader binds `libnvidia-ml.so.1` to a THIRD-PARTY
 535.309.01 driver tree another user left on the system library path
-(`/mnt/md0/IITM/ipcv/Rohith/nvidia/NVIDIA-Linux-x86_64-535.309.01/`) while the running kernel module is
+(a stray third-party 535.309.01 driver tree elsewhere on this machine's library path) while the running kernel module is
 580.173.02. Confirm with `ldd /usr/bin/nvidia-smi | grep nvidia-ml` — and note that clearing
 `LD_LIBRARY_PATH` does NOT help, the stray tree wins anyway. FIX (per process, no root needed):
 
