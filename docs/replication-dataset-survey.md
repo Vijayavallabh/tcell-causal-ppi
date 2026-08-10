@@ -367,3 +367,34 @@ pending genome-wide K562 file is counted separately or a further lineage is adde
 **h1 remains constrained to Frangieh alone.** K562_essential has no second experimental factor, like
 every other large candidate. The multi-dataset result is therefore a pooled h2a over six datasets and
 an h1 over one, and the paper must present them separately rather than merging.
+
+## FINAL L1 POOL (2026-08-10, all downloads complete, both gates applied)
+
+| dataset | cell type | targets >=25 | coverage | 2nd factor | DE rows (approx) |
+|---|---|---|---|---|---|
+| **ReplogleWeissman2022_K562_gwps** | K562 | **9,730** | 92.9% | none | ~9,730 |
+| ReplogleWeissman2022_rpe1 | RPE1 epithelial | 2,122 | 99.5% | none | ~2,122 |
+| ReplogleWeissman2022_K562_essential | K562 | 2,003 | 96.0% | none | ~2,003 |
+| FrangiehIzar2021 | melanocytes | 246 | 94.7% | **yes (3 levels)** | ~738 |
+| TianKampmann2021_CRISPRi | iPSC-induced neuron | 184 | 100% | none | ~184 |
+| TianKampmann2021_CRISPRa | iPSC-induced neuron | 100 | 100% | none | ~100 |
+| *(reference, for scale)* | *CD4+ T* | *11,526* | - | *3 levels* | *33,983* |
+
+**The genome-wide K562 screen is the headline acquisition.** At 9,730 targets it is 84% of the
+reference's target count, so for the first time the replication is not obviously weaker than the thing
+being replicated. Section 2.1 of this document claimed "no candidate can reproduce the frozen fold's
+statistical power" - that was written under the pre-Amendment-2 rule and before this file was
+surveyed, and on the target axis it is now wrong. Superseded.
+
+**Budget is far better than the plan assumed.** Cost scales with DE ROWS, not target count, and every
+large candidate is single-condition. gwps has ~9,730 rows against the reference's 33,983, so a seed is
+roughly 0.46x the reference cost: condition_gated ~5 h, typed_static ~3 h, expression_only ~0.17 h.
+An h2a pair at n=5 is therefore ~16 GPU-h on gwps and less on everything else - the whole six-dataset
+h2a sweep is well under 100 GPU-h, not the ~420 the plan budgeted. Re-measure before committing;
+this is an extrapolation from row count, and this project has been burned by cost models fitted on
+too few points.
+
+**h1 is still Frangieh alone.** Every dataset that clears the target-axis floor at scale is
+single-condition. Adding datasets buys h2a power and cell-type breadth; it does not buy h1 power. The
+honest framing is a well-powered multi-dataset h2a across four lineages, plus an h1 that remains a
+single-dataset result on a 246-target screen.
