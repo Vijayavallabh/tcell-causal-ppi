@@ -106,6 +106,22 @@ PINNACLE_RAW_DIR: Path = DATA_ROOT / "pinnacle" / "pinnacle_embeds"
 PINNACLE_FIGSHARE_URL: str = "https://ndownloader.figshare.com/files/48005749"
 PINNACLE_CONTEXT: str = os.environ.get("PINNACLE_CONTEXT", "cd4-positive helper t cell")
 
+# Which GRAPH-DERIVED channels of the target feature vector to ablate, comma-separated; "" = none.
+# Valid: "pinnacle" (the 128-d contextual embedding, itself learned on a PPI network) and
+# "ppi_degree" (the three physical/functional/complex degree scalars). ESM-2 and
+# control_baseline_expr are NOT graph-derived and are never ablated.
+#
+# WHY THIS EXISTS. The `expression_only` arm is the paper's "no graph" baseline, but it receives both
+# of the above, so the h1 contrast measures the marginal value of MESSAGE PASSING over a graph
+# SUMMARY, not graph versus no graph. This flag builds the missing third arm.
+#
+# The channels are ZEROED, not removed: out_dim and the parameter count stay identical, so the only
+# thing that differs between arms is information content. Removing them would confound the ablation
+# with model capacity, which is the mistake this flag exists to avoid.
+DROP_TARGET_FEATURES: tuple[str, ...] = tuple(
+    f for f in os.environ.get("DROP_TARGET_FEATURES", "").split(",") if f
+)
+
 # --- Module 2 (Typed Graph Encoder) ---
 GRAPH_HOPS: int = 2               # neighbourhood radius sampled around each perturbation target
 NEIGHBORHOOD_CAP: int = 512      # max protein nodes per sampled subgraph

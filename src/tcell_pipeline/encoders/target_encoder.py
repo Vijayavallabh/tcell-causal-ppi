@@ -41,4 +41,15 @@ class TargetEncoder(nn.Module):
         plm = self.plm.lookup(uniprot_ids)
         pinnacle = self.pinnacle.lookup(uniprot_ids)
         scalars = torch.stack([as_float_vector(batch[k]) for k in TARGET_SCALAR_KEYS], dim=1)
+        # Ablate graph-derived channels IN PLACE OF removing them: zeroing keeps out_dim and the
+        # parameter count identical across arms, so the contrast isolates information rather than
+        # capacity. See config.DROP_TARGET_FEATURES.
+        drop = config.DROP_TARGET_FEATURES
+        if "pinnacle" in drop:
+            pinnacle = torch.zeros_like(pinnacle)
+        if "ppi_degree" in drop:
+            scalars = scalars.clone()
+            for i, k in enumerate(TARGET_SCALAR_KEYS):
+                if k.startswith("ppi_degree"):
+                    scalars[:, i] = 0.0
         return torch.cat([plm, pinnacle, scalars], dim=1)
