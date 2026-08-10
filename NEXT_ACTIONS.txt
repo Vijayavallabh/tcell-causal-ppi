@@ -1,4 +1,48 @@
 =======================================================================
+OUTSTANDING GOAL ITEMS — carried over 2026-08-10. NEITHER DELIVERABLE IS DONE.
+=======================================================================
+The standing goal named two deliverables. Both remain open. Everything below is what is left.
+
+--- OPEN 1: the multi-dataset EG-IPG null.  ZERO replication arms have been trained. -----------
+The data layer is finished; the training path is not. Seven per-dataset stages, 3 of 7 done:
+  1 DE matrix (Amendment-2 rule)          DONE, 9 datasets + genome-wide building
+  2 perturbation_condition table          DONE (replication/perturbation_table.py), smoke-verified
+  3 de_extraction -> de_layers/           DONE, verified isolated on Papalexi
+  4 program basis, refit IN the train fold    NOT DONE
+  5 z-scored responses (zscore_path)          NOT DONE
+  6 blocked target-OOD split per dataset      NOT DONE
+  7 screening lanes = THE ACTUAL TRAINING     NOT STARTED  <-- the deliverable
+ALWAYS `source ./run_replication_stage.sh <dataset> <pinnacle-ctx|none>` first. It pins the feature
+stores; without it INTERMEDIATE_ROOT isolation silently points them at an empty sandbox and every
+target gets a zero vector.
+Start with Papalexi (25 rows) to shake out stages 4-6, then scale. Budget for stage 7 is ~16 GPU-h per
+dataset for h2a at n=5 (extrapolated from DE rows, NOT measured - re-measure on the first real lane).
+
+ELIGIBLE POOL (on-target QC passed, coverage 94-100%, both gates closed):
+  Replogle RPE1 2,122 targets · Replogle K562-essential 2,003 · Frangieh 238 (the ONLY h1-capable
+  dataset, 3 conditions) · Tian CRISPRi 184 · Norman 105 (activation) · Tian CRISPRa 100 (activation)
+  · Papalexi 25 (below the 50-family floor, preliminary only)
+  EXCLUDED by on-target QC: Datlinger 2017, Shifrut 2018 - no detectable perturbation effect. Note the
+  cost: those were the pool's only T-cell screens, so the replication has NO T-cell replication of the
+  reference. Say so in the paper.
+  h1 pools over ONE dataset (Frangieh); h2a pools over six. Report them separately, never merged.
+
+--- OPEN 2: the ICBINB-BIO submission.  NOTHING has been submitted. --------------------------
+paper/icbinb/main.tex compiles clean (0 errors/undefined/overfull>2pt/dashes, main text exactly 8pp)
+and now carries the measured cause-D result. It has never been uploaded.
+  - RE-CHECK the deadline; the site marks 29 Aug 2026 AoE *tentative*.
+  - Submit at OpenReview NeurIPS.cc/2026/Workshop/ICBINB-BIO. Double-blind, non-archival.
+  - Before submitting: replace the anonymous.4open.science placeholder with a real anonymised repo.
+  - paper/ IS GITIGNORED, so none of the paper is backed up in git. If that matters, decide
+    deliberately - it is a project convention, not an accident.
+  - The Limitations section still concedes "one dataset", correctly, until OPEN 1 lands.
+
+--- OPEN 3: everything in the limitation-closure plan below that L5 did not close --------------
+L5 (cause D / three-way ablation) is DONE and integrated. L1-PRE is CLOSED. Still open: L2 detection
+floor, L3 metric commensurability, L4 difficulty variance decomposition, L6 architecture bound.
+L7 (sealed split) stays deliberately open by rail 1.
+
+=======================================================================
 GOAL — CLOSE EVERY LIMITATION IN THE PAPER BY MEASURING IT. Autonomous. 29 Aug 2026 AoE (18 days).
 =======================================================================
 Repo: /mnt/md0/IITM/BackUp/Home/vijayavallabh/tcell-causal-ppi
