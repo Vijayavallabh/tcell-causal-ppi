@@ -30,7 +30,11 @@ PSEUDOBULK_PATH: Path = Path(os.environ.get("PSEUDOBULK_PATH",
                                             DATA_ROOT / "GWCD4i.pseudobulk_merged.h5ad"))
 
 # --- Derived artifact locations ---
-ID_MAPPING_PATH: Path = INTERMEDIATE_ROOT / "id_mapping.parquet"
+# Env-scoped so a replication dataset can use an EXTENDED copy (frozen rows + its own target symbols)
+# without touching the frozen file. This artifact is load-bearing for graph_builder, ppi_graph,
+# perturbation_table, run_screening and reproducibility/manifest, so an in-place edit would
+# invalidate every result in the project. Default is byte-identical to the frozen path.
+ID_MAPPING_PATH: Path = Path(os.environ.get("ID_MAPPING_PATH", INTERMEDIATE_ROOT / "id_mapping.parquet"))
 AMBIGUITY_REPORT_PATH: Path = INTERMEDIATE_ROOT / "ambiguity_report.txt"
 DE_OBS_PATH: Path = INTERMEDIATE_ROOT / "de_obs.parquet"
 DE_VAR_PATH: Path = INTERMEDIATE_ROOT / "de_var.parquet"
@@ -97,7 +101,10 @@ H_DO_DIM: int = 256              # fused perturbation-condition embedding h_do
 # A single-condition dataset degenerates condition_gated into typed_static, so h1 is undefined there
 # and h2a becomes the primary contrast (docs/replication-prereg.md section 1).
 CONDITIONS: list[str] = [c for c in os.environ.get("CONDITIONS", "Rest,Stim8hr,Stim48hr").split(",") if c]
-PLM_EMBEDDINGS_PATH: Path = INTERMEDIATE_ROOT / "plm_embeddings.parquet"
+# Env-scoped for the same reason as ID_MAPPING_PATH: replication targets outside the reference gene
+# space need ESM-2 vectors the frozen store does not have, and the store must be extended by COPY.
+PLM_EMBEDDINGS_PATH: Path = Path(os.environ.get("PLM_EMBEDDINGS_PATH",
+                                                INTERMEDIATE_ROOT / "plm_embeddings.parquet"))
 PINNACLE_EMBEDDINGS_PATH: Path = Path(os.environ.get(
     "PINNACLE_EMBEDDINGS_PATH", INTERMEDIATE_ROOT / "pinnacle_embeddings.parquet"))
 # PINNACLE (Li et al. 2024) contextual protein embeddings — Figshare article 22708126.
