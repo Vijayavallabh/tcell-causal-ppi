@@ -25,6 +25,50 @@ REBUILD:  export PATH=/tmp/tl/current/bin/x86_64-linux:$PATH    <- NOT /tmp/tl/b
 /tmp is cleaned periodically here, so TeX Live may need reinstalling. Check for the BINARY, not the
 /tmp/tl directory — the directory survived a cleaning that removed the binaries at least once.
 
+--- OPEN B0. THREE QC-PASSING DATASETS ARE BUILT AND HAVE NEVER BEEN TRAINED. -----------------
+Found by repo audit 2026-08-11. These are the cheapest large wins available; the expensive part
+(building the Amendment-2 DE matrix) is already done and sitting on disk.
+
+  dataset                              rows   targets  conditions  note
+  ReplogleWeissman2022_K562_gwps       9,730    9,730   single      GENOME-WIDE. 4.6x the largest
+                                                                    dataset currently trained.
+                                                                    QC run 2026-08-11: own_mean
+                                                                    -1.361, 99% consistent,
+                                                                    knockdown -> PASS.
+  NormanWeissman2019_filtered            105      105   single      ACTIVATION (CRISPRa)
+  TianKampmann2021_CRISPRa               100      100   single      ACTIVATION, same cell type as
+                                                                    the CRISPRi dataset already run
+  PapalexiSatija2021_eccite_RNA           25       25   single      below the 50-family floor;
+                                                                    chain smoke only, never headline
+
+WHY gwps IS THE HIGHEST-VALUE ITEM LEFT AFTER THE SUBMISSION. Every replication dataset so far is
+184-2,122 targets. gwps is genome-wide, so it is the only one whose power approaches the reference
+screen's. It would take the pooled h2a from k=4 to k=5 with the new dataset carrying the most weight,
+and it is the natural place to check whether the untyped-graph benefit (+0.0043 on the reference,
++0.0675 on RPE1) holds where statistical power is not the limit.
+COST, extrapolated from measured per-row rates (rpe1 2,122 rows: ~11 min expression_only, ~15 min
+typed): gwps ~4.6x -> ~50 min / ~70 min per lane. 3 arms x 4 seeds = 12 lanes, ~3-4 h wall on 4 cards.
+RE-MEASURE on the first lane rather than trusting this.
+RUN:  ./run_replication_prep.sh ReplogleWeissman2022_K562_gwps none 128
+      then add it to DATASETS in run_replication_campaign.sh (ctx none: K562 has no PINNACLE context)
+      and re-run the campaign, which skips everything already landed.
+NORMAN + TIAN-CRISPRa are cheap (~100 rows each) and add the PERTURBATION-DIRECTION axis: both are
+activation, where every trained dataset so far is knockdown. K per prereg 3.1 is 16 for both, which is
+a deviation and must be labelled. Their value is the axis, not the power.
+
+--- OPEN B1. A FOURTH DIFFICULTY LEVEL IS GENERATED AND UNUSED. ------------------------------
+data/results/splits_c070 (threshold 0.70, cap 0.05, seed 0, 11,525 genes) exists and NOTHING has ever
+been trained against it. Levels actually on disk:
+    0.85/0.05  data/splits              frozen fold   all 4 arms at n=7   <- best-powered
+    0.80/0.10  c080c10_h1               all 4 arms n=5; r2 (seed 1) and r3 (seed 2) cheap pair n=5
+    0.75/0.15  c075c15_n5               all 4 arms n=5, seed 0 only
+    0.70/0.05  splits_c070              NOTHING TRAINED
+This changes OPEN E/L4 from "generate re-draws at 2 further levels" to something much cheaper: there
+are already THREE re-draws at 0.80/0.10 and single realisations at three other levels. What is missing
+is re-draws at a SECOND level. Cheapest complete design: 2 re-draws at 0.75/0.15 (seeds 1, 2) plus
+training the existing c070 split, cheap arms only. That is ~4 cells rather than the ~6 the original
+L4 entry budgeted.
+
 --- OPEN B. WHY does edge typing hurt?  NEW, and now the most valuable open question. ----------
 The n=7 family says WHICH component costs the graph its benefit but not why. Arms on the frozen fold:
 untyped +0.0904 > expression_only +0.0861 > condition_gated +0.0818 > typed_static +0.0740. Typing is
@@ -76,11 +120,12 @@ distributional metric.
 --- OPEN E. L4. Difficulty vs realisation noise. ------------------------------- ~200 GPU-h. ---
 PAPER SAYS: fold composition and difficulty vary together; three re-draws of ONE specification show
 re-draw noise equals the between-fold differences.
-CLOSE WITH: re-draws at MORE THAN ONE difficulty level. There are 3 re-draws at 0.80/0.10 only, which
-shows realisation noise is large but cannot separate it from a difficulty effect. Generate 3 re-draws
-at each of >=2 further levels (e.g. 0.85/0.05 and 0.75/0.15), run at least the cheap arms
-(expression_only + typed_static) at n=5 each, then decompose variance: between-level vs within-level
-vs within-re-draw. If between-level does not exceed within-level, state affirmatively that the
+CLOSE WITH: re-draws at MORE THAN ONE difficulty level. See OPEN B1 — the audit found this is further
+along than this entry assumed. Three re-draws already exist at 0.80/0.10, single realisations exist at
+0.85/0.05 (now n=7, the best-powered point in the whole project) and 0.75/0.15, and a 0.70/0.05 split
+is generated but untrained. What is missing is re-draws at a SECOND level: 2 re-draws at 0.75/0.15
+(seeds 1, 2) plus the existing c070 split, cheap arms (expression_only + typed_static) at n=5. Then
+decompose variance: between-level vs within-level vs within-re-draw. If between-level does not exceed within-level, state affirmatively that the
 difficulty knob has NO detectable effect above realisation noise.
 CLOSED WHEN: a variance decomposition is reported and the difficulty claim becomes affirmative.
 
@@ -158,6 +203,20 @@ whose Limitations section contains only things that are genuinely out of reach, 
 attached, rather than things nobody got round to.
 
 =======================================================================
+HARNESS STATE IS STALE (audit 2026-08-11) — fix before the next long session
+=======================================================================
+The harness scores 5/5 on all five subsystems structurally, but three state files stopped tracking
+reality five days ago and would mislead a fresh session:
+- progress.md          one mention of the replication work; the campaign, the n=7 family and the paper
+                       rewrite are absent.
+- session-handoff.md   still headed "STOP - READ FIRST (2026-08-06)", i.e. before any of it.
+- feature_list.json    feat-017 "Replication infrastructure" is in-progress with 2026-08-06 evidence;
+                       the replication is finished. feat-008 and feat-013 are also in-progress with
+                       July evidence and should be re-checked against what actually shipped.
+Nothing downstream depends on these, which is exactly why they drifted. Update them or delete the
+claim; a state file that is confidently wrong is worse than one that is missing.
+
+=======================================================================
 INTEGRATION + REPORTING
 =======================================================================
 - Into the paper only at n>=4 both arms, live gates, family_size=4, every number RE-DERIVED from the
@@ -174,10 +233,15 @@ INTEGRATION + REPORTING
 - RESULTS_SUMMARY.md and session-handoff.md stay current: n, per-seed values, both corrections,
   family_size, gate health, epochs, and the name and reason of any dropped seed.
 
-ORDER OF WORK (updated 2026-08-11, closed items removed): OPEN A (human, do first — it is the actual
-deliverable and the only one with a deadline) -> OPEN B (why typing hurts; cheapest high-value science
-left) -> OPEN C/L2 (the floor, which also bounds OPEN F) -> OPEN D/L3 (cheap, no training) -> OPEN E/L4
--> OPEN F/L6. OPEN G stays open by rail 1. OPEN H only if everything else is done.
+ORDER OF WORK (revised 2026-08-11 after the repo audit): OPEN A (human, do first — the actual
+deliverable, and the only item with a deadline) -> OPEN B0 (gwps: the DE matrix is already built and
+passes QC, so this is the largest result available for ~3-4 h of wall clock) -> OPEN B (why typing
+hurts) -> OPEN C/L2 (the floor, which also bounds OPEN F) -> OPEN D/L3 (cheap, no training) ->
+OPEN B1 + OPEN E/L4 together (they share the same lanes) -> OPEN F/L6. OPEN G stays shut by rail 1.
+OPEN H only if everything else is done.
+
+If a session has GPUs and no human available, start at OPEN B0. It needs no decisions, the expensive
+preprocessing is done, and it is the one item that could still change the pooled result.
 
 WHAT SUCCESS LOOKS LIKE. A Limitations section with three entries instead of eight, each carrying a
 measured number, and a Results section that says: across N datasets and M cell types the graph does not
