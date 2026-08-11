@@ -132,6 +132,51 @@ simply "activation flips the sign". With n=2 activation datasets no direction cl
 dataset here and will be the highest-weight point in the fixed-effect pool. These numbers are the
 seven-dataset state and will need recomputing when it lands.
 
+## EIGHT DATASETS — the genome-wide screen lands (2026-08-11 20:00)
+
+ReplogleWeissman2022_K562_gwps: 9,730 targets, 12 lanes, 4 seeds per arm, none dropped. It is 4.6x the
+next largest replication and the best-powered dataset in the study after the reference screen.
+
+| contrast | n | mean | 95% CI | Bonf | survives |
+|---|---|---|---|---|---|
+| h2a `typed_static − expression_only` | 4 | **+0.0008** | [−0.0042, +0.0058] | 1.0000 | no |
+| promotion_margin `untyped_gnn − expression_only` | 4 | +0.0069 | [−0.0024, +0.0163] | 0.1997 | no |
+
+Where power is highest, BOTH contrasts are null and the intervals are the tightest single-dataset
+values anywhere in the project (h2a half-width 0.005).
+
+### Pooled, all datasets
+
+    h2a, seven replication datasets   FE +0.0018 [-0.0005, +0.0040]
+                                      RE +0.0018 [-0.0028, +0.0065]   I2 = 39.2%, Q p = 0.13
+    untyped, eight datasets (incl. reference)
+                                      FE +0.0051 [+0.0032, +0.0070]
+                                      RE +0.0091 [-0.0024, +0.0207] p=0.12   I2 = 87.5%
+                                      sign test 7/8 positive, p = 0.07
+
+**The h2a null is now the strongest claim in the project.** Seven replication datasets, five cell
+types, both perturbation directions, target counts from 100 to 9,730 — and I2 = 39.2% with Cochran's
+Q p = 0.13, i.e. *no significant heterogeneity*. Every earlier pooled h2a carried I2 near 88%; this one
+does not, because adding the well-powered datasets shrank the between-dataset spread rather than
+widening it. A random-effects interval of [-0.0028, +0.0065] across that range is a bounded null in the
+proper sense.
+
+**The untyped-graph picture is unchanged by gwps.** +0.0069, positive but not significant, and the
+pooled random-effects interval still includes zero. Three datasets clear family-wise correction on
+their own pre-registered test and still disagree in sign: reference +0.0043, RPE1 +0.0675,
+Norman -0.0790.
+
+Per-dataset untyped effect, all eight:
+
+    Norman            -0.0790   survives correction, NEGATIVE
+    reference (n=7)   +0.0043   survives correction, positive
+    K562 genome-wide  +0.0069
+    K562-essential    +0.0081
+    Frangieh          +0.0194
+    Tian CRISPRa      +0.0226
+    Tian CRISPRi      +0.0281
+    Replogle RPE1     +0.0675   survives correction, positive
+
 ---
 
 <details>
