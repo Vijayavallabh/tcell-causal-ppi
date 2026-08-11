@@ -51,10 +51,18 @@ Do not assume the sign or the significance carries over; it has now changed twic
 PapalexiSatija2021_eccite_RNA (25 rows) is deliberately NOT queued — below the 50-family floor, chain
 smoke only, never headline.
 
---- OPEN B1. A FOURTH DIFFICULTY LEVEL IS GENERATED AND UNUSED.  SCRIPT READY, NOT YET RUN. ---
-RUN IT WHEN THE CARDS FREE:  setsid nohup ./run_c070.sh > data/logs/c070.nohup.log 2>&1 &
-(cheap pair only, n=5, fresh root data/results/screening_c070; refuses to start if the split is
-missing or the root resolves to a read-only one.)
+--- OPEN B1. RUNNING 2026-08-11 16:36. The fourth level, plus the re-draws L4 was missing. -----
+./run_c070.sh          10 lanes, cheap pair n=5, fresh root data/results/screening_c070
+./run_c075c15_redraws.sh  20 lanes, cheap pair n=5, seeds 1 and 2 at 0.75/0.15
+The second one closes the actual gap in OPEN E/L4. Three re-draws already existed at 0.80/0.10, but a
+single re-drawn level cannot separate difficulty from partition noise, because every other level had
+one realisation and no within-level spread to compare against. splits_c075c15_r2/_r3 were generated
+2026-08-11 (identical threshold and cap, SPLIT_SEED alone differs) and measured 37% and 52% role
+agreement with seed 0, so they are real re-partitions.
+AFTER BOTH LAND, OPEN E/L4 IS READY TO CLOSE: aggregate each root at --seeds 0,1,2,3,4 and decompose
+between-level (0.85/0.80/0.75/0.70) vs within-level (re-draws at 0.80 and 0.75) vs within-re-draw
+(seed). If between-level does not exceed within-level, state affirmatively that the difficulty knob has
+no detectable effect above realisation noise.
 data/results/splits_c070 (threshold 0.70, cap 0.05, seed 0, 11,525 genes) exists and NOTHING has ever
 been trained against it. Levels actually on disk:
     0.85/0.05  data/splits              frozen fold   all 4 arms at n=7   <- best-powered
