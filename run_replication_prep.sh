@@ -27,6 +27,12 @@ if [ ! -e "data/intermediate/replication/$DS.perturbation_condition.parquet" ]; 
   ln -sf "../$DS.perturbation_condition.parquet" "$R/perturbation_condition.parquet"
 else echo "  already built"; fi
 
+step "stage 3a q_post schema backfill"
+# Idempotent. Matrices built before the Amendment-2 builder emitted the q_post columns die at stage 3
+# with a bare AssertionError naming thirteen columns; this repairs them in place rather than having it
+# hand-patched a third time. A complete matrix is left untouched.
+.venv/bin/python -m tcell_pipeline.replication.backfill_qpost --dataset "$DS" || exit 1
+
 step "stage 3 de_extraction"
 # Gate on de_var.parquet, the LAST artifact stage 3 writes, not on zscore.npz, the first. Keying on
 # the first makes a run that died mid-stage look complete, and the next stage fails somewhere else.

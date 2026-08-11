@@ -1,5 +1,52 @@
 # Session Handoff
 
+## STOP — READ FIRST (2026-08-11): the replication is done, and the paper's conclusion changed
+
+**The multi-dataset null exists.** Four datasets, 52 lanes: pooled h2a fixed-effect +0.0031, 95% CI
+[-0.0004, +0.0065], I2 = 25.6%, Q p = 0.26. A bounded null across four cell types. h1 is Frangieh-only
+(the sole multi-condition dataset) at +0.0033 [-0.0829, +0.0894] and is underpowered, not null.
+
+**The paper no longer argues that the protein-interaction prior fails.** At n=7 on the frozen fold,
+every arm balanced, nothing dropped:
+
+    untyped_gnn      +0.0904   plain topology, no typing, no gating
+    expression_only  +0.0861   no graph
+    condition_gated  +0.0818   typed graph + condition gate
+    typed_static     +0.0740   typed graph, gate pinned to 1
+
+  promotion_margin  untyped - expression_only    +0.0043 [+0.0017,+0.0069]  bonf 0.027  SURVIVES BOTH
+  h2a               typed_static - expression_only -0.0120 [-0.0160,-0.0080] bonf 0.001  SURVIVES BOTH
+  h2b               condition_gated - typed_static +0.0077 [+0.0009,+0.0146] bonf 0.131  fails
+  h1                condition_gated - expression_only -0.0043 [-0.0084,-0.0002] bonf 0.170 fails
+
+Plain topology helps. Per-relation edge typing is ACTIVELY HARMFUL and is the largest effect in the
+family. The gate repairs only part of that damage and not significantly. So the prior carries signal
+and our encoder discards it. Cause C flipped from Refuted to Survives: the 14-cell architecture search
+varied HOW the typed encoder passes messages and never asked whether the typing belonged, so it
+excluded its own premise.
+
+**Retraction on record.** h2b SURVIVED at n=6 (bonf 0.0491) and does NOT at n=7 (bonf 0.1308). Seed 6
+came in at -0.0033 with a healthy gate. Anything quoting h2b as surviving is from the interim.
+
+**The one thing that needs a human.** The ICBINB-BIO submission. The paper is finished — 8pp, clean
+build, style file byte-identical to the workshop's, repo scrubbed of six deanonymising strings,
+deadline verified 29 Aug 2026 AoE. Filing needs an OpenReview account, which this machine does not
+have (probed directly: no env vars, no ~/.openreview, no openreview-py, no gh CLI). Steps, in order,
+are in paper/icbinb/SUBMISSION.md: create the anonymous.4open.science mirror, paste the URL at
+main.tex:238, rebuild, then upload on the full-paper track.
+
+**In flight as of this handoff (2026-08-11 15:45).** A repo audit found three QC-passing DE matrices
+built and never trained — genome-wide Replogle K562 gwps (9,730 targets), Norman and Tian CRISPRa
+(both ACTIVATION, where every trained dataset is knockdown) — plus a fourth difficulty split (c070)
+generated and untrained. All are queued; see NEXT_ACTIONS.txt OPEN B0/B1 and data/logs/repl/campaign2.log.
+
+**Rails held.** Sealed split never opened, sealed_eval.py never run, reference roots verified
+byte-identical, every run in a fresh root, branch only.
+
+---
+
+## SUPERSEDED 2026-08-06 handoff — kept for the record
+
 ## STOP — READ FIRST (2026-08-06): venue changed, three folds are done, and one published claim was retracted
 
 Everything below dated 2026-07-23 or earlier is SUPERSEDED. It is kept as the record, not as routing.

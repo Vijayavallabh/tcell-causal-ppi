@@ -513,3 +513,64 @@ its cheap arm finished, that seed re-queued when the card genuinely freed, and t
 kept busy with `expression_only` (~2.5 GB) meanwhile. The co-tenant was never touched. Also fixed a
 ~2.6-day idle gap in the record: the box only runs work when a session is active, so a self-refilling
 scheduler is the right answer before the next long campaign.
+
+## 2026-08-10/11 — the multi-dataset replication, and the result that reframed the paper
+
+Branch `icbinb-multidataset-2026-08-03`. This is the campaign the project had been building toward,
+plus a finding that changed what the paper argues.
+
+**The replication ran.** Four datasets trained end to end — Frangieh melanoma (3 conditions), Replogle
+RPE1, Replogle K562-essential, Tian iPSC-neuron CRISPRi — 52 lanes, four seeds per arm, blocked
+target-OOD split and program basis refit inside each dataset's own train fold. Pooled h2a (typed static
+graph vs no graph): fixed-effect **+0.0031, 95% CI [-0.0004, +0.0065]**, random-effects +0.0042
+[-0.0105, +0.0189], I2 = 25.6%, Cochran Q p = 0.26. A bounded null across four cell types, an order of
+magnitude tighter than any single fold supports. h1 is Frangieh-only (+0.0033, CI [-0.0829, +0.0894])
+because it is the sole multi-condition dataset; that interval is wide and is read as underpowered, not
+as a null.
+
+**Getting there took four blockers, each of which would have produced a number rather than an error.**
+SPLITS_ROOT is not derived from INTERMEDIATE_ROOT, so the splits stage would have overwritten the
+frozen reference fold. Four DE matrices predated the builder's q_post columns. `n_guides` and
+`single_guide_estimate` are consumed directly by QualityEncoder with no imputation, so NaN would have
+propagated into the loss — and Frangieh's `guide_id` turned out to be a per-cell barcode (median 299
+per target), so the deriver now rejects any candidate implying more than 20 guides per target.
+CONDITIONS defaulted to the reference screen's vocabulary, killing every replication lane on its first
+batch with a bare KeyError.
+
+**Rail 4 fired twice.** On Replogle RPE1 the untyped GNN beat expression-only by +0.0675
+[+0.0316, +0.1033], surviving both corrections. Then the reference screen itself, taken from n=5 to
+n=7: +0.0043 [+0.0017, +0.0069], all seven seeds positive, Bonferroni 0.027, Holm 0.021, over the full
+pre-registered family of four. The null was not rewritten around either; RESULTS_SUMMARY.md opens with
+the flag.
+
+**What that means, after balancing every arm to n=7 on the frozen fold.** Ordered by systema: untyped
+0.0904 > expression_only 0.0861 > condition_gated 0.0818 > typed_static 0.0740. Plain topology beats no
+graph. Per-relation edge typing is *actively harmful* (-0.0120, seven of seven seeds, both corrections
+at p=0.001) and is the largest effect in the family. The condition gate recovers only part of that
+damage and NOT significantly (+0.0077, Bonferroni 0.131), and the gated arm ends up worse than no graph
+(h1 = -0.0043). So the prior is not what failed; the encoder built to exploit it is.
+
+This flipped candidate cause C from Refuted to Survives. The 14-cell architecture search that had
+refuted it varied normalisation, pruning, edge weighting and attention — every cell varied HOW the
+typed encoder passes messages, and none asked whether the typing belonged. The search excluded its own
+premise.
+
+**One retraction on record.** h2b survived at n=6 (+0.0096, Bonferroni 0.0491) and does not at n=7
+(+0.0077, Bonferroni 0.1308) — seed 6 came in at -0.0033, the only negative in that contrast, and its
+gate was healthy. Fifth time an interim value moved on the final seed here, fourth time against the
+more interesting reading.
+
+**Paper.** paper/icbinb/main.tex carries all of it: new "Failure 3" section, cause C rewritten and its
+table row replaced, abstract and Limitations updated, conclusion rewritten, and a new checklist item —
+run a structure-only arm beside the clever one. Body held at exactly 8pp throughout, 0 errors /
+0 overfull / 0 undefined; overflow was fixed by MOVING material to appendices, never by cutting.
+Sources are force-added past the paper/ ignore rule so 8pp of deliverable is not disk-only.
+
+**Not done:** the OpenReview submission. Verified by direct probe rather than assumption — no
+OpenReview credentials anywhere on this machine, no client library, no gh CLI. It needs a human.
+
+**Audit finding, same day:** the genome-wide Replogle K562 matrix (9,730 targets) was built during the
+campaign and never trained; its on-target QC was run 2026-08-11 and passes (own-gene mean -1.361, 99%
+consistent). Norman and Tian CRISPRa are likewise built, passing and untrained, and both are
+activation where every trained dataset is knockdown. A fourth difficulty split (c070) is generated and
+untrained. All four are now queued.

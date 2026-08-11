@@ -24,6 +24,14 @@ DATASETS=(
   "ReplogleWeissman2022_rpe1:retinal_pigment_epithelial_cell:expression_only typed_static untyped_gnn"
   "ReplogleWeissman2022_K562_essential:none:expression_only typed_static untyped_gnn"
   "TianKampmann2021_CRISPRi:none:expression_only typed_static untyped_gnn"
+  # Added 2026-08-11 after a repo audit found their DE matrices built, QC-passing and never trained.
+  # gwps is genome-wide (9,730 targets) and is the only replication whose power approaches the
+  # reference screen's. Norman and Tian CRISPRa are small but are ACTIVATION, where every other
+  # trained dataset is knockdown, so they add the perturbation-direction axis rather than power.
+  # K562 and iPSC-neuron have no PINNACLE context upstream, hence ctx=none for all three (prereg 3.3).
+  "ReplogleWeissman2022_K562_gwps:none:expression_only typed_static untyped_gnn"
+  "NormanWeissman2019_filtered:none:expression_only typed_static untyped_gnn"
+  "TianKampmann2021_CRISPRa:none:expression_only typed_static untyped_gnn"
 )
 
 # Build the job list, then deal it round-robin. Dealing by job rather than by dataset keeps all four
