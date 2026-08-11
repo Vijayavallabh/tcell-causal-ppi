@@ -82,6 +82,56 @@ So the honest statement is narrower than the interim one but points the same way
 topology carries signal, per-relation edge typing destroys more than that signal is worth, and the
 condition gate — the component this project is named for — does not reliably win it back.
 
+## CORRECTION 2026-08-11 (later): the untyped graph is NOT uniformly positive. Norman reverses it.
+
+Two datasets the 2026-08-11 audit found built-but-untrained have now landed, and one of them overturns
+the post-hoc claim recorded earlier today.
+
+| dataset | n | untyped_gnn − expression_only | 95% CI | Bonf | survives | per-seed |
+|---|---|---|---|---|---|---|
+| **NormanWeissman2019_filtered** (K562, **activation**) | 4 | **−0.0790** | [−0.1351, −0.0229] | 0.0414 | **YES, NEGATIVE** | −0.0606, −0.0391, −0.1016, −0.1147 |
+| TianKampmann2021_CRISPRa (neuron, activation) | 4 | +0.0226 | [−0.0621, +0.1073] | 0.9165 | no | +0.1003, +0.0084, +0.0022, −0.0204 |
+
+Norman is a real result, not a broken lane: all four seeds negative, none dropped, `family_size` 2
+(correct for single-condition), gates alive on every graph lane, 14-20 epochs each.
+
+**What this does to the pooled claim.** Over seven independent datasets:
+
+    fixed-effect   +0.0049 [+0.0029, +0.0069]   excludes zero
+    random-effects +0.0093 [−0.0083, +0.0268]   p=0.30, INCLUDES ZERO
+    I2 = 89.2%, Cochran Q p < 0.001
+    sign test 6/7 positive, p = 0.125
+
+This SUPERSEDES the five-dataset pool reported earlier today (+0.0208 [+0.0047, +0.0369], p=0.011),
+which excluded zero. It no longer does. At I2 = 89% the random-effects reading governs, so the honest
+pooled statement is now **no pooled benefit**, and the earlier "positive on 5 of 5" is a fact about
+which five datasets had been trained, not a property of the method.
+
+    Norman            −0.0790   ← survives correction, NEGATIVE
+    reference (n=7)   +0.0043   ← survives correction, positive
+    K562-essential    +0.0081
+    Frangieh          +0.0194
+    Tian CRISPRa      +0.0226
+    Tian CRISPRi      +0.0281
+    Replogle RPE1     +0.0675   ← survives correction, positive
+
+**What survives unchanged.** The three per-dataset contrasts that clear both corrections are
+pre-registered per-dataset tests and none of them is affected by the pooling: reference +0.0043,
+RPE1 +0.0675, Norman −0.0790. What changed is that they no longer agree in sign.
+
+**The honest reading is stronger than the one it replaces, not weaker.** A structure-only graph arm has
+a REAL effect — three datasets clear family-wise correction — but its SIGN is dataset-dependent and
+cannot be predicted in advance. That makes the checklist item sharper: run the structure-only arm not
+because it will help, but because you cannot know from the typed arm alone whether your graph is
+helping or hurting.
+
+Both activation datasets do not behave alike (Norman −0.0790, Tian CRISPRa +0.0226), so this is NOT
+simply "activation flips the sign". With n=2 activation datasets no direction claim is supportable.
+
+**PENDING: genome-wide Replogle K562 (gwps, 9,730 targets) is training now.** It is 4.6x the largest
+dataset here and will be the highest-weight point in the fixed-effect pool. These numbers are the
+seven-dataset state and will need recomputing when it lands.
+
 ---
 
 <details>
