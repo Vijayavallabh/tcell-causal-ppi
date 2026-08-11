@@ -67,16 +67,19 @@ Fold re-draws (c075c15, c080c10) are excluded from that pool on purpose: they re
 dataset, so pooling them would count one dataset several times and shrink the interval on a fiction.
 
 STILL WORTH DOING, in priority order:
- 1 RUNNING (launched 2026-08-11 02:17): ./run_balance_n7.sh brings typed_static and condition_gated
-   to n=7 in the n7 root, which balances the per-config ranking AND takes h1 and h2a to n=7 on the
-   frozen fold for the first time. MEASURED PACE: ~50 min/epoch, so at the 11-16 epochs these arms
-   historically need before early stopping this is 9-13h, NOT the 6-7h I first estimated. Expect it
-   around midday 2026-08-11. Log: data/logs/balance_n7.nohup.log. Gates alive at epoch 1
-   (condition_gated 0.6031; typed_static is fixed at 1.0 by construction).
-   The headline promotion_margin contrast does NOT depend on this run — it is already clean at n=7.
-   WHEN IT LANDS: same two commands as below (merge_registry_n7.py, then re-aggregate at
-   --seeds 0,1,2,3,4,5,6). Then check whether h1 behaves like promotion_margin did between n=5 and
-   n=7 — estimate stable, interval tighter — or drifts. Report n=7 with all seven deltas either way.
+ 1 DONE 2026-08-11 14:51. run_balance_n7.sh landed all four lanes. Every arm is now n=7 on the
+   frozen fold, balanced across seeds 0-6, nothing dropped. FINAL numbers:
+     h2a  typed_static - expression_only    -0.0120 [-0.0160,-0.0080] bonf 0.0013 SURVIVES BOTH
+     prom untyped_gnn - expression_only     +0.0043 [+0.0017,+0.0069] bonf 0.0273 SURVIVES BOTH
+     h2b  condition_gated - typed_static    +0.0077 [+0.0009,+0.0146] bonf 0.1308 fails
+     h1   condition_gated - expression_only -0.0043 [-0.0084,-0.0002] bonf 0.1695 fails
+   NOTE the correction: at n=6 h2b was +0.0096 with bonf 0.0491 and SURVIVED. Seed 6 came in at
+   -0.0033 and killed it. Anything quoting h2b as surviving is from the n=6 interim and is wrong.
+   Arms: untyped +0.0904 > expression_only +0.0861 > condition_gated +0.0818 > typed_static +0.0740.
+   Reading: topology helps, per-relation edge typing actively hurts and is the largest effect in the
+   family, the gate only partly repairs it and not significantly, and the gated arm ends up worse
+   than no graph. All of this is in RESULTS_SUMMARY.md and in the paper's cause C.
+
  2 An untyped arm on the four replication datasets is ALREADY run and is what gives the 5/5 pattern.
    Nothing more is needed there.
  3 The obvious follow-up the paper now invites: WHY does typing/gating discard the signal? Candidates
