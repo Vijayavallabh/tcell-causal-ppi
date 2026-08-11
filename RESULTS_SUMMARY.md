@@ -41,6 +41,44 @@ cross-dataset statement remains post-hoc and keeps its caveat.
 positive claim in its own right. Everything needed to decide is in
 `data/results/screening_untyped_n7/robustness_5seed.json`.
 
+## n=7 on the frozen fold — the full family, 2026-08-11
+
+`typed_static` and `condition_gated` were run at seeds 5 and 6 to put every arm on one basis. Three of
+four lanes have landed; `condition_gated` seed 6 is still training, so h2b and h1 are at n=6 and the
+seed is named as pending, not dropped.
+
+| contrast | n | mean | 95% CI | p | Bonf | Holm | survives BOTH | per-seed |
+|---|---|---|---|---|---|---|---|---|
+| h2a `typed_static − expression_only` | 7 | **−0.0120** | [−0.0160, −0.0080] | 0.0003 | 0.0013 | 0.0013 | **YES** | −0.0075, −0.0140, −0.0143, −0.0199, −0.0098, −0.0106, −0.0083 |
+| h2b `condition_gated − typed_static` | 6 | **+0.0096** | [+0.0031, +0.0160] | 0.0123 | 0.0491 | 0.0245 | **YES** | +0.0048, +0.0118, +0.0098, +0.0194, +0.0100, +0.0016 |
+| promotion_margin `untyped_gnn − expression_only` | 7 | **+0.0043** | [+0.0017, +0.0069] | 0.0068 | 0.0273 | 0.0205 | **YES** | +0.0090, +0.0050, +0.0022, +0.0031, +0.0033, +0.0066, +0.0008 |
+| h1 `condition_gated − expression_only` | 6 | −0.0031 | [−0.0066, +0.0004] | 0.0723 | 0.2891 | 0.0723 | no | −0.0027, −0.0022, −0.0045, −0.0005, +0.0002, −0.0089 |
+
+`family_size` is 4 on all four. No seed was dropped for any reason other than not existing yet
+(`condition_gated` seed 6, still training).
+
+**The four together say something none of them says alone.** Ordered by arm:
+
+    untyped_gnn      +0.0904   plain topology, no typing, no gating
+    expression_only  +0.0861   no graph
+    condition_gated  +0.0829   typed graph + condition gate
+    typed_static     +0.0740   typed graph, gate pinned to 1
+
+Plain topology beats no-graph. Adding edge typing does not merely fail to help — it is **actively
+harmful**, and that harm survives both corrections with all seven seeds negative (h2a). The condition
+gate then recovers about four fifths of the damage the typing caused (h2b, +0.0096 against typing's
+−0.0120), which also survives both corrections. But it never gets back past the plain graph, and h1
+remains indistinguishable from no-graph at all.
+
+So the condition gate is not adding signal. It is repairing a wound the typed relation structure
+inflicts, and it does not fully repair it. The thing this project built its architecture around is the
+thing that costs it the graph's benefit.
+
+This is the sharpest statement of cause C available: not "the architecture is not obviously wrong" and
+not merely "the architecture discards the benefit", but that a specific component — per-relation edge
+typing — is measurably worse than not having it, on the reference dataset, under family-wise
+correction, at n=7.
+
 ---
 
 <details>
