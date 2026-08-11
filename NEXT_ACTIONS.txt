@@ -25,38 +25,36 @@ REBUILD:  export PATH=/tmp/tl/current/bin/x86_64-linux:$PATH    <- NOT /tmp/tl/b
 /tmp is cleaned periodically here, so TeX Live may need reinstalling. Check for the BINARY, not the
 /tmp/tl directory — the directory survived a cleaning that removed the binaries at least once.
 
---- OPEN B0. THREE QC-PASSING DATASETS ARE BUILT AND HAVE NEVER BEEN TRAINED. -----------------
-Found by repo audit 2026-08-11. These are the cheapest large wins available; the expensive part
-(building the Amendment-2 DE matrix) is already done and sitting on disk.
+--- OPEN B0. IN PROGRESS 2026-08-11. Two of three landed, and one REVERSED a paper claim. -----
+The audit found three QC-passing DE matrices built and never trained. All three are now queued in
+run_replication_campaign.sh (extended from 4 datasets to 7).
 
-  dataset                              rows   targets  conditions  note
-  ReplogleWeissman2022_K562_gwps       9,730    9,730   single      GENOME-WIDE. 4.6x the largest
-                                                                    dataset currently trained.
-                                                                    QC run 2026-08-11: own_mean
-                                                                    -1.361, 99% consistent,
-                                                                    knockdown -> PASS.
-  NormanWeissman2019_filtered            105      105   single      ACTIVATION (CRISPRa)
-  TianKampmann2021_CRISPRa               100      100   single      ACTIVATION, same cell type as
-                                                                    the CRISPRi dataset already run
-  PapalexiSatija2021_eccite_RNA           25       25   single      below the 50-family floor;
-                                                                    chain smoke only, never headline
+  DONE  NormanWeissman2019_filtered    105 rows, K=16, activation   12 lanes
+  DONE  TianKampmann2021_CRISPRa       100 rows, K=16, activation   12 lanes
+  RUNNING  ReplogleWeissman2022_K562_gwps  9,730 rows, K=128        12 lanes, ~3-5 h
+           prepped and READY; watch data/logs/repl/campaign3_gwps.log
 
-WHY gwps IS THE HIGHEST-VALUE ITEM LEFT AFTER THE SUBMISSION. Every replication dataset so far is
-184-2,122 targets. gwps is genome-wide, so it is the only one whose power approaches the reference
-screen's. It would take the pooled h2a from k=4 to k=5 with the new dataset carrying the most weight,
-and it is the natural place to check whether the untyped-graph benefit (+0.0043 on the reference,
-+0.0675 on RPE1) holds where statistical power is not the limit.
-COST, extrapolated from measured per-row rates (rpe1 2,122 rows: ~11 min expression_only, ~15 min
-typed): gwps ~4.6x -> ~50 min / ~70 min per lane. 3 arms x 4 seeds = 12 lanes, ~3-4 h wall on 4 cards.
-RE-MEASURE on the first lane rather than trusting this.
-RUN:  ./run_replication_prep.sh ReplogleWeissman2022_K562_gwps none 128
-      then add it to DATASETS in run_replication_campaign.sh (ctx none: K562 has no PINNACLE context)
-      and re-run the campaign, which skips everything already landed.
-NORMAN + TIAN-CRISPRa are cheap (~100 rows each) and add the PERTURBATION-DIRECTION axis: both are
-activation, where every trained dataset so far is knockdown. K per prereg 3.1 is 16 for both, which is
-a deviation and must be labelled. Their value is the axis, not the power.
+**NORMAN OVERTURNED THE POST-HOC UNTYPED CLAIM.** untyped_gnn - expression_only = -0.0790,
+95% CI [-0.1351,-0.0229], Bonferroni 0.0414 — SURVIVES BOTH, NEGATIVE. 4/4 seeds negative, none
+dropped, gates alive. The five-dataset pool reported earlier the same day (+0.0208 [+0.0047,+0.0369],
+p=0.011, excluded zero) is SUPERSEDED: over seven datasets random effects give +0.0093
+[-0.0083,+0.0268], p=0.30, I2=89.2%. There is no pooled benefit. Three per-dataset contrasts still
+clear correction — reference +0.0043, RPE1 +0.0675, Norman -0.0790 — and they DISAGREE IN SIGN.
+Paper corrected in abstract, Failure 3, cause C + table row, checklist and conclusion.
 
---- OPEN B1. A FOURTH DIFFICULTY LEVEL IS GENERATED AND UNUSED. ------------------------------
+WHEN gwps LANDS: it is 4.6x the largest dataset here and will dominate the fixed-effect pool, so
+re-run BOTH of these and re-check every number the paper quotes:
+    PYTHONPATH=src .venv/bin/python -m tcell_pipeline.replication.pool --with-reference
+    (and without --with-reference for the replication-only h2a pool)
+Do not assume the sign or the significance carries over; it has now changed twice in one day.
+
+PapalexiSatija2021_eccite_RNA (25 rows) is deliberately NOT queued — below the 50-family floor, chain
+smoke only, never headline.
+
+--- OPEN B1. A FOURTH DIFFICULTY LEVEL IS GENERATED AND UNUSED.  SCRIPT READY, NOT YET RUN. ---
+RUN IT WHEN THE CARDS FREE:  setsid nohup ./run_c070.sh > data/logs/c070.nohup.log 2>&1 &
+(cheap pair only, n=5, fresh root data/results/screening_c070; refuses to start if the split is
+missing or the root resolves to a read-only one.)
 data/results/splits_c070 (threshold 0.70, cap 0.05, seed 0, 11,525 genes) exists and NOTHING has ever
 been trained against it. Levels actually on disk:
     0.85/0.05  data/splits              frozen fold   all 4 arms at n=7   <- best-powered
