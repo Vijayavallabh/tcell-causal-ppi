@@ -208,6 +208,26 @@ section you delete; a limitation you measure is a hedge you replace with a numbe
 whose Limitations section contains only things that are genuinely out of reach, each with a number
 attached, rather than things nobody got round to.
 
+
+--- SHARED-BOX REALITY (measured 2026-08-12, affects every ETA in this file) -------------------
+This machine is shared and the contention is not visible from nvidia-smi alone. Measured while the L4
+lanes ran:
+  - `python load_data.py Thyroid` at 5001% CPU (about 50 of 64 cores), load average 123 and rising.
+  - 5+ `run.py --encoding ...` quantum-ML jobs at ~99.5% CPU each.
+  - Earlier, `launch.py --config configs/pfdv2.yaml --gpu 2` held 80,948 MiB of card 2's 81,920 - a
+    CUDA context could not even be created there.
+CONSEQUENCES for planning:
+  1 These lanes are CPU-bound on row-by-row subgraph sampling (see UntypedGraphEncoder's docstring:
+    "the batch is still sampled row-by-row on CPU, which is now the throughput floor"). Each lane uses
+    about ONE core. GPU utilisation reads 100% and means very little.
+  2 Per-epoch time therefore tracks whoever else is on the box: the same typed_static lane measured
+    ~38 min/epoch when quiet, ~45 with three of ours running, ~80 once the Thyroid job appeared, and
+    ~90 when six of ours competed. Quote ETAs as ranges and re-measure rather than extrapolating.
+  3 ALWAYS map CUDA_VISIBLE_DEVICES to physical cards with torch's mem_get_info before scheduling.
+    nvidia-smi index 3 is a T400, not an A100, and smi ordering is not CUDA ordering.
+  4 Adding a worker is only worth it when the marginal CPU cost is small. Going 3->4 of our lanes costs
+    one core out of 64 and gains a GPU; going 4->6 cost throughput outright.
+
 =======================================================================
 HARNESS STATE IS STALE (audit 2026-08-11) — fix before the next long session
 =======================================================================
