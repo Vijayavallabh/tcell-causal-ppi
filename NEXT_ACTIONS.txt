@@ -227,6 +227,12 @@ CONSEQUENCES for planning:
     nvidia-smi index 3 is a T400, not an A100, and smi ordering is not CUDA ordering.
   4 Adding a worker is only worth it when the marginal CPU cost is small. Going 3->4 of our lanes costs
     one core out of 64 and gains a GPU; going 4->6 cost throughput outright.
+  5 A FREE CARD DOES NOT STAY FREE. run_l4_card2.sh preflighted card 2 at 78 GiB free, started a lane,
+    and 2h47m later a co-tenant reclaimed the card: the lane was SIGTERMed (exit 143) and the next four
+    died instantly with CUDA OOM at "161 MiB free". A preflight is necessary and not sufficient. Any
+    opportunistic worker on a shared card must (a) release its claim on failure so the main scheduler
+    can retry - run_l4_card2.sh does - and (b) be treated as best-effort, never as the only path to a
+    lane. Do not restart such a worker without re-checking the card; ours is at 68 GiB used again.
 
 =======================================================================
 HARNESS STATE IS STALE (audit 2026-08-11) — fix before the next long session
