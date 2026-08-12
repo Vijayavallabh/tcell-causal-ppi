@@ -100,3 +100,20 @@ def test_degrees_of_freedom_are_reported():
     assert d["df"]["level"] == 1                 # 2 levels
     assert d["df"]["redraw"] == 4                # (3-1) + (3-1)
     assert d["df"]["seed"] == 6 * (5 - 1)        # 6 cells x 4
+
+
+def test_unbalanced_cells_use_mean_of_inverse_n():
+    """Unequal seeds per cell: the seed correction must be mean(sigma2/n_j), not sigma2/mean(n_j).
+
+    Plant zero re-draw variance with very unequal n. Jensen's inequality makes mean(1/n) strictly
+    larger than 1/mean(n) whenever n varies, so the wrong form under-subtracts and leaves a re-draw
+    component that is not there. That component is the verdict's denominator, so the error would push
+    the conclusion toward "difficulty does not matter" for free.
+    """
+    rng = np.random.default_rng(21)
+    cells = {}
+    for i, n in enumerate([1, 1, 2, 3, 5, 8] * 12):
+        deltas = list(rng.normal(0.0, 0.04, n))
+        cells[("L0", f"s{i}")] = {"deltas": deltas, "mean": float(np.mean(deltas)), "n": n}
+    d = decompose(cells)
+    assert d["sd_redraw"] < 0.012, f"under-subtracted; phantom re-draw variance: {d['sd_redraw']}"

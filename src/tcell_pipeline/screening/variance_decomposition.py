@@ -90,18 +90,24 @@ def decompose(cells: dict) -> dict:
         parts = []
         for lv, vs in multi.items():
             means = [v["mean"] for v in vs]
-            nbar = np.mean([v["n"] for v in vs])
+            # E[var of cell means] = sigma2_redraw + MEAN OF (sigma2_seed / n_j), not
+            # sigma2_seed / mean(n_j). Those differ whenever the cells have unequal n, which is our
+            # case exactly (n = 5, 3, 1 at 0.75/0.15): mean(1/n) = 0.511 against 1/mean(n) = 0.333.
+            # Using the latter under-subtracts, inflating the re-draw component - and the re-draw
+            # component is the denominator of the verdict, so the error biases toward concluding
+            # "no difficulty effect".
+            inv_n = float(np.mean([1.0 / v["n"] for v in vs]))
             raw = float(np.var(means, ddof=1))
-            parts.append(max(0.0, raw - (s2_seed or 0.0) / nbar))
+            parts.append(max(0.0, raw - (s2_seed or 0.0) * inv_n))
             redraw_src.append(f"{lv} ({len(vs)} re-draws)")
         s2_redraw = float(np.mean(parts))
 
     level_means = {lv: float(np.mean([v["mean"] for v in vs])) for lv, vs in by_level.items()}
     s2_level = None
     if len(level_means) >= 2:
-        rbar = np.mean([len(vs) for vs in by_level.values()])
+        inv_r = float(np.mean([1.0 / len(vs) for vs in by_level.values()]))
         raw = float(np.var(list(level_means.values()), ddof=1))
-        s2_level = max(0.0, raw - (s2_redraw if s2_redraw is not None else 0.0) / rbar)
+        s2_level = max(0.0, raw - (s2_redraw if s2_redraw is not None else 0.0) * inv_r)
 
     # Degrees of freedom behind each component. With three levels the level variance has 2 df, so a
     # ratio like "1.5x" is not a stable quantity and must be reported with its df attached.
