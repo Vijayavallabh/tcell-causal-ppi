@@ -117,3 +117,27 @@ def test_unbalanced_cells_use_mean_of_inverse_n():
         cells[("L0", f"s{i}")] = {"deltas": deltas, "mean": float(np.mean(deltas)), "n": n}
     d = decompose(cells)
     assert d["sd_redraw"] < 0.012, f"under-subtracted; phantom re-draw variance: {d['sd_redraw']}"
+
+
+def test_zero_redraw_component_does_not_crash_the_verdict():
+    """sd_redraw can be exactly 0.0 after the max(0, .) clamp, and the verdict divided by it.
+
+    This crashed on real data the moment the re-draws reached full n: the spread of cell means within
+    a level was smaller than the seed correction, the estimate clamped to zero, and the ratio blew up
+    with ZeroDivisionError. decompose() itself must stay finite and report the zero honestly.
+    """
+    # Constructed, not sampled: three cells at one level with IDENTICAL means give raw between-cell
+    # variance of exactly 0, so the clamp is guaranteed to fire. Sampling made this test pass by luck.
+    rng = np.random.default_rng(31)
+    cells = {}
+    for r in range(3):
+        d0 = list(rng.normal(0.0, 0.04, 5))
+        d0 = [x - np.mean(d0) for x in d0]          # centre so every cell mean is exactly 0.0
+        cells[("L0", f"s{r}")] = {"deltas": d0, "mean": 0.0, "n": 5}
+    d1 = list(rng.normal(0.05, 0.04, 5))
+    d1 = [x - np.mean(d1) + 0.05 for x in d1]
+    cells[("L1", "s0")] = {"deltas": d1, "mean": 0.05, "n": 5}
+    d = decompose(cells)
+    assert d["sd_redraw"] == 0.0, d["sd_redraw"]
+    assert d["sd_level"] is not None and d["sd_level"] > 0.0
+    assert d["sd_seed"] is not None and np.isfinite(d["sd_seed"])

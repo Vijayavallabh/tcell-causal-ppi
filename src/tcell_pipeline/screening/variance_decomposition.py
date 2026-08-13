@@ -164,6 +164,14 @@ def main() -> int:
     if d["sd_level"] <= d["sd_redraw"]:
         print("[vardecomp] VERDICT: between-level spread does NOT exceed within-level (re-draw) spread."
               "\n    The difficulty knob has no detectable effect above realisation noise.")
+    elif d["sd_redraw"] == 0.0:
+        # Method-of-moments clamps a negative estimate to zero, which means the observed spread of
+        # cell means within a level was no larger than the seed noise already explains. That is
+        # "indistinguishable from zero", NOT "exactly zero", so no ratio is quotable.
+        print("[vardecomp] VERDICT: within-level (re-draw) variance is INDISTINGUISHABLE FROM ZERO — "
+              "the spread of\n    cell means within a level is fully explained by seed noise. The "
+              "difficulty effect is therefore\n    larger than partition noise, but the ratio is not "
+              "quotable (division by an estimate of zero).")
     else:
         print(f"[vardecomp] VERDICT: between-level sd exceeds within-level by "
               f"{d['sd_level'] / d['sd_redraw']:.2f}x.")
