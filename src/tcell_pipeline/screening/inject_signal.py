@@ -202,7 +202,9 @@ def write_rung(delta: float, out_root: Path, inj: dict | None = None, *, hops: i
     ref = config.INTERMEDIATE_ROOT
 
     Z = sp.load_npz(config.DE_LAYERS_DIR / "zscore.npz").tocsr()
-    Zi = sp.csr_matrix(Z.toarray() + float(delta) * inj["M"])
+    # Keep the reference dtype: float32 + float32 promotes to float64 in numpy, which would double
+    # both the data array and the write time of a matrix that is 100% dense and 1.3 GiB per copy.
+    Zi = sp.csr_matrix((Z.toarray() + float(delta) * inj["M"]).astype(Z.dtype))
     sp.save_npz(out_root / "de_layers" / "zscore.npz", Zi)
 
     for name in LINKED:
