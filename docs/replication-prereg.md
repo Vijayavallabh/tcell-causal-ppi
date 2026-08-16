@@ -471,3 +471,102 @@ Holm both. The within-metric numbers are context, not the claim.
 The commensurability hedge has two halves. This closes the metric half only. Outside results are also
 obtained on different splits, and re-scoring our predictions cannot speak to that; the split half stays
 hedged, and no sentence anywhere may use this re-scoring to adjudicate another paper's claim.
+
+---
+
+## Amendment 6 — 2026-08-16 (BEFORE any injected-signal lane is trained)
+
+Registers A2(a), the empirical detection floor: put a graph signal of KNOWN size into the real
+responses and report the smallest size the pipeline recovers. A2(b) already answers what the floor
+should be from the measured variance; this is whether the pipeline achieves it.
+
+### 6.1 What is injected
+
+For each perturbation target, the mean response of its direct PPI neighbours computed over TRAIN-FOLD
+ROWS ONLY, scaled so its spread equals the TRAIN response's, multiplied by `delta`, added to every
+train and validation row of that target. `delta` therefore reads as a fraction of a response standard
+deviation. Neighbours are one hop, edge-score weighted, row-normalised, with the diagonal cleared after
+any expansion so no walk returns a target its own response.
+
+A model that can read the graph can predict a held-out target from its neighbours. A model that cannot,
+cannot. That is the entire design, and its validity rests on one property.
+
+### 6.2 Leakage, and a leak we already found
+
+If any validation response reached any injected value, the graph arm would detect leakage rather than
+structure. The guard is asserted by a test that perturbs a validation response and requires the whole
+injection matrix to be bit-identical, and that test was watched to FAIL against a deliberately leaky
+variant before being trusted.
+
+It also caught a real leak in the first implementation, which is why this paragraph exists. The
+per-target means were train-only, but the SCALING CONSTANT was computed over train and validation rows
+together; tampering with one validation response moved the constant and rescaled every injected value
+by a factor of 46. Fixed before any lane ran: every number that reaches the output, constants included,
+is now computed on train rows alone.
+
+### 6.3 Rail 1
+
+Rows whose target is in the challenge or calibration role receive an injection of exactly zero and are
+copied through bit-identically. No sealed response enters any statistic, including the scaling
+constant. The sealed split is not read, opened, or scored.
+
+### 6.4 The ladder, and why `delta=0` is NOT the negative control
+
+Rungs: `delta` in {0.02, 0.05, 0.10, 0.20, 0.40}, plus ONE permuted control at 0.40 in which each
+target receives some OTHER target's neighbour mean. The permuted control injects a component of the
+same size and distribution with no relationship to the graph; a ladder that recovers it is not
+measuring graph structure.
+
+`NEXT_ACTIONS.txt` specified a `delta=0` rung as the negative control, required NOT to clear
+correction. That is superseded, and the reason is a result of this project rather than a convenience:
+at `delta=0` the data is the untouched reference screen, where the untyped arm ALREADY beats the
+baseline by +0.0043 and survives both corrections at n=7. A control the data cannot pass is not a
+control. The `delta=0` row is still reported, read off the landed reference lanes rather than re-run,
+and it is the ladder's ZERO POINT, not its null.
+
+### 6.5 Arms, and the cost argument for choosing them
+
+`untyped_gnn` against `expression_only`, at seeds 0-3 (n=4, rail 5) per rung.
+
+`NEXT_ACTIONS.txt` said `condition_gated` vs `expression_only`. Two reasons to change it, both stated
+before the numbers exist. Cost: `condition_gated` lanes on this fold measured 7.5-16 GPU-hours against
+`untyped_gnn`'s 2.3-2.5, so the registered arm would cost about 200 GPU-hours against 66, and the
+budget for A2 is 60-100. Sensitivity: `untyped_gnn` is this pipeline's BEST graph detector, the only
+arm with a corrected-significant positive anywhere, so a floor measured with it is the floor of the
+best detector we have. If even that arm needs a large `delta`, the bound covers the weaker arms a
+fortiori; a floor measured with `condition_gated` would not have covered `untyped_gnn`.
+
+This is a bound on the pipeline's sensitivity, not on the typed encoder's specifically, and it will be
+labelled that way.
+
+### 6.6 Everything else is held fixed
+
+Same frozen `blocked_target_ood` split, 20 epochs, batch 8, `SUBGRAPH_CACHE_SIZE=9000`, config-default
+`lambda_graph` -- the configuration the landed reference lanes used. Each rung gets a FRESH
+`INTERMEDIATE_ROOT` in which only the response layer differs; every other artifact, including the
+program basis, the features and the split, is a symlink to the reference root.
+
+The program basis is deliberately NOT re-fitted per rung. Re-fitting would change the metric space rung
+by rung and make the rungs incomparable, which is the one thing a ladder cannot survive. The injected
+component is a linear combination of real responses and so lies in the span the basis was fitted to.
+
+### 6.7 Decision rule, fixed before running
+
+Primary per rung: `promotion_margin` = `untyped_gnn` - `expression_only` on
+`systema_pert_specific_delta`, paired per seed, n=4.
+
+Multiplicity: the six conditions form one family, m=6. Bonferroni AND Holm are both reported and
+survival requires both, as everywhere else in this project. Per-rung uncorrected intervals are also
+reported.
+
+**The measured floor is the smallest `delta` that clears both corrections AND is cleared by every
+larger rung.** A rung that clears while a larger one does not is a red flag and is reported as one, not
+as a floor: a monotone dose-response is part of what makes the ladder interpretable.
+
+**If the permuted control clears correction, the ladder is not reported as a floor at all.** It would
+mean the arms respond to an injected component of that size regardless of whether it follows the graph,
+and the number would measure injection magnitude rather than graph readability.
+
+**A HIGH floor is a result, not a failure.** If the smallest recovered rung is 0.20 response SDs, then
+this pipeline cannot see a graph effect below a fifth of a response standard deviation, and the paper's
+null is stated against that number instead of a hedge.
