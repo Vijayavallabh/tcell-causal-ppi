@@ -59,7 +59,11 @@ A3  CLOSED, and it fired the CONTRADICTION STOP. Re-scored under TxPert / GEARS 
 A4  CLOSED. The 14-cell search spans +0.0051 to -0.0037; 14 draws of seed noise alone would span
     0.0147. Its entire spread is inside what re-seeding ONE configuration produces, and its best cell
     would need 12 paired seeds where it was run at 1. data/results/a2_power/arch_search_bound.json.
-A5  UNBLOCKED by the same number. Still low priority.
+A5  CLOSED, and it corrected us. The audit's necessity claim ("92% of cases beat random") is a 49%
+    improvement over a quantity of order 1e-7. And the cause-E source ablation was largely an edge-count
+    effect: STRING is 85.4% of the graph, and per 1% of edges it leads HuRI by 1.7x, not the ~200x the
+    raw deltas suggest. Cause E stays "Partly"; the evidence behind it is weaker than we wrote.
+    data/results/a2_power/rationale_bound.json.
 
 PAPER. Body still exactly 8pp (References start on page 9, unchanged), 0 errors, 0 undefined,
 0 overfull >2pt. Two appendix sections added (app:metrics, app:power rewritten), one sentence added to
@@ -145,7 +149,7 @@ Add search cells only if cards would otherwise idle, and prefer levers not yet t
 cap, layer count, readout). DO NOT re-propose per-relation normalisation or confidence pruning — both
 already refuted, and re-running them is a known dead end.
 
---- A5. L8. Rationale-audit hedges. ------------------------------- LOW PRIORITY, CPU only ----
+--- A5. L8. Rationale-audit hedges. ------------------------------ CLOSED 2026-08-16 ---------
 The audit reports relative comparisons against matched controls with small absolute gaps in a near-null
 regime. Bound it with the A2 floor and leave it. Do not spend GPU here.
 

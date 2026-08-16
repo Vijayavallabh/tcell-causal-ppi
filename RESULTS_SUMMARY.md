@@ -54,6 +54,45 @@ Human review is wanted on how much of this to put in the paper. The material is 
 
 ---
 
+# A5 CLOSED (2026-08-16): the rationale audit's ratios, given their sizes — and a correction against us
+
+The audit compares every quantity against a matched random control. Right design, and every one of them
+is a RATIO, in a regime where the denominator can be numerically zero. Absolute sizes, computed from the
+landed audit (`data/results/a2_power/rationale_bound.json`, module
+`tcell_pipeline.screening.rationale_audit_bound`):
+
+| quantity | rationale | random control | gap | as fraction of control |
+|---|---|---|---|---|
+| sufficiency | 1.473 | 1.462 | **+0.0110** [+0.0063, +0.0158], p=2.6e-05, n=50 | **+0.8%** |
+| necessity | 4.98e-07 | 3.34e-07 | +1.64e-07, p=5.4e-05 | **+49%** |
+| GInX @ 20% sparsity | 0.084 | 0.030 | **+0.054** | +182% |
+
+So: sufficiency is reliable and small. Necessity's 49% improvement is over a quantity of order 1e-7 —
+deleting the selected edges moves the prediction by about **one part in ten million**, which makes the
+reported "92% of cases beat random on necessity" true and nearly empty. GInX is the one comparison with
+a substantive absolute gap.
+
+**THE CORRECTION, and it goes against us.** The paper's cause-E evidence is "rationale sufficiency mass
+sits almost entirely on that tier (Δ=0.365 for STRING against ≤0.0021 for BioPlex, HuRI and CORUM)".
+STRING is **85.4%** of the graph's 8,029,296 protein-protein edges (bioplex 1.47%, biogrid 11.27%,
+corum 1.21%, huri 0.64%), so ablating it removes most of the graph. Per 1% of edges removed:
+
+| source | edges | share | Δ sufficiency | Δ per 1% of edges |
+|---|---|---|---|---|
+| string | 6,857,702 | 85.41% | 0.36469 | **0.00427** |
+| huri | 51,773 | 0.64% | 0.00162 | 0.00251 |
+| bioplex | 118,162 | 1.47% | 0.00208 | 0.00141 |
+| corum | 96,778 | 1.21% | 0.00002 | 0.00002 |
+
+STRING still leads, by **1.7x over HuRI and 3.0x over BioPlex** — not the ~175-225x the raw deltas
+suggest. Only CORUM stays far behind. Cause E remains **Partly**; the verdict does not change, but the
+evidence behind it is weaker than the paper stated and `app:causes` now says so.
+
+Edge counts derived once from the frozen graph (source one-hot column of every PP edge_attr) and held
+as a constant with its provenance; `--recount` re-derives and reports drift.
+
+---
+
 # A4 CLOSED (2026-08-16): the architecture search could not have found anything
 
 The paper already says the 14-cell search was the wrong SHAPE — every cell varied HOW the typed encoder
