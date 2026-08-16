@@ -32,44 +32,56 @@ RAILS — never cross
   it governs. A factual record of what was run goes in RESULTS_SUMMARY.md, not the pre-registration.
 
 =======================================================================
-STATUS 2026-08-16 19:50 IST — what is running, what closed today
+STATUS 2026-08-16 20:30 IST — what is running, what closed today
 =======================================================================
-A1  RUNNING. typed_shared seeds 0-3 in flight on all four A100s since 19:06 (seed 4 queues behind
-    them); ~7 h/lane, so first landings late tonight. typed_permuted is IMPLEMENTED and tested but NOT
-    launched: it needs the cards A1's first wave is holding. Re-run ./run_a1_mechanism.sh with
-    ARMS="typed_permuted" once they free; the script is idempotent and skips landed lanes.
-    Pre-registered in Amendments 4 and 4a. Two corrections went in BEFORE any lane ran:
-      - typed_shared alone cannot attribute damage to parameter count (under add-aggregation, tying the
-        weights removes the partition and the parameters in ONE intervention). typed_permuted is what
-        breaks that tie. NEXT_ACTIONS' original decision rule was wrong on this and is superseded.
-      - permuting the STORED GRAPH would have been confounded: the sampler ranks neighbours by relation
-        (_PRIORITY_BONUS gives physical/co-complex 1e6 over functional), so it changes WHICH neighbours
-        enter the subgraph. Relabelling now happens after sampling, via a _sample hook.
-A2(b) CLOSED. Simulation power over the measured variance. data/results/a2_power/power_simulation.json.
-    Headline: detecting the untyped arm's own +0.0043 across datasets needs ~250 datasets (tau=0.0205,
-    the datasets disagree in sign); scPerturb has 44. On the frozen fold the measured MDE at n=7 is
-    0.0075, or 0.0185 if the claim must survive re-drawing the fold. Paper's app:power rewritten.
-A2(a) STILL OPEN — the injection ladder. This is now the only part of A2 left, and the simulation gives
-    it a prediction to be checked against rather than a blank target.
-A3  CLOSED, and it fired the CONTRADICTION STOP. Re-scored under TxPert / GEARS / scPerturb endpoints:
-    the untyped contrast is +0.0089 under TxPert's Pearson-delta and -0.0424 under GEARS' top-20 DE
-    correlation, BOTH surviving Bonferroni and Holm over all twenty endpoint-by-contrast cells. Same
-    predictions, same fold, same seeds. Flagged atop RESULTS_SUMMARY.md; the null was NOT rewritten.
-    Artifact data/results/a3_external/rescored.json; pre-registered in Amendment 5.
+EVERYTHING AUTONOMOUS IS NOW RUNNING OR DONE. run_overnight_chain.sh is driving the rest unattended:
+it waits for the typed_shared lanes, runs typed_permuted, aggregates A1, waits for the injected rung
+roots, runs the ladder, and writes the floor. Nothing below needs a human until the results land.
+
+A1  RUNNING. typed_shared seeds 0-3 on all four A100s since 19:06 (seed 4 queued behind them),
+    ~35-50 min/epoch, early stop expected near epoch 11-13. typed_permuted is implemented, tested and
+    CHAINED. Pre-registered in Amendments 4, 4a and 4b; three corrections went in BEFORE any lane ran:
+      - typed_shared alone cannot attribute damage to parameter count (tying the weights removes the
+        partition and the parameters in ONE intervention under add-aggregation). typed_permuted breaks
+        the tie. The decision rule originally written in this file is superseded.
+      - permuting the STORED GRAPH would have been confounded: the sampler ranks neighbours BY
+        RELATION (_PRIORITY_BONUS gives physical/co-complex 1e6 over functional), so it changes WHICH
+        neighbours enter the subgraph. Relabelling now happens after sampling, via a _sample hook.
+      - Amendment 4.4 had a SIGN ERROR that would have reversed the reading of D2. 4b fixes it: both
+        contrasts are (arm - typed_static), so POSITIVE means the intervention improved on typed.
+A2(a) QUEUED, infrastructure complete. Rung roots building under data/intermediate/inject. The leakage
+    test caught a real leak before any lane ran: the scaling constant was computed over train AND
+    validation rows, so tampering with one validation response rescaled every injected value by 46x.
+    Amendment 6 also replaces the delta=0 negative control (the untouched data already contains a
+    corrected-significant +0.0043, so it is a control the data cannot pass) with a permuted rung, and
+    changes the arm to untyped_gnn (66 GPU-h against ~200, and it is the best detector we have).
+A2(b) CLOSED. data/results/a2_power/power_simulation.json. Detecting the untyped arm's own +0.0043
+    ACROSS DATASETS needs ~250 datasets (tau=0.0205, the datasets disagree in sign); scPerturb has 44.
+    On the frozen fold the measured MDE at n=7 is 0.0075, or 0.0185 if the claim must survive
+    re-drawing the fold. It also corrected the paper: the between-re-draw component is 0.0003, not
+    "at least as large as" the seed's 0.0107.
+A3  CLOSED, and it fired the CONTRADICTION STOP. The untyped contrast is -0.0424 on each
+    perturbation's top-20 DE genes (GEARS) and +0.0089 over all 10,282 (TxPert), BOTH surviving
+    Bonferroni and Holm over all twenty endpoint-by-contrast cells, crossing zero between the 250th
+    and 500th DE gene. Both effects are real; which one a paper reports is a choice of convention.
+    h2a is negative and corrected-significant at EVERY k, so the typed deficit is not a metric
+    artifact. data/results/a3_external/{rescored,k_sweep}.json. Flagged atop RESULTS_SUMMARY.md.
 A4  CLOSED. The 14-cell search spans +0.0051 to -0.0037; 14 draws of seed noise alone would span
     0.0147. Its entire spread is inside what re-seeding ONE configuration produces, and its best cell
-    would need 12 paired seeds where it was run at 1. data/results/a2_power/arch_search_bound.json.
-A5  CLOSED, and it corrected us. The audit's necessity claim ("92% of cases beat random") is a 49%
-    improvement over a quantity of order 1e-7. And the cause-E source ablation was largely an edge-count
-    effect: STRING is 85.4% of the graph, and per 1% of edges it leads HuRI by 1.7x, not the ~200x the
-    raw deltas suggest. Cause E stays "Partly"; the evidence behind it is weaker than we wrote.
-    data/results/a2_power/rationale_bound.json.
+    would need 12 paired seeds where every cell was run at 1.
+A5  CLOSED, and it corrected us. "92% of cases beat random on necessity" is a 49% improvement over a
+    quantity of order 1e-7. Cause E's source ablation is largely an edge-count effect: STRING is 85.4%
+    of the graph and leads HuRI by 1.7x per edge, not the ~200x the raw deltas suggest.
 
-PAPER. Body still exactly 8pp (References start on page 9, unchanged), 0 errors, 0 undefined,
-0 overfull >2pt. Two appendix sections added (app:metrics, app:power rewritten), one sentence added to
-Limitations/Scope. SEPARATELY: abstract_plain.txt — the text SUBMISSION.md tells a human to paste into
-OpenReview — was a full campaign out of date and still carried the RETRACTED "positive on all five
-independent datasets". Regenerated from main.tex and SUBMISSION.md now says it is derived.
+PAPER. Body still EXACTLY 8pp (References open page 9), 0 errors, 0 undefined, 0 overfull >2pt.
+./check_paper.sh checks all four gates in one command. SEPARATELY: abstract_plain.txt — the text
+SUBMISSION.md tells a human to paste into OpenReview — was a full campaign out of date and still
+carried the RETRACTED "positive on all five independent datasets". Regenerated from main.tex.
+
+WHEN THE CHAIN FINISHES, read in order:
+  data/results/screening_a1/a1_mechanism.json   D1, D2 and the 2x2 verdict
+  data/results/a2_ladder/floor.json             the measured detection floor
+Then integrate: RESULTS_SUMMARY.md, the paper, and this file. The chain edits none of them.
 
 =======================================================================
 THE AUTONOMOUS WORK, in priority order
