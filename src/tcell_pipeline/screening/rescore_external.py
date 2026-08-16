@@ -69,15 +69,33 @@ def score_arms(predictions_root: Path, arms=FAMILY, seeds=SEEDS, *, n_max: int |
     return out
 
 
+def _paired(scores: dict, metric: str, better: str, worse: str, alpha: float) -> dict:
+    b = {s: oriented(metric, v[metric]) for s, v in scores.get(better, {}).items()}
+    w = {s: oriented(metric, v[metric]) for s, v in scores.get(worse, {}).items()}
+    out = paired_delta_summary(b, w, alpha=alpha, seeds=SEEDS)
+    out["better"], out["worse"], out["metric"] = better, worse, metric
+    return out
+
+
 def contrast_under(scores: dict, metric: str, alpha: float = 0.05) -> dict:
-    """Every pre-registered contrast under ONE metric, corrected as a family exactly as the campaign
-    corrects it. Values are oriented to larger-is-better first."""
-    contrasts = {}
-    for key, better, worse in CONTRASTS:
-        b = {s: oriented(metric, v[metric]) for s, v in scores.get(better, {}).items()}
-        w = {s: oriented(metric, v[metric]) for s, v in scores.get(worse, {}).items()}
-        contrasts[key] = paired_delta_summary(b, w, alpha=alpha, seeds=SEEDS)
-        contrasts[key]["better"], contrasts[key]["worse"] = better, worse
+    """Every pre-registered contrast under ONE metric, corrected as a family of four exactly as the
+    campaign corrects it. Comparable to every other number in the paper, and NOT the bar a survival
+    claim rests on - see ``contrast_across``."""
+    contrasts = {key: _paired(scores, metric, better, worse, alpha)
+                 for key, better, worse in CONTRASTS}
+    apply_family_wise(contrasts, alpha)
+    return contrasts
+
+
+def contrast_across(scores: dict, metrics=tuple(ORIENTATION), alpha: float = 0.05) -> dict:
+    """All metrics x all contrasts as ONE family (Amendment 5.3).
+
+    Five endpoints times four contrasts is twenty simultaneous tests. Correcting only within each
+    endpoint and then reporting whichever endpoint was kind is the look-elsewhere effect, so this is the
+    bar a survival claim has to clear. ``apply_family_wise`` sizes the family from the contrasts it is
+    handed, so handing it all twenty is the whole implementation."""
+    contrasts = {f"{m}/{key}": _paired(scores, m, better, worse, alpha)
+                 for m in metrics for key, better, worse in CONTRASTS}
     apply_family_wise(contrasts, alpha)
     return contrasts
 
@@ -88,30 +106,48 @@ def run(predictions_root: Path, out: Path | None = None, *, n_max: int | None = 
     report = {"predictions_root": str(predictions_root), "seeds": list(SEEDS),
               "orientation": ORIENTATION, "per_seed": scores, "contrasts": {}}
 
-    print("\n" + "=" * 104)
+    across = contrast_across(scores)
+    report["across_metric"] = across
+    m_across = next((c.get("family_size") for c in across.values() if c.get("family_size")), 0)
+
+    print("\n" + "=" * 118)
     print("A3 — the pre-registered contrasts under externally-reported endpoints "
           "(oriented so + favours the first arm)")
-    print("=" * 104)
-    hdr = f"{'metric':>20} {'contrast':>17} {'n':>2} {'mean':>10} {'95% CI':>22} {'bonf':>7} {'holm':>7} {'survives':>9}"
+    print(f"     'within' corrects over that endpoint's 4 contrasts; 'ACROSS' over all {m_across} "
+          f"cells — Amendment 5.3 makes ACROSS the bar a survival claim must clear")
+    print("=" * 118)
+    hdr = (f"{'metric':>20} {'contrast':>17} {'n':>2} {'mean':>11} {'95% CI':>24} "
+           f"{'within':>7} {'ACROSS':>7} {'SURVIVES':>9}")
     for metric in ORIENTATION:
         print(f"\n{hdr}")
         contrasts = contrast_under(scores, metric)
         report["contrasts"][metric] = contrasts
         for key, c in contrasts.items():
+            a = across[f"{metric}/{key}"]
             ci = ("     —" if c["ci_low"] is None
                   else f"[{c['ci_low']:+.4f}, {c['ci_high']:+.4f}]")
             mean = "    —" if c["mean"] is None else f"{c['mean']:+.4f}"
-            bonf = "  —" if c["p_bonferroni"] is None else f"{c['p_bonferroni']:.4f}"
-            holm = "  —" if c["p_holm"] is None else f"{c['p_holm']:.4f}"
-            print(f"{metric:>20} {key:>17} {c['n']:>2} {mean:>10} {ci:>22} {bonf:>7} {holm:>7} "
-                  f"{str(c['survives_family_wise']):>9}")
+            win = "  —" if c["survives_family_wise"] is None else ("yes" if c["survives_family_wise"] else "no")
+            acr = "  —" if a["survives_family_wise"] is None else ("yes" if a["survives_family_wise"] else "no")
+            pa = "  —" if a["p_bonferroni"] is None else f"{max(a['p_bonferroni'], a['p_holm']):.4f}"
+            print(f"{metric:>20} {key:>17} {c['n']:>2} {mean:>11} {ci:>24} {win:>7} {pa:>7} {acr:>9}")
 
-    survivors = [(m, k) for m, cs in report["contrasts"].items()
-                 for k, c in cs.items() if c.get("survives_family_wise")]
-    print("\n[a3] contrasts surviving BOTH corrections: "
-          + (", ".join(f"{m}/{k}" for m, k in survivors) if survivors else "NONE"))
-    print("[a3] a survivor here is not automatically a graph win — read its SIGN and its arms; the "
-          "contradiction stop in the pre-registration applies to a positive, not to a negative.")
+    survivors = [(k, c) for k, c in across.items() if c.get("survives_family_wise")]
+    print(f"\n[a3] surviving the ACROSS-metric bar (m={m_across}, Bonferroni AND Holm): "
+          + (", ".join(f"{k} ({c['mean']:+.4f})" for k, c in survivors) if survivors else "NONE"))
+    print("[a3] a survivor is not automatically a graph win — read its SIGN and its arms; the "
+          "contradiction stop applies to a POSITIVE, not to a negative.")
+
+    # Endpoints that disagree in SIGN on the same contrast are a result in their own right
+    # (Amendment 5.4), so they are computed here rather than left for a reader to notice.
+    for key, _, _ in CONTRASTS:
+        signs = {m: np.sign(report["contrasts"][m][key]["mean"] or 0.0) for m in ORIENTATION}
+        firm = {m: s for m, s in signs.items() if across[f"{m}/{key}"].get("survives_family_wise")}
+        if len(set(firm.values())) > 1:
+            pos = [m for m, s in firm.items() if s > 0]
+            neg = [m for m, s in firm.items() if s < 0]
+            print(f"[a3] *** SIGN DISAGREEMENT on {key}: positive under {pos}, negative under {neg} — "
+                  f"both clearing the across-metric bar ***")
 
     if out is not None:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
