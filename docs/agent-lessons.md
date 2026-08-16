@@ -386,3 +386,84 @@ The decomposition subtracted `sigma2_seed / mean(n_j)` where the expectation is
 inflates the re-draw component — which is the denominator of the verdict. It was handing out "the
 difficulty knob has no detectable effect" for free. Errors that flatter the more quotable conclusion
 deserve the check the conclusion itself would get.
+
+---
+
+## 2026-08-16 — the A1-A5 closure session
+
+### "Train-only" has to include the constants
+
+The injected-signal ladder (A2(a)) rests on one property: a validation target's injected component must
+be a function of TRAIN responses only, or the graph arm detects leakage instead of graph structure and
+the measured floor bounds nothing. The per-target means were carefully train-only. The SCALING CONSTANT
+was not: it was `std` over train and validation rows, so tampering with one validation response moved
+the constant and rescaled every injected value in the matrix by a factor of 46.
+
+The leakage test caught it before a single lane ran, and only because the test asserted the strong form
+(perturb a validation response, require the whole matrix to be BIT-IDENTICAL) rather than the weak form
+(check the means look train-only). The weak form would have passed.
+
+**Rule.** When a computation is required to depend only on a subset of the data, enumerate every number
+that reaches the output, normalisation constants included, and check each one against that subset. Then
+write the guard as an end-to-end invariance test, not as a check on the step you were thinking about.
+
+### A test that cannot fail proves nothing, so make it fail on purpose
+
+Alongside the leakage test sits `test_the_leakage_guard_can_actually_fail`, which builds the injection
+from all rows instead of train rows and asserts the same equality BREAKS. Without it, a future
+refactor that made the injection constant would leave a green leakage test forever. Every guard test in
+this session ships with its own mutant: the power simulation's null calibration is paired with a
+correction-dropped variant that moves the false-positive rate from 0.013 to 0.058, and the
+architecture-search bound with a search whose spread is genuinely wide.
+
+### A negative control the data cannot pass is not a control
+
+`NEXT_ACTIONS.txt` specified a `delta=0` rung of the injection ladder as the negative control, required
+NOT to clear correction. But at `delta=0` the data is the untouched reference screen, where the untyped
+arm already beats the baseline by +0.0043 under both corrections. The control was guaranteed to fail
+for a reason that has nothing to do with the injection machinery.
+
+The replacement is a PERMUTED rung: each target receives another target's neighbour mean, so the
+injected component has the same size and distribution and no relationship to the graph. Same purpose,
+and the data can actually pass it.
+
+**Rule.** Before running a control, ask what it would report if the machinery were perfect. If the
+answer is "it fails anyway", it is testing the world rather than the instrument.
+
+### A ratio and a size disagree in a near-null regime
+
+The rationale audit reports "92% of cases beat a matched random rationale on necessity". True, and the
+quantities being compared are of order 1e-7: deleting the selected edges moves the prediction by about
+one part in ten million. On the other side, a source-ablation comparison that reads as two orders of
+magnitude (`0.365` against `<=0.0021`) is largely an edge-count effect, because STRING is 85.4% of the
+graph. Per 1% of edges it leads the next source by 1.7x.
+
+**Rule.** Every comparison against a matched control gets its absolute size reported next to it, and
+every ablation of a component gets normalised by the size of what was ablated.
+
+### An exactly constant paired delta is undecidable, not significant
+
+A synthetic test fixture that lifted every seed by the same amount produced zero variance, and
+`paired_delta_summary` correctly declined to emit a p-value: identical deltas are the signature of a
+seed that never propagated, not of a strong effect. The fixture, not the code, was wrong. Synthetic
+multi-seed fixtures need per-seed jitter or they exercise the degenerate branch.
+
+### The derived file nobody rebuilds is the one that gets submitted
+
+`paper/icbinb/abstract_plain.txt` is the text `SUBMISSION.md` instructs a human to paste into the
+OpenReview portal. It had not been regenerated since the four-dataset replication and still carried
+`+0.0031`, `I^2=26%` and "positive on all five independent datasets" — the exact claim the sixth
+dataset retracted and that `main.tex` now corrects in its own body. Nothing in the build touches it, so
+nothing flagged it.
+
+**Rule.** A derived file outside the build is stale by default. Either regenerate it in the same step
+that changes its source, or write in the file that consumes it that it is derived and must be
+regenerated. We did both.
+
+### Page budget: measure the invariant, do not trust the label
+
+`\label` records where the label was TYPESET, so a section pushed onto the next page still reports its
+own number and reads as if nothing moved. The operative gate for "the body is exactly 8pp" is which
+page the References heading opens on, read out of the PDF. `check_paper.sh` now checks it, along with
+overfull boxes, undefined references and errors, in one command — and its own first version reported
+every page as page 1, because Python's `splitlines()` eats the form feed that separates PDF pages.

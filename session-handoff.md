@@ -1,5 +1,69 @@
 # Session Handoff
 
+## STOP — READ FIRST (2026-08-16 20:15): campaigns ARE running; A2-A5 closed today
+
+**RUNNING RIGHT NOW.**
+
+    ./run_a1_mechanism.sh        typed_shared seeds 0-3 on all four A100s since 19:06, seed 4 queued.
+                                 ~40 min/epoch, early stop expected around epoch 11-13, so first
+                                 landings roughly 02:00-04:00. Log data/logs/a1_mechanism.nohup.log.
+    inject_signal --ladder       CPU. Building the six A2(a) rung roots under data/intermediate/inject.
+
+**READY TO LAUNCH, WAITING ON CARDS.**
+
+    ARMS="typed_permuted" ./run_a1_mechanism.sh     A1's tie-breaker arm; implemented and tested.
+    ./run_a2_ladder.sh                              the injection ladder, ~66 GPU-h.
+
+Both preflight-refuse a card under 40 GiB free, so starting one early fails fast instead of fighting
+A1 for memory. Start them when A1's lanes have landed.
+
+## What closed today, and what it says
+
+    A2(b)  detection floor, simulated over the MEASURED variance     data/results/a2_power/
+    A3     the null under TxPert / GEARS / scPerturb endpoints       data/results/a3_external/
+    A4     the architecture search was narrower than its seed noise  data/results/a2_power/
+    A5     the rationale audit's ratios, given their sizes           data/results/a2_power/
+
+**A3 fired the CONTRADICTION STOP and it is the biggest result of the day.** On identical predictions,
+fold and seeds, `untyped_gnn - expression_only` is **+0.0089 under TxPert's Pearson-delta** and
+**-0.0424 under GEARS' top-20 DE correlation**, both clearing Bonferroni AND Holm over all twenty
+endpoint-by-contrast cells. The sign of "does the graph help" depends on which reported metric you
+choose. The null was NOT rewritten around the positive; it is flagged at the top of RESULTS_SUMMARY.md.
+
+**A2(b)'s quotable number.** Detecting the untyped arm's own +0.0043 across datasets needs about **250
+datasets**, because the between-dataset spread is tau=0.0205 and the datasets disagree in sign.
+scPerturb has 44. On the frozen fold the measured MDE at n=7 is 0.0075, or 0.0185 if the claim must
+also survive re-drawing the fold.
+
+**A4.** The 14-cell architecture search spans +0.0051 to -0.0037. Fourteen draws of seed noise alone
+would span 0.0147. The whole search is inside what re-seeding ONE configuration produces.
+
+**A5, and it corrects us.** Cause E's source ablation is largely an edge-count effect: STRING is 85.4%
+of the graph, and per 1% of edges it leads HuRI by 1.7x, not the ~200x the raw deltas suggest. And the
+audit's "92% of cases beat random on necessity" is a 49% improvement over a quantity of order 1e-7.
+
+## Three corrections made today, all against us
+
+1. `paper/icbinb/abstract_plain.txt` — the text SUBMISSION.md tells a human to paste into OpenReview —
+   was a full campaign out of date and still claimed "positive on all five independent datasets", the
+   exact claim Norman retracted. Regenerated from main.tex; SUBMISSION.md now says it is derived.
+2. The paper said the between-re-draw variance component was at least as large as the between-seed
+   one. Measured: 0.0003 against 0.0107. Fixed in `app:power`.
+3. The injection module's scaling constant was computed over train AND validation rows, which is a
+   leak. Its own leakage test caught it before any lane ran, and it was watched to fail against a
+   deliberately leaky variant first. See Amendment 6.2.
+
+## Paper state
+
+Body still EXACTLY 8pp (References open page 9), 0 errors, 0 undefined, 0 overfull >2pt, 19 pages
+total. Run `./check_paper.sh` — it checks all four gates in one command, from any directory.
+Added: `app:metrics` (A3), rewritten `app:power` (A2b), an A4 paragraph in `app:archsearch`, an A5
+paragraph in `app:causes`, and one sentence in Limitations/Scope. Pre-registration amendments 4, 4a, 5
+and 6 all went in BEFORE the runs they govern.
+
+---
+
+
 ## STOP — READ FIRST (2026-08-16): all campaigns are done; only the submission is left
 
 **Nothing is running.** Eight replication datasets, the n=7 reference family and the L4 decomposition
