@@ -1,224 +1,183 @@
 =======================================================================
-NOT YET DONE — the only things still open.  Rewritten 2026-08-11 after the
-n=7 campaign.  Everything that closed is listed at the bottom in one line
-each, so it is not re-opened by mistake.
+AUTONOMOUS GOAL SPEC — close the paper's remaining limitations by measuring them.
+Written 2026-08-16. Branch icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED.
+ICBINB-BIO deadline 29 Aug 2026 AoE (re-check; the site marks it tentative).
 =======================================================================
 
---- OPEN A. THE SUBMISSION.  Paper is finished; filing needs a human. -------------------------
-This is the one deliverable that cannot be done from this machine. Checked 2026-08-11, not assumed:
-no OPENREVIEW_* env vars, no ~/.openreview, openreview-py not installed, no credential store in the
-repo, gh CLI not installed. Both steps below need your accounts.
+This file is your standing authority. Work for hours or days unattended. Never ask, wait, or present
+options: at each fork take the best choice on your own judgement and LOG IT WITH THE REASON. On
+failure, skip and move on. Snapshot every result to disk.
 
- 1 CREATE THE ANONYMISED MIRROR FIRST. anonymous.4open.science, then paste the URL over the
-   placeholder at paper/icbinb/main.tex line ~238 (Reproducibility statement), rebuild, confirm the
-   body is still 8pp. Order matters: the venue's blinding requirement covers LINKED MATERIAL, so a
-   dead or non-anonymous link is a compliance failure, not a cosmetic one. The repo CONTENT is
-   already clean — six deanonymising strings were removed and a rescan returns zero.
- 2 SUBMIT at openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO, full-paper track (8pp),
-   NOT the 4-page tiny-paper track. Abstract: paste paper/icbinb/abstract_plain.txt (LaTeX already
-   stripped, 422 words). Everything else is in paper/icbinb/SUBMISSION.md.
- 3 RE-CONFIRM THE DEADLINE nearer the date. 29 Aug 2026 11:59pm AoE, verified from
-   icbinb-bio.github.io/submit/, but the site still says "subject to final confirmation".
+The paper is FINISHED and submission-ready at 8pp. Nothing below is required for it to be submitted.
+Everything below either replaces a hedge in the Limitations section with a measured number, or answers
+a question the current results raise. A limitation you close is a paragraph you delete.
 
-REBUILD:  export PATH=/tmp/tl/current/bin/x86_64-linux:$PATH    <- NOT /tmp/tl/bin
-          cd paper/icbinb && pdflatex main; bibtex main; pdflatex main; pdflatex main
-/tmp is cleaned periodically here, so TeX Live may need reinstalling. Check for the BINARY, not the
-/tmp/tl directory — the directory survived a cleaning that removed the binaries at least once.
+=======================================================================
+RAILS — never cross
+=======================================================================
+1 NEVER run evaluation/sealed_eval.py; NEVER open the sealed challenge split.
+2 READ-ONLY: data/results/screening/, data/results/screening_lambda0/, data/splits/, promoted.json,
+  paper/figures/eg_ipg_architecture.pdf, and every landed results root. Every run gets a FRESH root,
+  sha256-manifested before and after where it seeds from a frozen one.
+3 Paper edits additive and reversible, marked `% AUTO <date>`. Body must stay EXACTLY 8pp with
+  0 errors / 0 overfull / 0 undefined. Overflow is fixed by MOVING to an appendix, never by cutting.
+4 CONTRADICTION STOP: if the graph HELPS and survives Bonferroni AND Holm anywhere, do NOT rewrite the
+  null around it. Snapshot, flag atop RESULTS_SUMMARY.md, continue. This has now fired three times and
+  each one is in the paper.
+5 Headline a result only at n>=4 seeds for BOTH arms of the contrast. Fewer is preliminary and must be
+  labelled so, with its n.
+6 Branch only: no commit to main, no PR. Explicit paths only, never `git add .` or `-a` (shared
+  checkout). Commit message BEFORE the `--`.
+7 docs/replication-prereg.md is FROZEN. Amend only by dated append, and only BEFORE running the thing
+  it governs. A factual record of what was run goes in RESULTS_SUMMARY.md, not the pre-registration.
 
---- OPEN B0. IN PROGRESS 2026-08-11. Two of three landed, and one REVERSED a paper claim. -----
-The audit found three QC-passing DE matrices built and never trained. All three are now queued in
-run_replication_campaign.sh (extended from 4 datasets to 7).
+=======================================================================
+THE AUTONOMOUS WORK, in priority order
+=======================================================================
 
-  DONE  NormanWeissman2019_filtered    105 rows, K=16, activation   12 lanes
-  DONE  TianKampmann2021_CRISPRa       100 rows, K=16, activation   12 lanes
-  RUNNING  ReplogleWeissman2022_K562_gwps  9,730 rows, K=128        12 lanes, ~3-5 h
-           prepped and READY; watch data/logs/repl/campaign3_gwps.log
+--- A1. WHY does edge typing hurt?  ~28 GPU-h.  HIGHEST VALUE. ---------------------------------
+The n=7 family says WHICH component costs the graph its benefit but not why, and the paper currently
+stops at "our encoder discards the signal". Naming the mechanism turns a diagnosis into a prescription,
+which is what this venue's rubric rewards most.
 
-**NORMAN OVERTURNED THE POST-HOC UNTYPED CLAIM.** untyped_gnn - expression_only = -0.0790,
-95% CI [-0.1351,-0.0229], Bonferroni 0.0414 — SURVIVES BOTH, NEGATIVE. 4/4 seeds negative, none
-dropped, gates alive. The five-dataset pool reported earlier the same day (+0.0208 [+0.0047,+0.0369],
-p=0.011, excluded zero) is SUPERSEDED: over seven datasets random effects give +0.0093
-[-0.0083,+0.0268], p=0.30, I2=89.2%. There is no pooled benefit. Three per-dataset contrasts still
-clear correction — reference +0.0043, RPE1 +0.0675, Norman -0.0790 — and they DISAGREE IN SIGN.
-Paper corrected in abstract, Failure 3, cause C + table row, checklist and conclusion.
+WHAT IS ESTABLISHED. On the frozen fold at n=7: untyped +0.0904 > expression_only +0.0861 >
+condition_gated +0.0818 > typed_static +0.0740. Edge typing is worth -0.0120 (7/7 seeds, survives both
+corrections); the gate repairs only part of that and not significantly (+0.0077, bonf 0.131).
 
-WHEN gwps LANDS: it is 4.6x the largest dataset here and will dominate the fixed-effect pool, so
-re-run BOTH of these and re-check every number the paper quotes:
-    PYTHONPATH=src .venv/bin/python -m tcell_pipeline.replication.pool --with-reference
-    (and without --with-reference for the replication-only h2a pool)
-Do not assume the sign or the significance carries over; it has now changed twice in one day.
-
-PapalexiSatija2021_eccite_RNA (25 rows) is deliberately NOT queued — below the 50-family floor, chain
-smoke only, never headline.
-
---- OPEN B1. RUNNING 2026-08-11 16:36. The fourth level, plus the re-draws L4 was missing. -----
-./run_c070.sh          10 lanes, cheap pair n=5, fresh root data/results/screening_c070
-./run_c075c15_redraws.sh  20 lanes, cheap pair n=5, seeds 1 and 2 at 0.75/0.15
-The second one closes the actual gap in OPEN E/L4. Three re-draws already existed at 0.80/0.10, but a
-single re-drawn level cannot separate difficulty from partition noise, because every other level had
-one realisation and no within-level spread to compare against. splits_c075c15_r2/_r3 were generated
-2026-08-11 (identical threshold and cap, SPLIT_SEED alone differs) and measured 37% and 52% role
-agreement with seed 0, so they are real re-partitions.
-AFTER BOTH LAND, OPEN E/L4 IS READY TO CLOSE: aggregate each root at --seeds 0,1,2,3,4 and decompose
-between-level (0.85/0.80/0.75/0.70) vs within-level (re-draws at 0.80 and 0.75) vs within-re-draw
-(seed). If between-level does not exceed within-level, state affirmatively that the difficulty knob has
-no detectable effect above realisation noise.
-data/results/splits_c070 (threshold 0.70, cap 0.05, seed 0, 11,525 genes) exists and NOTHING has ever
-been trained against it. Levels actually on disk:
-    0.85/0.05  data/splits              frozen fold   all 4 arms at n=7   <- best-powered
-    0.80/0.10  c080c10_h1               all 4 arms n=5; r2 (seed 1) and r3 (seed 2) cheap pair n=5
-    0.75/0.15  c075c15_n5               all 4 arms n=5, seed 0 only
-    0.70/0.05  splits_c070              NOTHING TRAINED
-This changes OPEN E/L4 from "generate re-draws at 2 further levels" to something much cheaper: there
-are already THREE re-draws at 0.80/0.10 and single realisations at three other levels. What is missing
-is re-draws at a SECOND level. Cheapest complete design: 2 re-draws at 0.75/0.15 (seeds 1, 2) plus
-training the existing c070 split, cheap arms only. That is ~4 cells rather than the ~6 the original
-L4 entry budgeted.
-
---- OPEN B. WHY does edge typing hurt?  NEW, and now the most valuable open question. ----------
-The n=7 family says WHICH component costs the graph its benefit but not why. Arms on the frozen fold:
-untyped +0.0904 > expression_only +0.0861 > condition_gated +0.0818 > typed_static +0.0740. Typing is
-worth -0.0120 (7/7 seeds, survives both corrections); the gate repairs only part of that and not
-significantly (+0.0077, Bonferroni 0.131).
 CANDIDATE MECHANISMS, none isolated:
   (i)   per-relation normalisation — already MEASURED to depress the mean gate tenfold (0.03 and 0.12
-        against 0.73) in the arch search. Strongest suspect: it may be the epoch-0 gate-collapse
-        failure arriving through a second door.
+        against 0.73) in the arch search. Strongest suspect: the epoch-0 gate-collapse failure arriving
+        through a second door.
   (ii)  the condition gate's initialisation.
   (iii) the decoder mixture gamma.
-  (iv)  relation-specific parameter count: typed message passing has ~3x the parameters over the same
-        edges, so this may be capacity/overfitting rather than anything about types.
-CHEAPEST DISCRIMINATING TEST: an arm with typed relations but SHARED weights across relation types.
-If it behaves like untyped, the damage is parameter count (iv). If it behaves like typed_static, the
-damage is the relation partition itself. ~6-7 GPU-h per seed on the reference fold, 4 seeds.
-WHY IT MATTERS: the paper currently says our encoder discards the signal. Naming the mechanism would
-turn a diagnosis into a prescription, which is what this venue's rubric rewards most.
+  (iv)  relation-specific parameter count — typed message passing has ~3x the parameters over the same
+        edges, so this may be capacity/overfitting and not about types at all.
 
---- OPEN C. L2. The detection floor. -------------------------- ~60-100 GPU-h. Highest remaining. ---
+THE DISCRIMINATING EXPERIMENT. Add an arm with typed relations but weights SHARED across relation
+types. It has the same parameter count as untyped and the same message-passing structure as typed.
+  - behaves like untyped  -> the damage is parameter count (iv)
+  - behaves like typed    -> the damage is the relation partition itself
+Implement beside StaticTypedGraphEncoder in src/tcell_pipeline/baselines/graph_baselines.py; the
+cheapest correct version shares one weight matrix across all relations rather than one per relation.
+Run n=4 on the frozen fold in a FRESH root, paired against the existing expression_only lanes.
+DECIDE IN ADVANCE, and write it into the prereg as a dated append BEFORE running: the comparison is
+(shared-weight typed) - (typed_static). If it is positive and clears both corrections, parameter count
+explains the damage; if indistinguishable, the relation partition does.
+
+--- A2. L2. The detection floor.  ~60-100 GPU-h.  Closes the largest remaining hedge. ----------
 PAPER SAYS: the CI upper limit is per fold; the MDE from 5 seeds is itself uncertain (0.005 to 0.025).
+
 CLOSE WITH (a) AN EMPIRICAL FLOOR. Inject a known graph-dependent component into the real DE matrix at
 a ladder of effect sizes: for each target add delta * (mean response of its k-hop PPI neighbours,
 computed from TRAIN-FOLD RESPONSES ONLY) for delta in {0, 0.02, 0.05, 0.10, 0.20, 0.40} response SDs.
 Re-run condition_gated vs expression_only at n>=4 per rung. The smallest delta that reliably clears
-both corrections is the pipeline's MEASURED sensitivity.
-  LEAKAGE IS THE WHOLE RISK: if the injected signal touches val responses the control is worthless.
-  Write that check as a test and WATCH IT FAIL before trusting it.
-  A HIGH floor is also a finding — a limitation with a number instead of a hedge.
-CLOSE WITH (b) SIMULATION POWER over the variance structure now measured at THREE levels: seed
-(no-graph 0.0003-0.0027; graph arms 6-32x that), re-draw, and dataset. How many seeds, re-draws and
-datasets are needed to detect the benefit graph-prior papers report? If it exceeds what anyone runs,
-that is the paper's most quotable sentence. CPU only; use the statistical-power skill.
-NOW ALSO CALIBRATES OPEN B: the untyped arm's real +0.0043 gives the ladder a known true-positive to
-sit against, which it did not have when this item was written.
+both corrections is the pipeline's MEASURED sensitivity, replacing an assumption-laden power formula.
+  LEAKAGE IS THE WHOLE RISK. If the injected signal touches val responses the control is worthless.
+  Write that check as a test and WATCH IT FAIL before trusting it — a test that has never failed is
+  not evidence (this project has shipped two such tests; see docs/agent-lessons.md).
+  A HIGH floor is also a finding: a limitation with a number instead of a hedge.
+  The delta=0 rung is the negative control and must NOT clear correction. If it does, stop and
+  investigate rather than reporting the ladder.
+CLOSE WITH (b) SIMULATION POWER over the variance structure now MEASURED at three levels (L4, closed):
+seed sd 0.01067 for h2a, re-draw sd 0.00034, level sd 0.00329; for h1 0.00524 / 0.00250 / 0.00371.
+Answer: how many seeds, re-draws and datasets are needed to detect the benefit graph-prior papers
+report? If it exceeds what anyone runs, that is the paper's most quotable sentence. CPU only.
+CALIBRATION NOW AVAILABLE that was not when this was written: the untyped arm's real +0.0043 on the
+reference screen is a known true positive the ladder can be checked against.
 CLOSED WHEN: the paper states the null in units of a measured floor rather than a modelled MDE.
 
---- OPEN D. L3. Commensurability with others' positive results. ------------ CHEAP. No training. ---
+--- A3. L3. Commensurability with others' results.  CHEAP. No training. ------------------------
 PAPER SAYS: others' gains use different splits and metrics, so our bound constrains this task under
 this protocol rather than adjudicating their claims.
 CLOSE WITH: re-score the STORED predictions under THEIR metrics — arithmetic on artifacts that already
-exist. Read TxPert / Stable-Shift / the foundation-model papers and verify which endpoints they
-actually report; do not assume. Then compute all four arms under each, same folds.
+exist under data/results/*/predictions/. Read TxPert / Stable-Shift / the foundation-model papers and
+VERIFY which endpoints they actually report; do not assume. Then compute all four arms under each, on
+the same folds.
 ALSO: add a distributional endpoint (energy distance / E-distance, standard in scPerturb) on at least
-one dataset. That simultaneously closes the separate metric-scope hedge.
+one dataset. That simultaneously closes the separate metric-scope hedge — the paper currently admits
+"gene-space and full single-cell distribution conclusions can still differ".
 CLOSED WHEN: the null holds under >=1 metric an outside positive was reported in, plus one
 distributional metric.
+DO THIS FIRST IF THE GPUS ARE BUSY OR CONTENDED — it needs none.
 
---- OPEN E. L4. Difficulty vs realisation noise. ------------------------- CLOSED 2026-08-14 ---
-16/16 lanes landed, 0 failures. c070 (0.70/0.05) and two re-draws at 0.75/0.15 all complete at
-5 expression_only + 5 typed_static. The decomposition ran and the paper's hedge is now a measurement.
+--- A4. L6. Bound the architecture claim. --------------------- follows from A2 ---------------
+Cause C now SURVIVES (it was "refuted within the searched space" until the untyped arm ran; the 14-cell
+search varied HOW the typed encoder passes messages and never whether the typing belonged, so it
+excluded its own premise). What remains is to bound it: with the A2 floor in hand the paper can say
+"no variant we searched improves on the baseline by more than the floor we can detect".
+Add search cells only if cards would otherwise idle, and prefer levers not yet tried (neighbourhood
+cap, layer count, readout). DO NOT re-propose per-relation normalisation or confidence pruning — both
+already refuted, and re-running them is a known dead end.
 
-h2a, 6 cells over 4 levels:  sd_seed = 0.01067 (26 df)
-                             sd_level = 0.00329 (3 df)
-                             sd_redraw = 0.00034 (2 df)
-h1, 5 cells over 3 levels:   sd_seed = 0.00524, sd_level = 0.00371, sd_redraw = 0.00250
-
-FINDINGS. (1) The TRAINING SEED is the largest term for both contrasts and 3.2x the difficulty effect
-for h2a; it is also the only component with enough df (26) to be precisely estimated. (2) Partition
-re-draw noise is CONTRAST-DEPENDENT: large for h1 (which is what the paper's existing flipping-verdict
-passage documents) and negligible for h2a. (3) A difficulty effect on h2a is real and roughly an order
-of magnitude above re-draw noise — but at 2-3 df that ratio is indicative, not quotable.
-
-Paper updated: the appendix passage that ended "this is cheap to check" now reports the check.
-Artifacts: data/results/l4/vardecomp_{h2a,h1_vs_no_graph}.json
-Reproduce: PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.variance_decomposition --contrast h2a
-
-CORRECTION ON RECORD: an interim run with re-draw r3 at n=1 reported the OPPOSITE (re-draw noise
-exceeding the difficulty effect, "no detectable difficulty effect"). That was one cell mean resting on
-a single seed. The n=5 result above supersedes it.
-
---- OPEN F. L6. Bound the architecture claim. --------------- REFRAMED by the n=7 result. ---
-This item used to read "the search refuted the architecture cause; bound the scope hedge". That is
-obsolete: cause C now SURVIVES, and the search is understood to have excluded its own premise —
-all 14 cells varied HOW the typed encoder passes messages, none asked whether the typing belonged.
-WHAT REMAINS: bound the claim with the L2 floor, so the paper can say "no variant we searched
-improves on the baseline by more than the floor we can detect". Add cells only if cards would
-otherwise idle, and prefer levers not yet tried (neighbourhood cap, layer count, readout).
-DO NOT re-propose per-relation normalisation or confidence pruning — both already refuted.
-CLOSED WHEN: the scope hedge is replaced by a statement in units of the measured floor.
-
---- OPEN G. L7. The sealed split. ---------------------------------- DELIBERATELY LEFT OPEN ---
-Do NOT close this. Rail 1. The sealed split is a one-shot pre-registered test of a POSITIVE
-hypothesis; spending it to re-confirm a null buys no information and destroys a one-time resource.
-STRENGTHEN INSTEAD: state the forward commitment explicitly. NOTE THIS CHANGED — there now IS a
-positive that survives both corrections (untyped_gnn on the reference screen, +0.0043). The forward
-commitment is therefore live rather than hypothetical: if that result is to be promoted from a
-diagnosis to a claim in its own right, the sealed split is its pre-registered confirmatory test.
-That is a decision for a human, not an agent.
-
---- OPEN H. L8. Rationale-audit hedges. ------------------------------------- LOW PRIORITY ---
-The audit reports relative comparisons against matched controls with small absolute gaps in a
-near-null regime. Bound it with the L2 floor and leave it. Do not spend GPU here.
+--- A5. L8. Rationale-audit hedges. ------------------------------- LOW PRIORITY, CPU only ----
+The audit reports relative comparisons against matched controls with small absolute gaps in a near-null
+regime. Bound it with the A2 floor and leave it. Do not spend GPU here.
 
 =======================================================================
-ALREADY CLOSED — do not redo these.
+NOT AUTONOMOUS — do not attempt these
 =======================================================================
-L0   The false RPE1 paragraph in Limitations           FIXED, replaced by the Amendment-2 account.
-L0b  Main text over 8pp                                CLOSED; body is exactly 8pp, 0 errors.
-L1   "One dataset"                                     CLOSED. 4 replication datasets, 52 lanes,
-     pooled h2a FE +0.0031 [-0.0004,+0.0065] I2=25.6%, RE +0.0042 [-0.0105,+0.0189], Q p=0.26.
-L1-PRE  ID-mapping + ESM-2 coverage gate               CLOSED; extended store, coverage 94-100%.
-L1-CHAIN  stages 1-7 per dataset                       DONE; see run_replication_{stage,prep,lane,
-     campaign}.sh and src/tcell_pipeline/replication/.
-L5   Cause D, the baseline is not graph-free           DONE and integrated (-0.0036 under correction).
-n=7 reference family                                   DONE 2026-08-11: h2a -0.0120 (SURVIVES BOTH),
-     promotion_margin +0.0043 (SURVIVES BOTH), h2b +0.0077 (fails), h1 -0.0043 (fails).
-     CORRECTION ON RECORD: h2b survived at n=6 (bonf 0.0491) and does NOT at n=7 (bonf 0.1308).
+THE SUBMISSION. paper/icbinb/ is finished: 8pp body, clean build, style file byte-identical to the
+workshop's, repo scrubbed of six deanonymising strings, deadline verified. Filing needs a human:
+  1 create the anonymous.4open.science mirror, paste the URL at paper/icbinb/main.tex line ~238,
+    rebuild, confirm 8pp. This comes FIRST — the venue's blinding requirement covers linked material.
+  2 upload main.pdf at openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO, full-paper track.
+Checked on this machine 2026-08-11 and recorded as a probe table in paper/icbinb/SUBMISSION.md: no
+OPENREVIEW_* env vars, no ~/.openreview, openreview-py not installed, no credential store, no gh CLI.
+Neither step is reachable from here even in principle. Do not spend turns re-establishing this.
+
+THE SEALED SPLIT (L7). Rail 1. Deliberately left open. It is a one-shot pre-registered test of a
+POSITIVE hypothesis and spending it to re-confirm a null buys no information. NOTE this is now a live
+forward commitment rather than a hypothetical: a positive that survives both corrections DOES exist
+(untyped_gnn on the reference screen, +0.0043). Whether to spend the sealed split on it is a decision
+for a human, not an agent.
+
+=======================================================================
+ALREADY CLOSED — do not redo these
+=======================================================================
+L0   False RPE1 paragraph in Limitations        FIXED, replaced by the Amendment-2 account.
+L0b  Main text over 8pp                         CLOSED; body exactly 8pp, 0 errors.
+L1   "One dataset"                              CLOSED. EIGHT datasets. h2a pooled over the seven
+     replication datasets: +0.0018, RE 95% CI [-0.0028,+0.0065], I2 = 39.2%, Q p = 0.13 — no
+     significant heterogeneity across five cell types, both perturbation directions, 100-9,730 targets.
+L1-PRE  ID-mapping + ESM-2 coverage gate        CLOSED; coverage 94-100% per dataset.
+L1-CHAIN  seven per-dataset stages              DONE; run_replication_{stage,prep,lane,campaign}.sh.
+L4   Difficulty vs realisation noise            CLOSED 2026-08-14. h2a: sd_seed 0.01067 (26 df),
+     sd_level 0.00329 (3 df), sd_redraw 0.00034 (2 df). The TRAINING SEED is the largest term for both
+     contrasts and 3.2x the difficulty effect for h2a. Partition noise is contrast-dependent: large for
+     h1, negligible for h2a. Artifacts data/results/l4/.
+L5   Cause D, baseline not graph-free           DONE and integrated (-0.0036 under correction).
+n=7 reference family                            DONE. h2a -0.0120 and promotion_margin +0.0043 both
+     SURVIVE BOTH; h2b +0.0077 and h1 -0.0043 do not.
+
+CORRECTIONS ON RECORD — do not silently re-reverse any of these:
+ - Norman (-0.0790, survives both) overturned the "untyped positive on 5/5 datasets" pooled claim.
+   Over eight datasets random-effects is +0.0091 [-0.0024,+0.0207], p=0.12: NO pooled benefit. Three
+   per-dataset contrasts clear correction and DISAGREE IN SIGN (+0.0043, +0.0675, -0.0790).
+ - h2b SURVIVED at n=6 (bonf 0.0491) and does NOT at n=7 (bonf 0.1308).
+ - An interim L4 run with one cell at n=1 gave the OPPOSITE verdict to the n=5 result.
+ - The 0.80/0.10 re-draws identify h1's within-level variance, NOT h2a's (run_realization.sh ran
+   condition_gated there, not typed_static).
 
 =======================================================================
 HOW TO RUN ANY OF THIS
 =======================================================================
   ./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>     stages 2-6, idempotent, CPU
-  ./run_replication_lane.sh <gpu> <dataset> <ctx> <arm> <seed>    one replication training lane
-  ./run_replication_campaign.sh                                   all lanes, skips what landed
-  ./run_untyped_n7.sh / ./run_balance_n7.sh                       reference-screen lanes, fresh root
-  .venv/bin/python merge_registry_n7.py                           MUST run before aggregating a fresh
-                                                                  root, or fold evidence is missing
+  ./run_replication_campaign.sh                                   all replication lanes, skips landed
+  ./run_l4_finish.sh / ./run_l4_finalise.sh                       L4 lanes; finalise waits + analyses
+  .venv/bin/python merge_registry_n7.py                           BEFORE aggregating a FRESH root
   PYTHONPATH=src .venv/bin/python -m tcell_pipeline.replication.pool [--with-reference]
+  PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.variance_decomposition --contrast h2a
+  ./init.sh                                                       full verification
 
-Sourcing run_replication_stage.sh is MANDATORY and the other scripts do it for you. It pins the
-feature stores (without it every target silently gets a ZERO vector and the graph arm trains on
-nothing), redirects SPLITS_ROOT away from the frozen data/splits/, and reads CONDITIONS from the DE
-provenance (its default is the reference screen's vocabulary, which kills every replication lane on
-its first batch with a bare KeyError).
+MANDATORY: source run_replication_stage.sh before ANY manual replication stage (the wrappers do it).
+It pins the feature stores — without it INTERMEDIATE_ROOT isolation points them at an empty sandbox and
+every target silently gets a ZERO vector while the arm still reports a number — redirects SPLITS_ROOT
+away from the frozen data/splits/, and reads CONDITIONS from the DE provenance (its default is the
+reference vocabulary, and every replication lane dies on its first batch without it).
 
-=======================================================================
-GOAL — CLOSE EVERY LIMITATION IN THE PAPER BY MEASURING IT. Autonomous. 29 Aug 2026 AoE (18 days).
-=======================================================================
-Repo: <checkout root>
-Branch: icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED with other users.
-Paper: paper/icbinb/main.tex (gitignored). ICBINB-BIO @ NeurIPS 2026: 8pp main text, refs + appendices
-free, double-blind, non-archival. The deadline is marked *tentative* on the site: RE-CHECK IT FIRST.
-
-AUTONOMY. Work for days unattended. Never ask, wait, or present options: take the best choice on your
-own judgement and log the reason. On failure, skip and move on. This file is your standing authority.
-
-THE ORGANISING IDEA. A limitations section is a list of things a reviewer would otherwise raise. Every
-entry below is a limitation the paper currently CONCEDES, paired with the experiment that CLOSES it or
-converts it from a hedge into a measured bound. Work them in order. A limitation you close is a
-section you delete; a limitation you measure is a hedge you replace with a number. The goal is a paper
-whose Limitations section contains only things that are genuinely out of reach, each with a number
-attached, rather than things nobody got round to.
-
+MANDATORY: merge_registry_n7.py before aggregating a fresh screening root, or the report carries a
+false "NOT comparable" flag. The reference registry is data/results/experiment_registry.yaml, NOT
+inside data/results/screening/ — a copy step pointed at the latter fails silently.
 
 --- SHARED-BOX REALITY (measured 2026-08-12, affects every ETA in this file) -------------------
 This machine is shared and the contention is not visible from nvidia-smi alone. Measured while the L4
@@ -246,20 +205,6 @@ CONSEQUENCES for planning:
     lane. Do not restart such a worker without re-checking the card; ours is at 68 GiB used again.
 
 =======================================================================
-HARNESS STATE IS STALE (audit 2026-08-11) — fix before the next long session
-=======================================================================
-The harness scores 5/5 on all five subsystems structurally, but three state files stopped tracking
-reality five days ago and would mislead a fresh session:
-- progress.md          one mention of the replication work; the campaign, the n=7 family and the paper
-                       rewrite are absent.
-- session-handoff.md   still headed "STOP - READ FIRST (2026-08-06)", i.e. before any of it.
-- feature_list.json    feat-017 "Replication infrastructure" is in-progress with 2026-08-06 evidence;
-                       the replication is finished. feat-008 and feat-013 are also in-progress with
-                       July evidence and should be re-checked against what actually shipped.
-Nothing downstream depends on these, which is exactly why they drifted. Update them or delete the
-claim; a state file that is confidently wrong is worse than one that is missing.
-
-=======================================================================
 INTEGRATION + REPORTING
 =======================================================================
 - Into the paper only at n>=4 both arms, live gates, family_size=4, every number RE-DERIVED from the
@@ -276,19 +221,15 @@ INTEGRATION + REPORTING
 - RESULTS_SUMMARY.md and session-handoff.md stay current: n, per-seed values, both corrections,
   family_size, gate health, epochs, and the name and reason of any dropped seed.
 
-ORDER OF WORK (revised 2026-08-11 after the repo audit): OPEN A (human, do first — the actual
-deliverable, and the only item with a deadline) -> OPEN B0 (gwps: the DE matrix is already built and
-passes QC, so this is the largest result available for ~3-4 h of wall clock) -> OPEN B (why typing
-hurts) -> OPEN C/L2 (the floor, which also bounds OPEN F) -> OPEN D/L3 (cheap, no training) ->
-OPEN B1 + OPEN E/L4 together (they share the same lanes) -> OPEN F/L6. OPEN G stays shut by rail 1.
-OPEN H only if everything else is done.
-
-If a session has GPUs and no human available, start at OPEN B0. It needs no decisions, the expensive
-preprocessing is done, and it is the one item that could still change the pooled result.
+ORDER OF WORK. If the GPUs are contended, start with A3 (needs none). Otherwise A1 (highest value per
+GPU-hour, and it is the question the current results raise) -> A2 (the floor, which also bounds A4) ->
+A3 -> A4. A5 only if everything else is done. Re-measure per-epoch cost on the first lane of any new
+campaign rather than extrapolating: the same lane has measured 38 to 90 min/epoch on this box depending
+on who else is running.
 
 WHAT SUCCESS LOOKS LIKE. A Limitations section with three entries instead of eight, each carrying a
-measured number, and a Results section that says: across N datasets and M cell types the graph does not
-help; here is the effect size we would have detected; here is the surface of analysis choices over
-which that holds; here are four of our own claims that failed, including a pre-registered rule that
-excluded the best dataset we had; and here is the ten-minute check that would have caught the bug that
-nearly published itself.
+measured number, and a Results section that says: across eight datasets and five cell types the typed
+graph does not help, bounded at +/-0.005; here is the effect size we would have detected; here is the
+component of our own architecture that destroys the signal, and here is which part of it; and here are
+five of our own claims that failed, including one we published in the morning and reversed the same
+day.
