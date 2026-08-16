@@ -272,3 +272,46 @@ def test_augmented_untyped_batched_forward_matches_per_sample_loop():
         assert gates is None and confs is None, f"{conv}: untyped contract broken"
         assert torch.allclose(got, ref, atol=1e-4), f"{conv}: batched forward diverged from encode_one"
         assert torch.allclose(got[1], torch.zeros(enc.hidden)), f"{conv}: absent target not zeroed"
+
+
+# --- shared-weight typed (A1: the relation partition without its parameter cost) ------------------
+def _msg_params(enc) -> int:
+    """Parameters inside the per-relation message modules. ``Module.parameters()`` de-duplicates shared
+    modules, so a tied encoder counts its one module once — which is the quantity under test."""
+    return sum(p.numel() for layer in enc.layers for p in layer.rel.parameters())
+
+
+def test_shared_weight_typed_ties_one_message_module_across_every_relation():
+    """A1's discriminating arm. It must route all four relations through ONE module object (identity, not
+    equal values — equal-at-init modules would drift apart after one optimiser step) and must therefore
+    carry exactly a quarter of typed_static's message parameters."""
+    from tcell_pipeline.baselines.graph_baselines import SharedWeightTypedGraphEncoder
+    graph, g2i = _graph()
+    shared = SharedWeightTypedGraphEncoder(graph, g2i)
+    typed = StaticTypedGraphEncoder(graph, g2i)
+    for layer in shared.layers:
+        mods = list(layer.rel.values())
+        assert len(mods) == 4, "a relation was dropped rather than tied"
+        assert all(m is mods[0] for m in mods), "relations hold equal-but-separate modules, not one"
+    for layer in typed.layers:  # the arm it is contrasted against must NOT be tied, or there is no contrast
+        assert len({id(m) for m in layer.rel.values()}) == 4
+    assert _msg_params(shared) * 4 == _msg_params(typed)
+
+
+def test_shared_weight_typed_keeps_the_static_contract_and_changes_the_function():
+    """Contract parity with typed_static (gates pinned to 1.0, same return shape) AND evidence that the
+    intervention is live: from an identical seeded init the two arms must compute different h_graph. If
+    they agreed, the campaign would burn 28 GPU-hours re-running typed_static under a new name."""
+    from tcell_pipeline.baselines.graph_baselines import SharedWeightTypedGraphEncoder
+    from tcell_pipeline.training.trainer import seeded_init
+    graph, g2i = _graph()
+    h_do = torch.randn(config.GRAPH_HIDDEN_DIM)
+    with seeded_init(0):
+        shared = SharedWeightTypedGraphEncoder(graph, g2i)
+    with seeded_init(0):
+        static = StaticTypedGraphEncoder(graph, g2i)
+    hg, gates, _ = shared.eval().encode_one("G0", "Rest", h_do)
+    assert hg.shape == (config.GRAPH_HIDDEN_DIM,) and torch.isfinite(hg).all()
+    nonempty = [r for r in gates if gates[r].numel()]
+    assert nonempty and all(torch.allclose(gates[r], torch.ones_like(gates[r])) for r in nonempty)
+    assert not torch.allclose(hg, static.eval().encode_one("G0", "Rest", h_do)[0])

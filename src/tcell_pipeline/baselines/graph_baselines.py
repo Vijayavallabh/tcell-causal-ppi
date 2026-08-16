@@ -292,8 +292,40 @@ class StaticTypedGraphEncoder(TypedGraphEncoder):
         return edge_attr.new_ones((edge_attr.size(0), 1))  # every edge counts equally, all conditions alike
 
 
+# --------------------------------------------------------------------------------------------------
+# 4. Shared-weight typed graph (A1 diagnostic)
+# --------------------------------------------------------------------------------------------------
+class SharedWeightTypedGraphEncoder(StaticTypedGraphEncoder):
+    """``typed_static`` with ONE ``_RelMessage`` tied across all four relations instead of one each.
+
+    WHY. On the frozen fold at n=7 edge typing costs -0.0120 systema (7/7 seeds, survives Bonferroni and
+    Holm) while the plain untyped GCN is the best graph arm at +0.0043. Two explanations are confounded
+    inside that contrast: the relation PARTITION may be the wrong inductive bias, or typed message passing
+    may simply carry 4x the message parameters over the same edges, making the damage capacity and nothing
+    to do with evidence types. This arm holds the typed encoder fixed — signed messages, edge features,
+    complex nodes, gate pinned to 1.0 — and removes only the per-relation multiplicity.
+
+    WHAT IT DOES AND DOES NOT IDENTIFY. Under ``norm='add'`` (typed_static's setting) the layer computes
+    ``sum_r sum_{u in N_r(v)} f_r(u)``; tying ``f_r = f`` makes that identically ``sum_{u in N(v)} f(u)``,
+    so the partition stops affecting the aggregate at the same moment the parameters drop. The two are ONE
+    intervention here, not two separable ones, and a difference against typed_static cannot be attributed
+    to parameter count alone. Separating them needs a third arm that keeps per-relation parameters over a
+    PERMUTED partition (same module count, same relation sizes, no evidence information); the size of
+    (permuted - typed_static) is then the part attributable to the typing's information content.
+
+    ponytail: the tie is applied after ``__init__`` builds four modules and discards three, rather than by
+    subclassing ``_GraphLayer``. Same result, and it leaves the typed encoder untouched."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        for layer in self.layers:
+            shared = next(iter(layer.rel.values()))
+            layer.rel = nn.ModuleDict({rel: shared for rel in layer.rel})
+
+
 GRAPH_BASELINES: dict = {
     "network_propagation": NetworkPropagationBaseline,
     "untyped_gnn": UntypedGraphEncoder,
     "typed_static": StaticTypedGraphEncoder,
+    "typed_shared": SharedWeightTypedGraphEncoder,
 }

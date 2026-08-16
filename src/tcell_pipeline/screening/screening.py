@@ -34,7 +34,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from tcell_pipeline import config
-from tcell_pipeline.baselines.graph_baselines import StaticTypedGraphEncoder, UntypedGraphEncoder
+from tcell_pipeline.baselines.graph_baselines import (
+    SharedWeightTypedGraphEncoder,
+    StaticTypedGraphEncoder,
+    UntypedGraphEncoder,
+)
 from tcell_pipeline.evaluation import metrics as M
 from tcell_pipeline.evaluation.output_schema import write_predictions
 from tcell_pipeline.graph.typed_graph_encoder import TypedGraphEncoder
@@ -48,6 +52,10 @@ EXPRESSION_ONLY = "expression_only"
 TYPED_STATIC = "typed_static"
 CONDITION_GATED = "condition_gated"
 UNTYPED_GNN = "untyped_gnn"
+# A1 diagnostic, NOT a member of the confirmatory nested family: typed_static with one message module
+# tied across all four relations. Kept out of FAMILY/_WAVE so family_size and every landed aggregation
+# stay exactly what was pre-registered; reachable by name through run_screening --only.
+TYPED_SHARED = "typed_shared"
 NETWORK_PROP = "network_propagation"
 PRIMARY_METRIC = "systema"  # systema_pert_specific_delta — the locked H1 primary endpoint
 
@@ -137,6 +145,8 @@ def nested_family_factories(gene_names, graph, gene_to_idx, *, basis_path=None,
         TYPED_STATIC: lambda: _egipg(gene_names, StaticTypedGraphEncoder(graph, gene_to_idx), basis_path, enc()),
         CONDITION_GATED: lambda: _egipg(gene_names, TypedGraphEncoder(graph, gene_to_idx), basis_path, enc()),
         UNTYPED_GNN: lambda: _egipg(gene_names, UntypedGraphEncoder(graph, gene_to_idx), basis_path, enc()),
+        TYPED_SHARED: lambda: _egipg(gene_names, SharedWeightTypedGraphEncoder(graph, gene_to_idx),
+                                     basis_path, enc()),
     }
 
 

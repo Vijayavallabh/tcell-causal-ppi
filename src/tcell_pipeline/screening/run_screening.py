@@ -33,6 +33,7 @@ from tcell_pipeline.screening.screening import (  # noqa: E402
     CONDITION_GATED,
     EXPRESSION_ONLY,
     NETWORK_PROP,
+    TYPED_SHARED,
     TYPED_STATIC,
     UNTYPED_GNN,
     merge_lane_results,
@@ -44,6 +45,10 @@ from tcell_pipeline.training.dataset import PerturbationDataset  # noqa: E402
 
 _WAVE = [EXPRESSION_ONLY, UNTYPED_GNN, TYPED_STATIC, CONDITION_GATED]  # report §screening first wave
 _TABLE = _WAVE + [NETWORK_PROP]  # + the non-neural topology-diffusion reference (feat-007)
+# Diagnostic arms reachable ONLY by name (--only). Deliberately outside _WAVE/_TABLE: the wave, the
+# merge, promotion and every family-wise correction are sized on the pre-registered family, and adding a
+# member there would silently change family_size and re-flag every landed root as incomplete.
+_DIAGNOSTIC = [TYPED_SHARED]
 _COLS = ["name", "primary", "pearson", "systema", "centroid", "prog_cos", "mae", "rmse", "topk", "sign"]
 
 
@@ -127,14 +132,14 @@ def run(epochs: int = 2, batch_size: int = 8, seed: int = config.SPLIT_SEED,
               f"run_program_basis, and the PPI graph build first")
         return 1
 
-    if only is not None and only not in _TABLE:
-        print(f"[screen] --only {only!r} is not one of {_TABLE}")
+    if only is not None and only not in _TABLE + _DIAGNOSTIC:
+        print(f"[screen] --only {only!r} is not one of {_TABLE + _DIAGNOSTIC}")
         return 1
     gene_names = pd.read_parquet(config.DE_VAR_PATH, columns=["gene_name"])["gene_name"].tolist()
     graph, gene_to_idx = build_hetero_graph()
     train_ds = PerturbationDataset("train", n_max=n_max)
     val_ds = PerturbationDataset("val", n_max=n_max)
-    wave = _WAVE if only is None else [n for n in _WAVE if n == only]
+    wave = _WAVE if only is None else [n for n in _WAVE + _DIAGNOSTIC if n == only]
     print(f"[screen] {len(train_ds)} train / {len(val_ds)} val; wave={wave}; epochs={epochs}; "
           f"device={device}; cache={config.SUBGRAPH_CACHE_SIZE}")
 

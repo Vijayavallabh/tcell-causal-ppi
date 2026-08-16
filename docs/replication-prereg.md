@@ -264,3 +264,85 @@ later be mistaken for evidence about the graph.
 
 A lane whose mean edge gate falls to <= 1e-3 is an UNDECIDABLE experiment and is reported as such -
 never as evidence the graph does not help. Gate mean is logged every epoch on every graph arm.
+
+---
+
+## Amendment 4 — 2026-08-16 (BEFORE any A1 lane is trained)
+
+Registers a MECHANISTIC DIAGNOSTIC, not a confirmatory hypothesis. Nothing here changes the
+confirmatory family, its `family_size`, or any landed aggregation.
+
+### 4.1 What question this answers, and why it needs pre-registering
+
+On the frozen fold at n=7, edge typing costs h2a = -0.0120 systema (7/7 seeds, survives Bonferroni
+AND Holm) while the untyped GCN is the best graph arm at +0.0043. That says WHICH component costs
+the graph its benefit and not WHY. Two explanations are confounded inside the existing contrast:
+
+  P  the relation PARTITION is the wrong inductive bias for this task;
+  C  typed message passing carries 4x the message parameters over the same edges (2,396,160 against
+     599,040 on the synthetic fixture), so the damage is CAPACITY and not about evidence types.
+
+Both predict the same sign on h2a, so the landed family cannot separate them. Two new arms can.
+
+### 4.2 The arms, fixed now
+
+**`typed_shared`** — `SharedWeightTypedGraphEncoder`, `typed_static` with ONE `_RelMessage` tied
+across all four relations instead of one each. Signed messages, edge features, complex nodes and the
+gate pinned to 1.0 are all unchanged. Implemented in `src/tcell_pipeline/baselines/graph_baselines.py`
+and covered by two tests in `src/tests/test_graph_baselines.py` (module identity, quarter parameter
+count, live intervention against `typed_static`).
+
+**`typed_permuted`** — per-relation parameters retained, but each PP edge's RELATION LABEL is
+randomly reassigned among the three PP relations, preserving each relation's edge count exactly.
+Edge attributes travel with the edge, so only which weight matrix processes it changes.
+`complex_membership` edges are not permuted (they join different node types). The permutation is
+drawn from the TRAINING SEED, so the five lanes average over five partitions rather than reporting
+one lucky one.
+
+### 4.3 The identifiability statement, recorded before the numbers exist
+
+Under `norm='add'` (what `typed_static` runs) a layer computes `sum_r sum_{u in N_r(v)} f_r(u)`.
+Tying `f_r = f` makes that identically `sum_{u in N(v)} f(u)`: the partition stops affecting the
+aggregate at the same moment the parameters drop. **`typed_shared` alone therefore cannot attribute
+a difference to parameter count.** This corrects the decision rule drafted in `NEXT_ACTIONS.txt`,
+which read a positive `typed_shared - typed_static` as evidence for C on its own. It is not.
+`typed_permuted` breaks the tie because it holds the parameter count at typed_static's while
+destroying the typing's information content.
+
+### 4.4 Decision rule, fixed before running
+
+Primary endpoint `systema_pert_specific_delta`, paired per seed on the frozen `blocked_target_ood`
+fold, seeds 0-4 (n=5, matching the landed reference family rather than a new n). Contrasts:
+
+  D1  `typed_shared   - typed_static`
+  D2  `typed_permuted - typed_static`
+
+Read as a 2x2 on which of D1/D2 clear correction:
+
+| | D2 null (typing carries no information) | D2 positive |
+|---|---|---|
+| **D1 null** | the typed STRUCTURE hurts, and neither its parameters nor its labels are the route | the true partition is worse than a random one at equal capacity: the typing is actively misleading |
+| **D1 positive** | capacity and partition are jointly the route; with D2 null, the labels contribute nothing that the shared arm loses | both routes live; report both effect sizes and claim neither exclusively |
+
+A D2 that is significantly NEGATIVE (permuting HELPS) is itself the finding that the annotation is
+worse than noise at equal capacity, and is reported as such rather than folded into the table.
+
+### 4.5 Multiplicity, and what this may not be used for
+
+D1 and D2 form their own diagnostic family of size 2; Bonferroni and Holm are both reported over
+that family and `survives_family_wise` requires BOTH, exactly as for the confirmatory family.
+Diagnostic arms are NOT added to the confirmatory family and do not change its `family_size` of 4.
+
+Neither arm may be used to promote a graph claim. `typed_shared` and `typed_permuted` beating
+`typed_static` says something about the typed encoder, not about whether a graph prior helps: the
+relevant graph claim remains `untyped_gnn - expression_only`, already on the record. If a diagnostic
+arm beats `expression_only` and survives both corrections, the contradiction stop in section 6
+applies unchanged — snapshot, flag, continue, do not rewrite the null around it.
+
+### 4.6 Lane validity
+
+The gate-collapse kill criterion does not bind here: both arms pin the gate to 1.0 by construction,
+so a gate mean of 1.0 is correct rather than evidence of collapse. A lane is valid if it completes
+at least as many epochs as its paired `typed_static` lane did before early stopping and returns a
+finite primary metric; a lane that fails is reported as a dropped seed, by name and reason, and
+shrinks n rather than being silently replaced.
