@@ -229,16 +229,54 @@ def write_rung(delta: float, out_root: Path, inj: dict | None = None, *, hops: i
     return prov
 
 
+def build_ladder(root: Path, ladder=LADDER, *, hops: int = 1, control_delta: float = 0.40,
+                 control_seed: int = 17, force: bool = False) -> dict:
+    """Every rung of the pre-registered ladder plus the permuted control, from ONE injection matrix.
+
+    The unscaled injection is identical across the real rungs -- only ``delta`` differs -- so building
+    it once turns five graph builds and five passes over 21k train rows into one. The control needs its
+    own matrix because the permutation happens before scaling."""
+    root = Path(root)
+    out = {}
+    inj = build_injection(hops=hops)
+    for d in ladder:
+        rung = root / f"d{int(round(d * 1000)):03d}"
+        if rung.exists() and force:
+            shutil.rmtree(rung)
+        if (rung / "injection_provenance.json").exists():
+            print(f"[inject] SKIP {rung} (already built)")
+            out[str(d)] = json.loads((rung / "injection_provenance.json").read_text())
+            continue
+        out[str(d)] = write_rung(d, rung, inj)
+    ctrl = root / f"permuted_d{int(round(control_delta * 1000)):03d}"
+    if ctrl.exists() and force:
+        shutil.rmtree(ctrl)
+    if (ctrl / "injection_provenance.json").exists():
+        print(f"[inject] SKIP {ctrl} (already built)")
+        out["permuted"] = json.loads((ctrl / "injection_provenance.json").read_text())
+    else:
+        out["permuted"] = write_rung(control_delta, ctrl,
+                                     build_injection(hops=hops, permute_seed=control_seed))
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--delta", type=float, required=True)
+    ap.add_argument("--delta", type=float, default=None)
     ap.add_argument("--out", required=True)
     ap.add_argument("--hops", type=int, default=1)
     ap.add_argument("--permute-seed", type=int, default=None,
                     help="negative control: give each target another target's neighbour mean")
-    ap.add_argument("--force", action="store_true", help="overwrite an existing rung root")
+    ap.add_argument("--ladder", action="store_true",
+                    help="build every pre-registered rung plus the permuted control under --out")
+    ap.add_argument("--force", action="store_true", help="overwrite existing rung roots")
     a = ap.parse_args()
-    out = Path(a.out)
-    if out.exists() and a.force:
-        shutil.rmtree(out)
-    write_rung(a.delta, out, hops=a.hops, permute_seed=a.permute_seed)
+    if a.ladder:
+        build_ladder(Path(a.out), hops=a.hops, force=a.force)
+    else:
+        if a.delta is None:
+            ap.error("--delta is required unless --ladder is given")
+        out = Path(a.out)
+        if out.exists() and a.force:
+            shutil.rmtree(out)
+        write_rung(a.delta, out, hops=a.hops, permute_seed=a.permute_seed)
