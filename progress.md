@@ -1,5 +1,41 @@
 # Session Progress Log
 
+## 2026-08-16 evening — A2 through A5 closed, A1 and the ladder running
+
+Five of the six autonomous items in `NEXT_ACTIONS.txt` are done or in flight. Every one was
+pre-registered before it ran (Amendments 4, 4a, 4b, 5, 6), and three of them corrected something the
+paper or the plan had wrong.
+
+| item | state | the number |
+|---|---|---|
+| A1 why typing hurts | RUNNING | typed_shared seeds 0-4 on four A100s; typed_permuted chained behind |
+| A2(a) injection ladder | QUEUED | rung roots building; runner and report written and tested |
+| A2(b) detection floor | CLOSED | ~250 datasets to detect +0.0043 across datasets; MDE 0.0075 at n=7 |
+| A3 other endpoints | CLOSED | untyped contrast flips sign between GEARS' k=20 and TxPert's all-genes |
+| A4 architecture bound | CLOSED | search spread 0.0089 against 0.0147 from seed noise alone |
+| A5 rationale bound | CLOSED | necessity's "49%" is over a control of 3e-07 |
+
+**A3 fired the contradiction stop** and is the day's biggest result: on identical predictions, fold and
+seeds, `untyped_gnn - expression_only` is corrected-significant NEGATIVE on each perturbation's top-20
+DE genes and corrected-significant POSITIVE over all 10,282, crossing zero between the 250th and 500th.
+Both effects are real; which one a paper reports is a choice of convention. The null was not rewritten
+around the positive.
+
+**Three corrections against ourselves.** The abstract file that SUBMISSION.md tells a human to paste
+into OpenReview was a campaign out of date and still carried a retracted claim. The paper said the
+between-re-draw variance component was at least as large as the between-seed one; measured, 0.0003
+against 0.0107. And cause E's source ablation is largely an edge-count effect: STRING is 85.4% of the
+graph and leads HuRI by 1.7x per edge, not the ~200x the raw deltas suggest.
+
+**Two defects caught before they cost anything.** The injection module's scaling constant was computed
+over train AND validation rows, which its own leakage test caught by requiring bit-identity under a
+tampered validation response. And Amendment 4.4 contained a sign error that would have reversed the
+reading of D2; Amendment 4b fixes it before the arm runs.
+
+Paper: body still exactly 8pp, 20 pages total, 0 errors / 0 undefined / 0 overfull. `./check_paper.sh`
+checks all four gates at once. 607 tests pass.
+
+
 ## 2026-07-23 (cont.) — forward experiment plan written (`NEXT_ACTIONS.txt`, E1–E6)
 
 The next actions for the AAAI main-conference submission are now an experiment-forward slate in
