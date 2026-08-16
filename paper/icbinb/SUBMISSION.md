@@ -62,7 +62,11 @@ Upload `main.pdf` at the portal above. Fields you will be asked for:
 - **Title**: The Regularizer That Switched Off the Experiment: Diagnosing Why a Protein-Interaction
   Prior Does Not Help T-Cell Perturbation Prediction
 - **Abstract**: paste from `abstract_plain.txt` in this directory — LaTeX already stripped, percent
-  signs and minus signs intact, 422 words.
+  signs and minus signs intact, 441 words. That file is DERIVED from `main.tex`; regenerate it after
+  any abstract edit rather than editing it by hand. It had drifted a full campaign behind the paper
+  once (it still carried the pooled `+0.0031`, `I^2=26%` and the retracted "positive on all five
+  datasets"), and since it is the text that gets pasted into the portal, a stale copy submits a claim
+  the body of the paper contradicts.
 - **Track**: full paper (8 pages), not the 4-page tiny-paper track.
 
 ## Rebuilding
@@ -82,8 +86,14 @@ binaries at least once.
 Two failures, then a third finding that reframes both. A textbook edge-sparsity regulariser, written as
 an unnormalised sum over sampled neighbourhoods, is ~103x the response term and drives every edge gate
 to ~1e-7 inside epoch 0, so the graph-vs-no-graph comparison silently became no-graph vs no-graph.
-Repaired, the typed gated graph is a bounded null, and that null replicates across four further screens
-(pooled +0.0031, 95% CI [-0.0004, +0.0065], I^2=26%). But an untyped arm — same topology, no typing, no
-gating — beats the baseline on the reference screen at n=7 (+0.0043, 95% CI [+0.0017, +0.0069],
-surviving Bonferroni and Holm over the full pre-registered family) and is positive on all five
-datasets. The prior was carrying signal; our encoder was discarding it.
+Repaired, the typed gated graph is a bounded null, and that null replicates across seven further
+screens including a genome-wide one (pooled +0.0018, random-effects 95% CI [-0.0028, +0.0065],
+I^2=39%, Q p=0.13). But an untyped arm — same topology, no typing, no gating — behaves completely
+differently and NOT consistently: it beats the baseline on the reference screen at n=7 (+0.0043, 95% CI
+[+0.0017, +0.0069]) and on Replogle RPE1 (+0.0675), and LOSES on Norman (-0.0790), all three surviving
+Bonferroni and Holm, in a family of eight datasets that do not agree in sign (I^2=88%). The prior is
+not what fails; the encoder we built to exploit it is.
+
+Do not restore the earlier version of this paragraph. It claimed the untyped arm was positive on all
+five datasets, which the sixth dataset reversed decisively; that retraction is on the record in
+`RESULTS_SUMMARY.md` and in `NEXT_ACTIONS.txt` under CORRECTIONS ON RECORD.

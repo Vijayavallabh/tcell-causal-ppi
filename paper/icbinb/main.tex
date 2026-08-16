@@ -209,7 +209,8 @@ Auditing that decision produced the more useful finding: the rule had never been
 % AUTO 2026-08-10: replication has now run; this limitation is narrowed, not removed.
 The replication has since run under the amended rule (Section~\ref{sec:repl}), so the null is no longer one screen. Two narrower limits replace the old one. The condition gate needs at least two experimental contexts, and only one qualified dataset has them, so h1 still rests on a single replication; every other dataset can speak only to the static graph. And the two screens that failed on-target quality control, Datlinger and Shifrut, were the pool's only T-cell data, so nothing in the replication replicates the reference \emph{cell type}. A prior that is genuinely T-cell-specific would fail exactly this way, and we cannot rule that out.
 
-\textbf{Scope.} Gains reported elsewhere \citep{wenkel2026txpert,cole2026foundation} use different splits and metrics, so our bound constrains this task under this protocol rather than adjudicating those claims. All numbers are on the development fold; the sequestered challenge split stays sealed, since spending a one-shot test of a \emph{positive} hypothesis to re-confirm a null buys nothing. We make no held-out test claim.
+% AUTO 2026-08-16: the metric half of this limit is measured now; the splits half stands.
+\textbf{Scope.} Gains reported elsewhere \citep{wenkel2026txpert,cole2026foundation} use different splits and metrics, so our bound constrains this task under this protocol rather than adjudicating those claims. Re-scored under their endpoints our null holds, but the untyped contrast \emph{reverses sign} between TxPert's and \textsc{gears}' headline metrics (Appendix~\ref{app:metrics}).
 
 \section{Conclusion}
 
@@ -291,6 +292,9 @@ condition\_gated, prune functional $<0.7$    & $0.0828$ & $0.30$ \\
 \bottomrule
 \end{tabular}}
 \end{table}
+
+% AUTO 2026-08-16: the search was also underpowered, which we can now say with a number rather than a worry.
+\paragraph{The search was not only the wrong shape. It could not have found anything.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. We ranked $14$ architectures on differences we had no power to resolve, and then reported the ranking as though it had refuted something. Anyone reading a single-seed architecture table, ours included, should ask what its rows would look like re-seeded.
 
 \section{Replication protocol and dataset survey}
 \label{app:repl}
@@ -386,6 +390,9 @@ The degrees-only variant reproduces the full ablation within its interval, so th
 
 \paragraph{E. The usable signal sits in the tier we would have pruned.} Functional associations are $86\%$ of the edges and the low-confidence tier. Pruning them, the obvious hygiene move, lowers \textsc{systema} and depresses the gates; meanwhile a live-gate rationale audit puts nearly all sufficiency mass on exactly that tier ($\Delta=0.365$, against $\leq0.0021$ for BioPlex, HuRI and CORUM). The graph is therefore mostly noise with its signal in its least confident edges, so a model benefits only if it can switch edges off. Ours can, which is why it reaches parity rather than the static arm's deficit, but gating recovers only enough to break even.
 
+% AUTO 2026-08-16: absolute sizes put behind the audit's relative comparisons. One of them overstated our own case.
+\paragraph{The audit's ratios, given their sizes.} Every number in that paragraph is a comparison against a matched control, which is the right design and also a ratio, and this task is a near-null regime where a ratio can be large while the quantity it divides is negligible. Three corrections follow, and the first is against us. STRING is $85.4\%$ of the graph's $8.0$M protein-protein edges, against $1.5\%$ for BioPlex, $1.2\%$ for CORUM and $0.6\%$ for HuRI, so ablating it removes most of the graph. Per $1\%$ of edges removed it costs $0.0043$ sufficiency against HuRI's $0.0025$ and BioPlex's $0.0014$: a lead of $1.7$ to $3\times$, not the two orders of magnitude the raw deltas imply. Only CORUM stays far behind, at $0.00002$. Second, the rationales beat matched random rationales of the same size on sufficiency by $+0.011$ on a scale of $1.47$, which is $0.8\%$ ($95\%$ CI $[+0.006,+0.016]$, $n{=}50$, $p{=}2.6\times10^{-5}$): reliable, and small. Third, on necessity they beat their control by $49\%$, and both quantities are of order $10^{-7}$, so the reported ``$92\%$ of cases beat random on necessity'' is true and nearly empty, since deleting the selected edges moves the prediction by about one part in ten million. The one comparison with a substantive gap is GInX, $0.084$ against random's $0.030$ at $20\%$ sparsity. Cause E stays at \emph{partly}, and the summary table's phrase ``sufficiency mass sits almost entirely on that tier'' should be read with this paragraph: the mass is there, but most of it is edge count.
+
 \section{When a pre-registration freezes a mistake}
 \label{app:prereg}
 
@@ -416,9 +423,120 @@ The consequence is not that our contrasts are wrong, since each is paired within
 
 We initially wrote the frozen fold's interval as though it bounded the graph benefit generally. It does not, and the way it fails is instructive.
 
-The per-fold upper limits are $+0.0054$ (frozen), $+0.0148$ (intermediate) and $+0.0115$ (harder), so the tightest is not a bound on the others. A minimum-detectable-effect calculation on the frozen fold, using the standard deviation of the five paired per-seed differences ($0.0051$), gives $80\%$ power at $\Delta\approx0.0085$ uncorrected and roughly $0.013$ under the Bonferroni correction we apply. We report that number but do not lean on it, for two reasons. It is itself estimated from five seeds, and its own $95\%$ span runs roughly $0.005$ to $0.025$: an MDE with that much uncertainty cannot discipline a claim about an effect of size $0.001$. And it assumes the seed-to-seed variance is the only variance, which \S\ref{sec:causes} shows is false, since re-drawing the split moves the estimate fourfold and the between-re-draw component is at least as large as the between-seed one.
+The per-fold upper limits are $+0.0054$ (frozen), $+0.0148$ (intermediate) and $+0.0115$ (harder), so the tightest is not a bound on the others.
 
-The honest summary is therefore an ordering rather than a number. What we can assert: no fold, and no re-draw of a fold, yields a graph benefit that survives family-wise correction over the pre-registered family of four. What we cannot assert: that any particular upper limit constrains the effect on a fold, dataset or protocol we did not run. Converting the second into a quantitative statement requires a measured detection floor -- training the same comparison against a known injected graph signal at a ladder of effect sizes and reporting the smallest one recovered -- which we did not run and regard as the natural next step for anyone extending this.
+% AUTO 2026-08-16: the five-seed normal-approximation MDE is replaced by a simulation over the variance components measured in App. F. One clause of the old text was also wrong and is corrected below.
+\paragraph{What we could have detected, simulated rather than approximated.} We first reported a minimum-detectable effect from a normal approximation on five paired per-seed differences, and noted that it assumed the between-seed variance was the only variance. Two things now let us do better. That assumption is no longer needed, because the variance is measured at three levels (Appendix~\ref{app:prereg}); and the bar a result must clear here is not $p<0.05$ but a paired $t$ followed by Bonferroni \emph{and} Holm over a family of four, which is code rather than a closed form. So we simulate it: each replicate draws the whole family, one contrast at the effect under test and three true nulls, runs the pipeline's own test and correction, and we repeat $2{,}000$ times per point. Two calibrations say the simulation is measuring what we think. With no true effect it survives at $0.013$, the corrected rate, not the nominal $0.05$. And the one contrast we know to be a true positive, the untyped arm's $+0.0043$, needs $9$ seeds for $80\%$ power at its own measured spread of $0.0028$; we ran $7$, which the simulation puts at $70\%$ power, and it did survive both corrections.
+
+\begin{table}[h]
+\centering\small
+\caption{What it would take to detect an effect the size of the one real graph benefit we have measured ($\Delta=0.0043$), at $80\%$ power, under this paper's own correction rule. Every standard deviation is measured, not assumed. ``Power as run'' is at the seven seeds, or the seven datasets, we actually have; the fresh-partition row has no as-run value because we ran four levels, not a designed sweep, and its $24$ levels at five paired seeds is $240$ training lanes.}
+\label{tab:floor}
+\begin{tabular}{llrrr}
+\toprule
+generalise over & variance component & sd & units needed & power as run \\
+\midrule
+seeds, this fold & seed, frozen fold & $0.0043$ & $15$ seeds & $0.32$ \\
+seeds, any re-draw & seed, pooled & $0.0107$ & $73$ seeds & $0.05$ \\
+a fresh partition & level, re-draw, seed & $0.0058$ & $24$ levels & \\
+datasets, typed & between dataset & $0.0032$ & $10$ datasets & $0.58$ \\
+datasets, untyped & between dataset & $0.0205$ & $252$ datasets & $0.02$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three things follow, and the first corrects us. The old text said the between-re-draw component was at least as large as the between-seed one; measured, it is not, and not by a little. For h2a the training seed contributes $0.0107$ against the re-draw's $0.0003$, so the noise we blamed on re-drawing the split was mostly the seed. Second, the floor depends on what you want the claim to survive. On this fold as run, a $0.0043$ benefit would need $15$ seeds and we had $7$; a claim that must also survive re-drawing the fold would need $73$. Third, and least comfortable for the literature this sits in: the between-dataset spread of the \emph{untyped} contrast is $0.0205$, five times the effect anyone reports, because the datasets disagree in sign. Detecting a $0.0043$ pooled benefit against that spread needs on the order of $250$ datasets. The harmonized resource we drew from has $44$ \citep{peidli2024scperturb}, and the largest cross-dataset perturbation studies we know of use single digits. That is not a statement about our pipeline. It is a statement about what a pooled cross-dataset claim in this area can currently support.
+
+The honest summary is therefore an ordering plus a floor. What we can assert: no fold, and no re-draw of a fold, yields a graph benefit that survives family-wise correction over the pre-registered family of four, and the smallest effect we were positioned to detect on the frozen fold at the seven seeds we ran is $0.0075$, rising to $0.0185$ if the claim must also survive re-drawing the fold. Our headline null is an estimate of $-0.0009$, an order of magnitude inside the first of those. What we still cannot assert: that any particular upper limit constrains the effect on a fold, dataset or protocol we did not run. The remaining step, which we did not run, is the empirical version of this table: inject a known graph-dependent signal into the responses at a ladder of effect sizes and report the smallest one recovered. The simulation above says what the answer should be; only the injection would show whether the pipeline achieves it.
+
+% AUTO 2026-08-16: new appendix. Re-scoring only; no model was retrained for it.
+\section{The null under other people's endpoints}
+\label{app:metrics}
+
+Outside results differ from ours in two ways at once, splits and metrics. The metric half is checkable
+without retraining anything, because every arm's per-row predictions for the frozen validation fold are
+persisted. We re-scored all four arms at all five seeds under five endpoints, verified from the papers
+that report them rather than assumed: Pearson-$\Delta$ over all genes, which TxPert reports; Pearson
+correlation and mean squared error over each perturbation's top-$20$ differentially expressed genes,
+which \textsc{gears} reports \citep{roohani2024gears}; the E-distance as scPerturb computes it
+\citep{peidli2024scperturb}; and the energy distance with plain Euclidean distances. The
+differentially-expressed subset is taken from the \emph{observed} response, never the prediction.
+
+Two cautions belong with the distance endpoints. First, scPerturb computes its E-distance from squared
+Euclidean distances, and in that form the statistic collapses algebraically to
+$2\lVert \bar{X}-\bar{Y}\rVert^2$: it is a difference of means, blind to a difference in spread, so we
+report it for commensurability and treat the plain-Euclidean energy distance as the distributional
+evidence. Second, this pipeline predicts one pseudobulk response per (target, condition), so both
+distances compare the distribution of \emph{responses across held-out perturbations}, never cell
+populations. Claims about single-cell distributions stay out of reach.
+
+Five endpoints times four contrasts is twenty simultaneous tests, and correcting only within each
+endpoint and then reporting whichever endpoint was kind is precisely the look-elsewhere error this
+paper is about. We fixed the correction in the pre-registration before reading the fold: both bars are
+computed, and a survival claim requires the across-metric one, Bonferroni and Holm together.
+
+\begin{table}[h]
+\centering\small
+\caption{Every arm re-scored under externally reported endpoints, on the same fold and the same five
+seeds. Values are paired per-seed means, oriented so that a positive number favours the first-named
+arm (errors and distances are negated before the contrast is formed). $\star$ marks the cells that
+survive Bonferroni \emph{and} Holm over all twenty.}
+\label{tab:metrics}
+\begin{tabular}{lrrrrr}
+\toprule
+ & Pearson-$\Delta$ & top-$20$ $r$ & top-$20$ MSE & E-dist. & energy dist. \\
+contrast & (TxPert) & (\textsc{gears}) & (\textsc{gears}) & (scPerturb) & (plain) \\
+\midrule
+h2a \ (typed static $-$ no graph)   & $-0.0197$          & $-0.0463$          & $-0.0515$ & $-506.5$ & $-2.010^{\star}$ \\
+h2b \ (gated $-$ typed static)      & $+0.0190$          & $+0.0009$          & $-0.0066$ & $+496.8$ & $+5.303^{\star}$ \\
+untyped $-$ no graph                & $+0.0089^{\star}$  & $-0.0424^{\star}$  & $-0.0581$ & $+21.8$  & $+1.319$ \\
+h1 \ (gated $-$ no graph)           & $-0.0007$          & $-0.0454^{\star}$  & $-0.0580$ & $-9.7$   & $+3.293$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The typed graph's null is not an artifact of our endpoint: h2a is negative or indistinguishable
+everywhere, and h1 never favours the graph on any correlation endpoint. What does not survive contact
+with other endpoints is the \emph{untyped} result. On the row that asks whether any graph beats no
+graph, TxPert's endpoint says yes and \textsc{gears}' says no, both at $p<0.005$ after correcting over
+all twenty cells.
+
+\paragraph{Where the sign flips, measured rather than asserted.} Those two endpoints are the same
+statistic over different gene sets, so the disagreement has a location. Sweeping the size of the scored
+set from each perturbation's top $20$ observed DE genes to all $10{,}282$ gives Table~\ref{tab:ksweep}.
+
+\begin{table}[h]
+\centering\small
+\caption{The same paired contrasts, scored on each perturbation's top-$k$ observed DE genes. $\star$
+marks survival of Bonferroni and Holm within that column's family of four. The untyped contrast is
+significantly NEGATIVE up to $k{=}100$ and significantly POSITIVE from $k{=}1000$; it crosses zero
+between $250$ and $500$.}
+\label{tab:ksweep}
+\begin{tabular}{rrrrr}
+\toprule
+top-$k$ DE genes & h2a & h2b & untyped $-$ none & h1 \\
+\midrule
+$20$     & $-0.0463^{\star}$ & $+0.0009$ & $-0.0424^{\star}$ & $-0.0454^{\star}$ \\
+$50$     & $-0.0437^{\star}$ & $+0.0120$ & $-0.0236^{\star}$ & $-0.0317^{\star}$ \\
+$100$    & $-0.0434^{\star}$ & $+0.0189$ & $-0.0143^{\star}$ & $-0.0244^{\star}$ \\
+$250$    & $-0.0397^{\star}$ & $+0.0240$ & $-0.0032$         & $-0.0157$ \\
+$500$    & $-0.0376^{\star}$ & $+0.0263$ & $+0.0019$         & $-0.0113$ \\
+$1000$   & $-0.0345^{\star}$ & $+0.0274$ & $+0.0063^{\star}$ & $-0.0071$ \\
+$2500$   & $-0.0299^{\star}$ & $+0.0264$ & $+0.0097^{\star}$ & $-0.0034$ \\
+$5000$   & $-0.0249^{\star}$ & $+0.0239^{\star}$ & $+0.0108^{\star}$ & $-0.0010$ \\
+all      & $-0.0197^{\star}$ & $+0.0190^{\star}$ & $+0.0089^{\star}$ & $-0.0007$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both effects are real and both clear correction. The untyped graph makes the broad transcriptional
+response more accurate and the genes each perturbation moves hardest \emph{less} accurate, and the
+crossover sits between the $250$th and $500$th DE gene. Which of the two a paper reports is a choice of
+$k$, and $k$ is a convention: $20$ because that is what \textsc{gears} reports, all genes because that
+is what TxPert reports. Neither is wrong. We cannot say which a reader should prefer, and that is the
+point. Our own null is stated on \textsc{systema}, one endpoint among several that do not agree, and
+readers should hold it to the same standard. The typed contrast h2a is the one row here that does not
+depend on the choice: it is negative and corrected-significant at every $k$ we tried.
 
 \section{Reproducibility detail}
 \label{app:repro}
