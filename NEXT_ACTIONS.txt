@@ -56,7 +56,9 @@ A3  CLOSED, and it fired the CONTRADICTION STOP. Re-scored under TxPert / GEARS 
     correlation, BOTH surviving Bonferroni and Holm over all twenty endpoint-by-contrast cells. Same
     predictions, same fold, same seeds. Flagged atop RESULTS_SUMMARY.md; the null was NOT rewritten.
     Artifact data/results/a3_external/rescored.json; pre-registered in Amendment 5.
-A4  UNBLOCKED — A2(b) supplies the floor it was waiting on (0.0075 at n=7 on the frozen fold).
+A4  CLOSED. The 14-cell search spans +0.0051 to -0.0037; 14 draws of seed noise alone would span
+    0.0147. Its entire spread is inside what re-seeding ONE configuration produces, and its best cell
+    would need 12 paired seeds where it was run at 1. data/results/a2_power/arch_search_bound.json.
 A5  UNBLOCKED by the same number. Still low priority.
 
 PAPER. Body still exactly 8pp (References start on page 9, unchanged), 0 errors, 0 undefined,
@@ -134,7 +136,7 @@ CLOSED WHEN: the null holds under >=1 metric an outside positive was reported in
 distributional metric.
 DO THIS FIRST IF THE GPUS ARE BUSY OR CONTENDED — it needs none.
 
---- A4. L6. Bound the architecture claim. --------------------- follows from A2 ---------------
+--- A4. L6. Bound the architecture claim. ------------------------ CLOSED 2026-08-16 ---------
 Cause C now SURVIVES (it was "refuted within the searched space" until the untyped arm ran; the 14-cell
 search varied HOW the typed encoder passes messages and never whether the typing belonged, so it
 excluded its own premise). What remains is to bound it: with the A2 floor in hand the paper can say

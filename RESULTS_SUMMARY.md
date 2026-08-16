@@ -54,6 +54,40 @@ Human review is wanted on how much of this to put in the paper. The material is 
 
 ---
 
+# A4 CLOSED (2026-08-16): the architecture search could not have found anything
+
+The paper already says the 14-cell search was the wrong SHAPE — every cell varied HOW the typed encoder
+passes messages and none asked whether the typing belonged. With A2(b)'s floor in hand there is a second
+and simpler objection, and it is quantitative. Artifact:
+`data/results/a2_power/arch_search_bound.json`, re-derivable with
+`PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.arch_search_power`.
+
+| | |
+|---|---|
+| cells | 14, each ONE run at ONE seed, 5 epochs |
+| best | `condition_gated__norm-add__thr-0.0__scale-0` (the DEFAULT), **+0.0051** vs no-graph |
+| worst | `condition_gated__norm-gcn__thr-0.7__scale-0`, **-0.0037** |
+| observed spread | **0.0089** |
+| spread 14 draws of PURE SEED NOISE would give (sd 0.00431) | **0.0147** |
+| verdict | the search's ENTIRE spread is INSIDE what re-seeding one configuration produces |
+| seeds the best cell would need to clear our own correction rule at 80% power | **12** |
+| seeds it was run at | **1**, where this pipeline emits no p-value at all |
+
+**What this licenses the paper to say.** No variant in the searched space improves on the baseline by
+more than the floor we can detect. The best cell is +0.0051 against a measured MDE of 0.0075 at the
+seven seeds we ran, and the search ran at one.
+
+**What it says about us.** We ranked 14 architectures on differences we had no power to resolve and
+then treated the ranking as a refutation. That is the same failure as the rest of the paper, in a place
+we had not looked. It is now in `app:archsearch` as a paragraph, not a footnote.
+
+**Not re-proposed, per the standing instruction:** per-relation normalisation and confidence pruning are
+already refuted and re-running them is a known dead end. This bound does not resurrect them; it says the
+search that refuted them was underpowered too, so "refuted within the searched space" means less than it
+sounded like. The A1 arms now running are the lever that search never pulled.
+
+---
+
 # A2(b) CLOSED (2026-08-16): the detection floor, simulated over the variance this project MEASURED
 
 The paper carried an MDE from a normal approximation on five paired per-seed differences: "0.0085
