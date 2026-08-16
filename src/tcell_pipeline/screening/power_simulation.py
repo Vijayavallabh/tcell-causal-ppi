@@ -45,17 +45,29 @@ from tcell_pipeline.screening.multiseed import apply_family_wise, paired_delta_s
 # Measured inputs. Every number here is READ FROM AN ARTIFACT, not assumed:
 #   seed / redraw / level  -> data/results/l4/vardecomp_{h2a,h1_vs_no_graph}.json  (L4, closed 2026-08-14)
 #   tau, k                 -> data/results/replication/pooled.json                 (7-dataset DL pool)
+#   sd_seed_frozen         -> re-derived from the landed per-seed parquets:
+#       ts = data/results/screening_untyped_n7/<arm>/[0-6].parquet, d_s = systema(better) - systema(worse),
+#       sd = std(d, ddof=1) over the seven paired seeds.
+#
+# TWO SEED SDs, ON PURPOSE. ``sd_seed_frozen`` is what the contrast actually varies by on the frozen
+# fold; ``sd_seed`` is L4's, pooled over difficulty levels and re-draws and therefore two to three times
+# larger. They answer different questions and the paper needs both: the first is the floor for a claim
+# about THIS fold, the second the floor for a claim that would survive re-drawing the fold. Reporting
+# only the smaller one would understate the floor for every claim the paper actually makes.
 MEASURED = {
     "h2a": {"sd_seed": 0.01067, "sd_redraw": 0.00034, "sd_level": 0.00329,
-            "tau": 0.00316, "k": 7,
-            "note": "typed_static - expression_only; tau^2 = 1e-05, I^2 = 39.2%, Q p = 0.13"},
+            "sd_seed_frozen": 0.00431, "tau": 0.00316, "k": 7,
+            "note": "typed_static - expression_only; tau^2 = 1e-05, I^2 = 39.2%, Q p = 0.13; "
+                    "frozen fold n=7 mean -0.01204, sd 0.00431"},
     "h1_vs_no_graph": {"sd_seed": 0.00524, "sd_redraw": 0.00250, "sd_level": 0.00371,
-                       "tau": None, "k": 1,
-                       "note": "condition_gated - expression_only; only one qualified replication dataset"},
+                       "sd_seed_frozen": 0.00443, "tau": None, "k": 1,
+                       "note": "condition_gated - expression_only; only one qualified replication "
+                               "dataset; frozen fold n=7 mean -0.00430, sd 0.00443"},
     "promotion_margin": {"sd_seed": None, "sd_redraw": None, "sd_level": None,
-                         "tau": 0.02054, "k": 7,
+                         "sd_seed_frozen": 0.00281, "tau": 0.02054, "k": 7,
                          "note": "untyped_gnn - expression_only; tau^2 = 0.000422, I^2 = 88.7% - the "
-                                 "datasets disagree in SIGN, so tau dwarfs every reported effect"},
+                                 "datasets disagree in SIGN, so tau dwarfs every reported effect; "
+                                 "frozen fold n=7 mean +0.00429, sd 0.00281"},
 }
 ALPHA = 0.05
 FAMILY_SIZE = 4          # h2a, h2b, promotion_margin, h1_vs_no_graph - the pre-registered family
@@ -169,17 +181,25 @@ def run(out: Path | None = None, n_sims: int = 2000) -> dict:
 
     # --- design 1: seeds on the frozen fold ------------------------------------------------------
     print("=== SEEDS on one frozen fold (the design every headline in the paper uses) ===")
-    print(f"{'contrast':>16} {'sd_seed':>9} {'effect':>9} {'seeds@80%':>10} {'power@5':>9} {'power@7':>9}")
-    for name in ("h2a", "h1_vs_no_graph"):
-        sd = MEASURED[name]["sd_seed"]
+    print("    'frozen' = the sd this contrast actually shows on the frozen fold (n=7 paired seeds)")
+    print("    'pooled' = L4's seed component, pooled over difficulty levels and re-draws - the floor")
+    print("               for a claim that would also survive re-drawing the fold")
+    print(f"{'contrast':>16} {'sd source':>10} {'sd':>9} {'effect':>9} {'seeds@80%':>10} "
+          f"{'power@5':>9} {'power@7':>9}")
+    for name in ("h2a", "h1_vs_no_graph", "promotion_margin"):
         rows = []
-        for d in EFFECTS:
-            need = required_n(d, sd, n_sims=n_sims)
-            p5 = simulate_power(d, sd, 5, n_sims=n_sims)["power"]
-            p7 = simulate_power(d, sd, 7, n_sims=n_sims)["power"]
-            rows.append({"effect": d, "seeds_for_80pct": need, "power_at_5": p5, "power_at_7": p7})
-            print(f"{name:>16} {sd:>9.5f} {d:>9.4f} {str(need) if need else '>400':>10} "
-                  f"{p5:>9.3f} {p7:>9.3f}")
+        for src, key in (("frozen", "sd_seed_frozen"), ("pooled", "sd_seed")):
+            sd = MEASURED[name][key]
+            if sd is None:
+                continue
+            for d in EFFECTS:
+                need = required_n(d, sd, n_sims=n_sims)
+                p5 = simulate_power(d, sd, 5, n_sims=n_sims)["power"]
+                p7 = simulate_power(d, sd, 7, n_sims=n_sims)["power"]
+                rows.append({"sd_source": src, "sd": sd, "effect": d, "seeds_for_80pct": need,
+                             "power_at_5": p5, "power_at_7": p7})
+                print(f"{name:>16} {src:>10} {sd:>9.5f} {d:>9.4f} {str(need) if need else '>400':>10} "
+                      f"{p5:>9.3f} {p7:>9.3f}")
         report["designs"].setdefault("seeds", {})[name] = rows
     print()
 

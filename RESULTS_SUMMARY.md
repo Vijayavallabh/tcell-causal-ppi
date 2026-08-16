@@ -1,3 +1,107 @@
+# CONTRADICTION STOP FIRED — A3, 2026-08-16
+
+**The sign of "does the graph help" DEPENDS ON WHICH REPORTED METRIC YOU CHOOSE, and both signs clear a
+twenty-test family-wise correction under Bonferroni AND Holm.** Same predictions, same five seeds, same
+frozen fold, same held-out rows. Nothing was retrained: this is the stored screening output re-scored.
+
+| endpoint | who reports it | `promotion_margin` = untyped_gnn - expression_only |
+|---|---|---|
+| `pearson_delta` | TxPert | **+0.0089**, 95% CI [+0.0070, +0.0107], across-metric p 0.0037 — the graph HELPS |
+| `pearson_delta_top20` | GEARS | **-0.0424**, 95% CI [-0.0485, -0.0363], across-metric p 0.0008 — the graph HURTS |
+
+Both survive the ACROSS-METRIC bar (m=20, five endpoints times four contrasts, Bonferroni and Holm
+both), which is the strictest bar this project applies anywhere. The correction was fixed in
+Amendment 5.3 of the pre-registration BEFORE the full fold was read, precisely so that neither of these
+could be the one that got reported.
+
+**Rail 4 applies and has been honoured.** `pearson_delta/promotion_margin` is a POSITIVE graph benefit
+surviving both corrections. The null has NOT been rewritten around it. Artifact snapshotted at
+`data/results/a3_external/rescored.json`; every one of the twenty cells is in it.
+
+Everything that survived the across-metric bar, with its sign:
+
+| endpoint / contrast | mean | reading |
+|---|---|---|
+| `pearson_delta` / promotion_margin | +0.0089 | untyped graph beats no-graph |
+| `pearson_delta_top20` / promotion_margin | -0.0424 | untyped graph loses to no-graph |
+| `pearson_delta_top20` / h1_vs_no_graph | -0.0454 | the frozen H1 loses to no-graph |
+| `energy_distance` / h2a | -2.0102 | typed_static matches the response DISTRIBUTION worse than no-graph |
+| `energy_distance` / h2b | +5.3028 | condition gating matches it BETTER than typed static |
+
+**Why this is a result and not a nuisance.** These are not exotic endpoints. `pearson_delta` is
+TxPert's headline and `pearson_delta_top20` is GEARS'. A field in which the two disagree in sign, at
+this significance, on the same predictions, cannot settle "does a graph prior help" by reporting one
+number — and neither can we. It bounds what OUR null means too: our null is stated on SYSTEMA,
+and SYSTEMA is one endpoint among several that do not agree.
+
+**What it does NOT establish.** Nothing about splits. Outside results also use different folds, and
+re-scoring our own predictions cannot speak to that; the split half of the commensurability hedge
+stands. And nothing about single-cell distributions: this pipeline predicts one pseudobulk response per
+(target, condition), so both distance endpoints compare the DISTRIBUTION OF RESPONSES across held-out
+perturbations, never cell populations.
+
+**A trap this run walked past, recorded so it is not walked into.** scPerturb's E-distance, computed the
+way scPerturb computes it (squared euclidean distances), collapses algebraically to
+`2*||mean(X) - mean(Y)||^2` — a difference of means. It cannot see a spread difference at all, and a
+test pins that by feeding it two populations with identical means and 4x spread, where it reads zero.
+It is reported for commensurability; `energy_distance` (plain euclidean, Szekely) is the distributional
+evidence. Reading the squared form as distributional evidence would have been wrong in the paper's
+favour.
+
+Human review is wanted on how much of this to put in the paper. The material is in
+`data/results/a3_external/rescored.json` and the endpoint definitions, with sources, are in
+`src/tcell_pipeline/evaluation/external_metrics.py`.
+
+---
+
+# A2(b) CLOSED (2026-08-16): the detection floor, simulated over the variance this project MEASURED
+
+The paper carried an MDE from a normal approximation on five paired per-seed differences: "0.0085
+uncorrected, roughly 0.013 under Bonferroni", with its own 95% span running 0.005 to 0.025. That is now
+replaced by a simulation that runs the pipeline's OWN rule -- paired t, then Bonferroni AND Holm over a
+family of four, survival requiring both -- 2,000 replicates per point, over variance components read
+from landed artifacts. Artifact: `data/results/a2_power/power_simulation.json`.
+
+**Detecting Δ=0.0043 (the size of the one real graph benefit we have), at 80% power:**
+
+| generalise over | variance component | sd | units needed | power as run |
+|---|---|---|---|---|
+| seeds, this fold | seed, frozen fold | 0.0043 | **15 seeds** | 0.32 at n=7 |
+| seeds, any re-draw of it | seed, pooled over levels (L4) | 0.0107 | **73 seeds** | 0.05 at n=7 |
+| a fresh partition | level + re-draw + seed | 0.0058 | **24 levels** = 240 training lanes | — |
+| datasets, typed arm | between dataset (τ) | 0.0032 | **10 datasets** | 0.58 at k=7 |
+| datasets, untyped arm | between dataset (τ) | 0.0205 | **252 datasets** | 0.02 at k=7 |
+
+**Measured MDE at the seeds we actually ran (n=7, 80% power):** 0.0075 on the frozen fold, 0.0185 if
+the claim must also survive re-drawing the fold. The paper's old 0.013 sat between the two, understating
+one and overstating the other.
+
+**The quotable one.** The between-dataset spread of `promotion_margin` is τ=0.0205, five times the
+effect anyone reports, because the datasets disagree in SIGN. Detecting a +0.0043 pooled benefit against
+that spread needs on the order of **250 datasets**. scPerturb has 44. Cross-dataset perturbation studies
+use single digits. Power at the k=7 we have is **2%**.
+
+**A correction the simulation forced.** The paper said "the between-re-draw component is at least as
+large as the between-seed one". Measured, it is not: for h2a the seed contributes 0.0107 against the
+re-draw's 0.0003. The noise blamed on re-drawing the split was mostly the seed. Fixed in `app:power`.
+
+**Two calibrations, so this is not a free-floating model.**
+- delta=0 survives at 0.013, the corrected rate, not the nominal 0.05.
+- `promotion_margin`'s known-true +0.0043 needs 9 seeds at its own measured sd of 0.0028; we ran 7,
+  which the simulation puts at 70% power, and it did survive both corrections. The one true positive
+  lands where the model says it should.
+
+**What is NOT closed.** A2(a), the empirical floor: inject a known graph-dependent signal at a ladder of
+effect sizes and report the smallest one recovered. The simulation says what the answer should be; only
+the injection shows whether the pipeline achieves it. Still open in NEXT_ACTIONS.txt.
+
+**Mutation-tested, because this project has shipped two tests that passed against buggy code.** Killed:
+a dropped family-wise correction (the null rate moves 0.013 -> 0.058), a Holm-only survival rule, a
+level component treated as shrinkable by compute, and a bisection returning the point below the
+crossing. `src/tests/test_power_simulation.py`.
+
+---
+
 # UNEXPECTED — NEEDS HUMAN REVIEW (updated 2026-08-11)
 
 **On the REFERENCE screen, at n=7, the untyped graph beats the no-graph baseline and survives BOTH
@@ -26,9 +130,16 @@ not the collapse-to-1 bug that produced three false "survives" earlier in this p
 
 **What this establishes.** The arm that wins carries PPI topology with NO edge typing and NO condition
 gating. On this same fold the typed arms do not: typed_static is reliably worse and condition_gated is
-indistinguishable. Combined with the replication (untyped positive on 5/5 independent datasets, and
-outright winning on Replogle RPE1 where the typed arm goes negative), the conclusion is no longer
-hedged and is no longer post-hoc on the reference dataset:
+indistinguishable. Combined with the replication (untyped outright winning on Replogle RPE1, +0.0675,
+where the typed arm goes negative), the conclusion is no longer hedged and is no longer post-hoc on the
+reference dataset:
+
+> RETRACTED IN THIS PARAGRAPH, 2026-08-16: this block was written on 2026-08-11 and said "untyped
+> positive on 5/5 independent datasets". The sixth dataset reversed that the same day — Norman,
+> −0.0790, surviving both corrections — and over eight datasets the pooled random-effects estimate is
+> +0.0091 [−0.0024, +0.0207], p=0.12, with three per-dataset contrasts clearing correction and
+> DISAGREEING IN SIGN. See the CORRECTION section below. The reference-screen result in the table above
+> is unaffected; only the cross-dataset sentence was wrong.
 
 > The protein-interaction prior is not what failed. The typed, gated encoder built to exploit it is
 > what discards the signal the raw topology carries.
@@ -836,7 +947,7 @@ family-size cap 5% -> 15%, which lowers median train-to-held-out sequence simila
 | Frozen 0.85 (n=5, the paper) | -0.0009 | [-0.0072, +0.0054] | 0.71 | parity |
 | **Harder 0.75/0.15 (n=3, this run)** | **-0.0035** | **[-0.0262, +0.0191]** | **0.57** | **parity** |
 
-Per-arm \textsc{systema} on the harder split: untyped_gnn 0.0805 (n=2) ~ expression_only 0.0805 (n=4)
+Per-arm SYSTEMA on the harder split: untyped_gnn 0.0805 (n=2) ~ expression_only 0.0805 (n=4)
 > condition_gated 0.0769 (n=3). The graph arm sits at or below no-graph — no benefit, same ordering
 sign as the frozen fold. Report: `data/results/screening_c075c15/robustness_hard_c075c15.{json,md}`.
 

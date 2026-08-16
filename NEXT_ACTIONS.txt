@@ -32,10 +32,44 @@ RAILS — never cross
   it governs. A factual record of what was run goes in RESULTS_SUMMARY.md, not the pre-registration.
 
 =======================================================================
+STATUS 2026-08-16 19:50 IST — what is running, what closed today
+=======================================================================
+A1  RUNNING. typed_shared seeds 0-3 in flight on all four A100s since 19:06 (seed 4 queues behind
+    them); ~7 h/lane, so first landings late tonight. typed_permuted is IMPLEMENTED and tested but NOT
+    launched: it needs the cards A1's first wave is holding. Re-run ./run_a1_mechanism.sh with
+    ARMS="typed_permuted" once they free; the script is idempotent and skips landed lanes.
+    Pre-registered in Amendments 4 and 4a. Two corrections went in BEFORE any lane ran:
+      - typed_shared alone cannot attribute damage to parameter count (under add-aggregation, tying the
+        weights removes the partition and the parameters in ONE intervention). typed_permuted is what
+        breaks that tie. NEXT_ACTIONS' original decision rule was wrong on this and is superseded.
+      - permuting the STORED GRAPH would have been confounded: the sampler ranks neighbours by relation
+        (_PRIORITY_BONUS gives physical/co-complex 1e6 over functional), so it changes WHICH neighbours
+        enter the subgraph. Relabelling now happens after sampling, via a _sample hook.
+A2(b) CLOSED. Simulation power over the measured variance. data/results/a2_power/power_simulation.json.
+    Headline: detecting the untyped arm's own +0.0043 across datasets needs ~250 datasets (tau=0.0205,
+    the datasets disagree in sign); scPerturb has 44. On the frozen fold the measured MDE at n=7 is
+    0.0075, or 0.0185 if the claim must survive re-drawing the fold. Paper's app:power rewritten.
+A2(a) STILL OPEN — the injection ladder. This is now the only part of A2 left, and the simulation gives
+    it a prediction to be checked against rather than a blank target.
+A3  CLOSED, and it fired the CONTRADICTION STOP. Re-scored under TxPert / GEARS / scPerturb endpoints:
+    the untyped contrast is +0.0089 under TxPert's Pearson-delta and -0.0424 under GEARS' top-20 DE
+    correlation, BOTH surviving Bonferroni and Holm over all twenty endpoint-by-contrast cells. Same
+    predictions, same fold, same seeds. Flagged atop RESULTS_SUMMARY.md; the null was NOT rewritten.
+    Artifact data/results/a3_external/rescored.json; pre-registered in Amendment 5.
+A4  UNBLOCKED — A2(b) supplies the floor it was waiting on (0.0075 at n=7 on the frozen fold).
+A5  UNBLOCKED by the same number. Still low priority.
+
+PAPER. Body still exactly 8pp (References start on page 9, unchanged), 0 errors, 0 undefined,
+0 overfull >2pt. Two appendix sections added (app:metrics, app:power rewritten), one sentence added to
+Limitations/Scope. SEPARATELY: abstract_plain.txt — the text SUBMISSION.md tells a human to paste into
+OpenReview — was a full campaign out of date and still carried the RETRACTED "positive on all five
+independent datasets". Regenerated from main.tex and SUBMISSION.md now says it is derived.
+
+=======================================================================
 THE AUTONOMOUS WORK, in priority order
 =======================================================================
 
---- A1. WHY does edge typing hurt?  ~28 GPU-h.  HIGHEST VALUE. ---------------------------------
+--- A1. WHY does edge typing hurt?  RUNNING since 2026-08-16 19:06. See STATUS above. ---------
 The n=7 family says WHICH component costs the graph its benefit but not why, and the paper currently
 stops at "our encoder discards the signal". Naming the mechanism turns a diagnosis into a prescription,
 which is what this venue's rubric rewards most.
@@ -64,7 +98,7 @@ DECIDE IN ADVANCE, and write it into the prereg as a dated append BEFORE running
 (shared-weight typed) - (typed_static). If it is positive and clears both corrections, parameter count
 explains the damage; if indistinguishable, the relation partition does.
 
---- A2. L2. The detection floor.  ~60-100 GPU-h.  Closes the largest remaining hedge. ----------
+--- A2. L2. The detection floor.  (b) CLOSED 2026-08-16.  (a) THE INJECTION LADDER IS OPEN ----
 PAPER SAYS: the CI upper limit is per fold; the MDE from 5 seeds is itself uncertain (0.005 to 0.025).
 
 CLOSE WITH (a) AN EMPIRICAL FLOOR. Inject a known graph-dependent component into the real DE matrix at
@@ -86,7 +120,7 @@ CALIBRATION NOW AVAILABLE that was not when this was written: the untyped arm's 
 reference screen is a known true positive the ladder can be checked against.
 CLOSED WHEN: the paper states the null in units of a measured floor rather than a modelled MDE.
 
---- A3. L3. Commensurability with others' results.  CHEAP. No training. ------------------------
+--- A3. L3. Commensurability with others' results.  CLOSED 2026-08-16. -----------------------
 PAPER SAYS: others' gains use different splits and metrics, so our bound constrains this task under
 this protocol rather than adjudicating their claims.
 CLOSE WITH: re-score the STORED predictions under THEIR metrics — arithmetic on artifacts that already
