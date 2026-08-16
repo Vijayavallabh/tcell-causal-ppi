@@ -570,3 +570,31 @@ and the number would measure injection magnitude rather than graph readability.
 **A HIGH floor is a result, not a failure.** If the smallest recovered rung is 0.20 response SDs, then
 this pipeline cannot see a graph effect below a fifth of a response standard deviation, and the paper's
 null is stated against that number instead of a hedge.
+
+---
+
+## Amendment 4b — 2026-08-16 (sign convention for D2, BEFORE any `typed_permuted` lane is trained)
+
+Amendment 4.4 contains a sign error in one sentence. Correcting it before the arm runs, because it
+would otherwise reverse the reading of the result.
+
+**The convention, stated once and used everywhere.** Both diagnostic contrasts are
+`(diagnostic arm) - typed_static`, so a POSITIVE value means the intervention IMPROVED on the typed
+encoder.
+
+Therefore, for `D2 = typed_permuted - typed_static`:
+
+- **D2 POSITIVE** means a random partition BEATS the true one at equal capacity. The evidence typing is
+  worse than noise: actively misleading, not merely uninformative.
+- **D2 NEGATIVE** means the true typing carries information a random partition lacks.
+
+Amendment 4.4 said "a D2 that is significantly NEGATIVE (permuting HELPS) is itself the finding that
+the annotation is worse than noise at equal capacity". Two of those three clauses disagree with each
+other under the convention above: permuting helping is D2 POSITIVE, and "the annotation is worse than
+noise" is also D2 POSITIVE. The sentence is replaced by the two bullets above. The 2x2 table in 4.4 is
+unaffected: its "D2 positive" column already reads "the true partition is worse than a random one at
+equal capacity: the typing is actively misleading", which is correct.
+
+Nothing else in Amendment 4 or 4a changes. The rule is implemented in
+`src/tcell_pipeline/screening/a1_report.py`, whose tests drive every cell of the 2x2 and pin this sign
+convention directly.
