@@ -397,3 +397,77 @@ using either arm to promote a graph claim, and the lane-validity rules all stand
 Amendment 4. Seeds are 0-4 on the frozen `blocked_target_ood` fold, paired per seed against the
 landed `typed_static` lanes, primary endpoint `systema_pert_specific_delta`. The permutation is drawn
 from the training seed, so the five lanes average over five partitions.
+
+---
+
+## Amendment 5 — 2026-08-16 (BEFORE the full-fold A3 re-scoring is read)
+
+Registers a RE-SCORING of predictions that already exist. No training, no new fold, no new seed. What
+is being fixed in advance is the endpoint list, the orientation rule, the multiplicity and the decision
+rule — everything that could otherwise be chosen after seeing which metric was kind.
+
+DISCLOSURE, so the record is complete: a 200-row plumbing smoke of the driver was run before this was
+written and its numbers were seen. They are not used, quoted or carried forward, and no endpoint or
+rule below was chosen because of them. The analysis this amendment governs is the full 4,400-row val
+fold at the campaign's five seeds.
+
+### 5.1 The endpoints, verified rather than assumed (checked 2026-08-16)
+
+| endpoint | who reports it | what it is |
+|---|---|---|
+| `pearson_delta` | TxPert | Pearson between predicted and observed response over all genes, per perturbation, macro-averaged |
+| `pearson_delta_top20` | GEARS | the same restricted to each perturbation's top-20 observed DE genes |
+| `mse_top20` | GEARS | mean squared error over those top-20 genes; GEARS' headline |
+| `edistance_scperturb` | scPerturb | E-distance as scPerturb computes it, on SQUARED euclidean distances |
+| `energy_distance` | Szekely | energy distance on plain euclidean distances |
+
+The DE subset is taken from the OBSERVED response, never the prediction.
+
+`edistance_scperturb` is reported for commensurability and NOT as distributional evidence: with squared
+distances the statistic collapses algebraically to `2*||mean(X) - mean(Y)||^2`, a difference of means
+that cannot distinguish two populations with the same mean and different spread. `energy_distance` is
+the distributional endpoint. Both are computed over the distribution of RESPONSES across held-out
+perturbations, not over cell populations — this pipeline predicts one pseudobulk response per (target,
+condition) and has no per-cell predictions to compare. Any claim about single-cell distributions
+remains out of reach and stays hedged.
+
+### 5.2 Orientation
+
+Correlations count upward, errors and distances downward. Every metric is signed to larger-is-better
+before any contrast is formed, so a positive delta always favours the first-named arm. Without this a
+graph arm could be made to look good by an endpoint that runs backwards.
+
+### 5.3 Multiplicity — the part that could be gamed, fixed now
+
+Five endpoints times the four pre-registered contrasts is TWENTY simultaneous tests. Correcting only
+within each endpoint's family of four and then reporting whichever endpoint was kind is the
+look-elsewhere effect this project's `fallacy_scan.py` exists to catch.
+
+Both bars are computed and both are reported:
+
+- **within-metric, m = 4** — comparable to every other number in the paper, and the bar under which
+  the campaign's own results were judged;
+- **across-metric, m = 20** — the honest bar for the question "did anything survive anywhere once we
+  looked under five endpoints".
+
+A claim that a contrast SURVIVES the re-scoring requires the across-metric bar, under Bonferroni and
+Holm both. The within-metric numbers are context, not the claim.
+
+### 5.4 Decision rule
+
+- **Closed** when the null holds under at least one endpoint an outside positive was reported in, and
+  under the distributional endpoint. That is the paper's commensurability hedge discharged on its
+  metric half.
+- **A POSITIVE that clears the across-metric bar fires the contradiction stop** (section 6, unchanged):
+  snapshot, flag at the top of `RESULTS_SUMMARY.md`, continue. The null is not rewritten around it.
+- **Endpoints that DISAGREE IN SIGN on the same contrast are a result, not a nuisance**, and are
+  reported as one. A sign that depends on which reported metric is chosen bounds what any single-metric
+  claim in this literature can mean — including ours.
+- Everything computed is reported. There is no endpoint here that can be dropped after the fact: the
+  five are named above and the artifact carries all twenty cells.
+
+### 5.5 What this cannot settle
+
+The commensurability hedge has two halves. This closes the metric half only. Outside results are also
+obtained on different splits, and re-scoring our predictions cannot speak to that; the split half stays
+hedged, and no sentence anywhere may use this re-scoring to adjudicate another paper's claim.
