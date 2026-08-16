@@ -100,6 +100,49 @@ def contrast_across(scores: dict, metrics=tuple(ORIENTATION), alpha: float = 0.0
     return contrasts
 
 
+K_SWEEP = (20, 50, 100, 250, 500, 1000, 2500, 5000, 10282)
+
+
+def k_sweep(predictions_root: Path, ks=K_SWEEP, seeds=SEEDS, *, n_max: int | None = None,
+            alpha: float = 0.05) -> dict:
+    """Where does the sign flip? TxPert's Pearson-delta and GEARS' top-20 correlation are the SAME
+    statistic over different gene sets, so sweeping the gene-set size turns "they disagree" from an
+    assertion about why into a measurement of where. One pass over the predictions per arm and seed;
+    the DE ranking is computed once from the observed response and reused for every k."""
+    from tcell_pipeline.evaluation.external_metrics import top_de_index
+    from tcell_pipeline.evaluation.metrics import _rowwise_pearson
+
+    val = PerturbationDataset("val", n_max=n_max)
+    truth = collect_targets_truth(val)
+    order = np.argsort(-np.abs(truth["delta_x"]), axis=1)      # DE ranking from the OBSERVATION
+    scores: dict = {}
+    for arm in FAMILY:
+        for seed in seeds:
+            path = prediction_path(arm, "val", seed, predictions_root)
+            if not Path(path).exists():
+                continue
+            pred = read_predictions(path)
+            dx_hat, dx_true = _align(pred, truth["row_index"], truth["delta_x"])
+            # _align may drop rows, so re-rank on the aligned truth rather than reusing `order`
+            idx_full = np.argsort(-np.abs(dx_true), axis=1)
+            for k in ks:
+                kk = min(int(k), dx_true.shape[1])
+                idx = idx_full[:, :kk]
+                r = _rowwise_pearson(np.take_along_axis(dx_hat, idx, 1),
+                                     np.take_along_axis(dx_true, idx, 1)).mean()
+                scores.setdefault(k, {}).setdefault(arm, {})[seed] = float(r)
+    del order
+
+    out = {}
+    for k, by_arm in scores.items():
+        contrasts = {key: paired_delta_summary(by_arm.get(better, {}), by_arm.get(worse, {}),
+                                               alpha=alpha, seeds=seeds)
+                     for key, better, worse in CONTRASTS}
+        apply_family_wise(contrasts, alpha)
+        out[k] = contrasts
+    return out
+
+
 def run(predictions_root: Path, out: Path | None = None, *, n_max: int | None = None,
         n_sample: int = 800) -> dict:
     scores = score_arms(predictions_root, n_max=n_max, n_sample=n_sample)
@@ -163,5 +206,24 @@ if __name__ == "__main__":
     ap.add_argument("--n-max", type=int, default=None, help="cap val rows (quick check only)")
     ap.add_argument("--n-sample", type=int, default=800,
                     help="rows drawn for the pairwise-distance endpoints (quadratic in this)")
+    ap.add_argument("--k-sweep", action="store_true",
+                    help="sweep the DE gene-set size to locate where the untyped contrast flips sign")
     a = ap.parse_args()
-    run(Path(a.predictions_root), Path(a.out) if a.out else None, n_max=a.n_max, n_sample=a.n_sample)
+    if a.k_sweep:
+        res = k_sweep(Path(a.predictions_root), n_max=a.n_max)
+        print(f"{'top-k DE genes':>15} " + " ".join(f"{k:>18}" for k, _, _ in CONTRASTS))
+        for k in sorted(res):
+            cells = []
+            for key, _, _ in CONTRASTS:
+                c = res[k][key]
+                mark = "*" if c.get("survives_family_wise") else " "
+                cells.append(f"{(c['mean'] if c['mean'] is not None else float('nan')):>+17.4f}{mark}")
+            print(f"{k:>15} " + " ".join(cells))
+        print("* = survives Bonferroni AND Holm within that k's family of four")
+        if a.out:
+            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(a.out).write_text(json.dumps(res, indent=2, default=float))
+            print(f"[a3] wrote {a.out}")
+    else:
+        run(Path(a.predictions_root), Path(a.out) if a.out else None,
+            n_max=a.n_max, n_sample=a.n_sample)

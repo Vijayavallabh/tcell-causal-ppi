@@ -28,6 +28,33 @@ Everything that survived the across-metric bar, with its sign:
 | `energy_distance` / h2a | -2.0102 | typed_static matches the response DISTRIBUTION worse than no-graph |
 | `energy_distance` / h2b | +5.3028 | condition gating matches it BETTER than typed static |
 
+**WHERE THE SIGN FLIPS, measured (added 2026-08-16 20:20).** The two endpoints are the same statistic
+over different gene sets, so the disagreement has a location. Sweeping the scored set from each
+perturbation's top-20 observed DE genes to all 10,282 (`data/results/a3_external/k_sweep.json`):
+
+| top-k DE genes | h2a | h2b | untyped − none | h1 |
+|---|---|---|---|---|
+| 20 | -0.0463* | +0.0009 | **-0.0424*** | -0.0454* |
+| 50 | -0.0437* | +0.0120 | -0.0236* | -0.0317* |
+| 100 | -0.0434* | +0.0189 | -0.0143* | -0.0244* |
+| 250 | -0.0397* | +0.0240 | -0.0032 | -0.0157 |
+| 500 | -0.0376* | +0.0263 | +0.0019 | -0.0113 |
+| 1000 | -0.0345* | +0.0274 | **+0.0063*** | -0.0071 |
+| 2500 | -0.0299* | +0.0264 | +0.0097* | -0.0034 |
+| 5000 | -0.0249* | +0.0239* | +0.0108* | -0.0010 |
+| all | -0.0197* | +0.0190* | +0.0089* | -0.0007 |
+
+`*` = survives Bonferroni AND Holm within that k's family of four.
+
+The untyped contrast is corrected-significant NEGATIVE up to k=100 and corrected-significant POSITIVE
+from k=1000, crossing zero between the 250th and 500th DE gene. **Both effects are real.** The untyped
+graph makes the broad response more accurate and the genes each perturbation moves hardest LESS
+accurate. Which one a paper reports is a choice of k, and k is a convention: 20 because GEARS reports
+20, all genes because TxPert reports all.
+
+**h2a is the one row that does not depend on the choice** — negative and corrected-significant at every
+k tried. The typed graph's deficit is not a metric artifact.
+
 **Why this is a result and not a nuisance.** These are not exotic endpoints. `pearson_delta` is
 TxPert's headline and `pearson_delta_top20` is GEARS'. A field in which the two disagree in sign, at
 this significance, on the same predictions, cannot settle "does a graph prior help" by reporting one
