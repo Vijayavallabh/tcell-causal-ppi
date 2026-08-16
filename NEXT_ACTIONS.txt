@@ -123,17 +123,28 @@ one dataset. That simultaneously closes the separate metric-scope hedge.
 CLOSED WHEN: the null holds under >=1 metric an outside positive was reported in, plus one
 distributional metric.
 
---- OPEN E. L4. Difficulty vs realisation noise. ------------------------------- ~200 GPU-h. ---
-PAPER SAYS: fold composition and difficulty vary together; three re-draws of ONE specification show
-re-draw noise equals the between-fold differences.
-CLOSE WITH: re-draws at MORE THAN ONE difficulty level. See OPEN B1 — the audit found this is further
-along than this entry assumed. Three re-draws already exist at 0.80/0.10, single realisations exist at
-0.85/0.05 (now n=7, the best-powered point in the whole project) and 0.75/0.15, and a 0.70/0.05 split
-is generated but untrained. What is missing is re-draws at a SECOND level: 2 re-draws at 0.75/0.15
-(seeds 1, 2) plus the existing c070 split, cheap arms (expression_only + typed_static) at n=5. Then
-decompose variance: between-level vs within-level vs within-re-draw. If between-level does not exceed within-level, state affirmatively that the
-difficulty knob has NO detectable effect above realisation noise.
-CLOSED WHEN: a variance decomposition is reported and the difficulty claim becomes affirmative.
+--- OPEN E. L4. Difficulty vs realisation noise. ------------------------- CLOSED 2026-08-14 ---
+16/16 lanes landed, 0 failures. c070 (0.70/0.05) and two re-draws at 0.75/0.15 all complete at
+5 expression_only + 5 typed_static. The decomposition ran and the paper's hedge is now a measurement.
+
+h2a, 6 cells over 4 levels:  sd_seed = 0.01067 (26 df)
+                             sd_level = 0.00329 (3 df)
+                             sd_redraw = 0.00034 (2 df)
+h1, 5 cells over 3 levels:   sd_seed = 0.00524, sd_level = 0.00371, sd_redraw = 0.00250
+
+FINDINGS. (1) The TRAINING SEED is the largest term for both contrasts and 3.2x the difficulty effect
+for h2a; it is also the only component with enough df (26) to be precisely estimated. (2) Partition
+re-draw noise is CONTRAST-DEPENDENT: large for h1 (which is what the paper's existing flipping-verdict
+passage documents) and negligible for h2a. (3) A difficulty effect on h2a is real and roughly an order
+of magnitude above re-draw noise — but at 2-3 df that ratio is indicative, not quotable.
+
+Paper updated: the appendix passage that ended "this is cheap to check" now reports the check.
+Artifacts: data/results/l4/vardecomp_{h2a,h1_vs_no_graph}.json
+Reproduce: PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.variance_decomposition --contrast h2a
+
+CORRECTION ON RECORD: an interim run with re-draw r3 at n=1 reported the OPPOSITE (re-draw noise
+exceeding the difficulty effect, "no detectable difficulty effect"). That was one cell mean resting on
+a single seed. The n=5 result above supersedes it.
 
 --- OPEN F. L6. Bound the architecture claim. --------------- REFRAMED by the n=7 result. ---
 This item used to read "the search refuted the architecture cause; bound the scope hedge". That is

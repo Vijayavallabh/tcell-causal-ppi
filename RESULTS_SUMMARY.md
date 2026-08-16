@@ -177,6 +177,60 @@ Per-dataset untyped effect, all eight:
     Tian CRISPRi      +0.0281
     Replogle RPE1     +0.0675   survives correction, positive
 
+## L4 CLOSED (2026-08-14): difficulty vs partition noise vs seed noise, measured
+
+16/16 lanes landed, 0 failures. Three roots complete at 5 expression_only + 5 typed_static each:
+screening_c070 (0.70/0.05), screening_c075c15_r2 and _r3 (0.75/0.15, SPLIT_SEED 1 and 2). The paper
+asked for exactly this design — "several realizations per level, so that between-level differences can
+be read against the within-level spread" — and it is now run.
+
+### h2a (typed_static − expression_only): 6 cells, 4 difficulty levels
+
+    0.70/0.05  s0  -0.0073
+    0.75/0.15  s0  -0.0012      three re-draws at ONE difficulty
+    0.75/0.15  s1  -0.0107
+    0.75/0.15  s2  -0.0051
+    0.80/0.10  s0  -0.0122
+    0.85/0.05  s0  -0.0120   (n=7)
+
+    seed   (within re-draw)  sd = 0.01067   df 26
+    level  (between levels)  sd = 0.00329   df  3
+    redraw (within level)    sd = 0.00034   df  2
+
+### h1 (condition_gated − expression_only): 5 cells, 3 levels (0.80/0.10 has the 3 re-draws)
+
+    seed   sd = 0.00524   level sd = 0.00371   redraw sd = 0.00250
+
+### What this establishes
+
+1. **The training seed is the largest term for both contrasts**, and by a wide margin for h2a:
+   0.01067 against a difficulty effect of 0.00329, a factor of 3.2. This is the robust, quotable
+   finding — it has 26 df behind it, unlike the other two components.
+2. **Partition re-draw noise is contrast-dependent, and the paper's existing claim is about h1.**
+   For h1 it is substantial (sd 0.00250, consistent with the published +0.0082 / +0.0026 / +0.0021
+   spread whose verdict flips). For h2a it is negligible (sd 0.00034). Re-drawing a split at fixed
+   difficulty barely moves h2a and moves h1 a lot.
+3. **A difficulty effect IS detectable above partition noise** — but only once you have several
+   realisations per level to measure against, and only for h2a decisively (level/redraw about an order
+   of magnitude; for h1 it is 1.5x, which at 2 df is not a claim).
+
+### What must NOT be over-read
+
+Both the level and re-draw components carry 2-3 df. The "9.7x" the script prints is not a stable
+quantity and should be reported as "roughly an order of magnitude", which is why the module prints its
+own CAUTION line. Only the seed component (26 df) is precisely estimated.
+
+Reproduce: `PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.variance_decomposition
+--contrast h2a` (and `--contrast h1_vs_no_graph`). Artifacts in data/results/l4/.
+
+### Correction on record
+
+An interim run of this decomposition, taken while re-draw r3 had only n=1, reported re-draw noise
+(sd 0.00588) EXCEEDING the difficulty effect and concluded the difficulty knob had no detectable
+effect. That was an artifact of one cell mean resting on a single seed (-0.0189; at n=5 it is
+-0.0051). The n=5 answer above supersedes it. Nothing in the pipeline changed — only the seeds behind
+one cell.
+
 ---
 
 <details>
