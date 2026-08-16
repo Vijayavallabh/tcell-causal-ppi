@@ -323,9 +323,111 @@ class SharedWeightTypedGraphEncoder(StaticTypedGraphEncoder):
             layer.rel = nn.ModuleDict({rel: shared for rel in layer.rel})
 
 
+# --------------------------------------------------------------------------------------------------
+# 5. Permuted-relation typed graph (A1 diagnostic: the tie-breaker for the shared-weight arm)
+# --------------------------------------------------------------------------------------------------
+# splitmix64's multipliers. Wrap-around on uint64 IS the mixing, so overflow is intended everywhere.
+_MIX = tuple(np.uint64(k) for k in (0xFF51AFD7ED558CCD, 0xC4CEB9FE1A85EC53, 0x9E3779B97F4A7C15,
+                                    0xBF58476D1CE4E5B9, 0x94D049BB133111EB))
+
+
+def _edge_hash(src: np.ndarray, dst: np.ndarray, seed: int) -> np.ndarray:
+    """Deterministic uint64 hash of an UNDIRECTED protein-protein edge, mixed with ``seed``.
+
+    Symmetric in (src, dst) so an edge hashes the same whichever orientation it is stored in, and a
+    pure function of the GLOBAL node ids — which is what makes the permutation consistent: the same
+    edge is relabelled the same way in every subgraph it appears in, so the permuted partition is one
+    fixed alternative partition and not per-sample routing noise."""
+    k1, k2, k3, k4, k5 = _MIX
+    a = np.minimum(src, dst).astype(np.uint64)
+    b = np.maximum(src, dst).astype(np.uint64)
+    with np.errstate(over="ignore"):  # wrap-around IS the mixing, not an error
+        x = (a * k1) ^ (b * k2) ^ (np.uint64(seed) * k3)
+        x ^= x >> np.uint64(30)
+        x *= k4
+        x ^= x >> np.uint64(27)
+        x *= k5
+        x ^= x >> np.uint64(31)
+    return x
+
+
+class PermutedTypedGraphEncoder(StaticTypedGraphEncoder):
+    """``typed_static`` with each protein-protein edge's RELATION LABEL randomly reassigned.
+
+    WHY. ``SharedWeightTypedGraphEncoder`` removes the relation partition and the per-relation
+    parameters in one intervention (see its docstring), so on its own it cannot say which of the two
+    costs the graph its benefit. This arm holds the parameter count, the module count and the routing
+    structure exactly at ``typed_static``'s, and destroys ONLY the correspondence between an edge's
+    evidence class and the weight matrix that processes it. What remains of the -0.0120 after
+    permuting is the part the typing's information content is responsible for.
+
+    WHERE THE RELABELLING HAPPENS, and why it is not done to the graph. The sampler ranks candidate
+    neighbours by relation (``_PRIORITY_BONUS`` gives physical and co-complex a 1e6 bonus over
+    functional), so permuting the stored graph would change WHICH neighbours enter the subgraph and
+    the arm would differ from typed_static in two ways at once. Relabelling happens after sampling,
+    through the ``_sample`` hook, so the node set and the edge multiset are bit-identical to
+    typed_static's and only the routing changes.
+
+    EXACT GLOBAL COUNTS. Each relation keeps its original edge count across the whole graph: the two
+    hash thresholds are read off the sorted hashes of every PP edge, so the assignment is a genuine
+    permutation rather than a multinomial draw at the relation proportions. This matters under
+    ``norm='add'``, where a relation's contribution to a node update scales with its degree."""
+
+    def __init__(self, graph=None, gene_to_idx: dict[str, int] | None = None, *,
+                 permute_seed: int = 0, **kwargs) -> None:
+        super().__init__(graph, gene_to_idx, **kwargs)
+        self.permute_seed = int(permute_seed)
+        self._cuts = self._relation_cuts()
+
+    def _relation_cuts(self) -> np.ndarray:
+        """The two hash thresholds that split every PP edge in the FULL graph into the ORIGINAL
+        per-relation counts."""
+        hashes, counts = [], []
+        for rel in _PP_RELATIONS:
+            ei = self.graph[PROTEIN, rel, PROTEIN].edge_index
+            counts.append(int(ei.shape[1]))
+            if ei.numel():
+                hashes.append(_edge_hash(ei[0].numpy(), ei[1].numpy(), self.permute_seed))
+        if not hashes:
+            return np.zeros(len(_PP_RELATIONS) - 1, dtype=np.uint64)
+        ordered = np.sort(np.concatenate(hashes))
+        cuts, acc = [], 0
+        for c in counts[:-1]:
+            acc += c
+            cuts.append(ordered[acc - 1] if acc else np.uint64(0))
+        return np.array(cuts, dtype=np.uint64)
+
+    def _assign(self, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+        """Each edge's NEW relation index, from its global endpoints.
+
+        ``side='left'`` counts the cuts strictly below the hash, which makes every cut the LAST hash of
+        its own relation. ``'right'`` would push a boundary edge into the next relation and, where a
+        relation is empty, two cuts coincide and a hash equal to them would skip a relation entirely —
+        both show up as counts drifting by one (test_permuted_relations_preserve_every_relation_edge_
+        count_globally caught exactly that)."""
+        return np.searchsorted(self._cuts, _edge_hash(src, dst, self.permute_seed), side="left")
+
+    def _sample(self, target_gene: str):
+        sub = super()._sample(target_gene)  # sampled under the TRUE relations, see the class docstring
+        stores = [sub[PROTEIN, rel, PROTEIN] for rel in _PP_RELATIONS]
+        kept = [(s.edge_index, s.edge_attr) for s in stores if s.edge_index.numel()]
+        if not kept:
+            return sub
+        ei = torch.cat([e for e, _ in kept], dim=1)
+        ea = torch.cat([a for _, a in kept], dim=0)
+        orig = sub[PROTEIN].orig_idx.numpy()  # subgraph node id -> GLOBAL node id, so the hash is global
+        which = self._assign(orig[ei[0].numpy()], orig[ei[1].numpy()])
+        for k, rel in enumerate(_PP_RELATIONS):
+            mask = torch.from_numpy(which == k)
+            sub[PROTEIN, rel, PROTEIN].edge_index = ei[:, mask]
+            sub[PROTEIN, rel, PROTEIN].edge_attr = ea[mask]
+        return sub
+
+
 GRAPH_BASELINES: dict = {
     "network_propagation": NetworkPropagationBaseline,
     "untyped_gnn": UntypedGraphEncoder,
     "typed_static": StaticTypedGraphEncoder,
     "typed_shared": SharedWeightTypedGraphEncoder,
+    "typed_permuted": PermutedTypedGraphEncoder,
 }

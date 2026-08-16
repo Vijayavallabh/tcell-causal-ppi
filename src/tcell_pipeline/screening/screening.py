@@ -35,6 +35,7 @@ from torch.utils.data import DataLoader
 
 from tcell_pipeline import config
 from tcell_pipeline.baselines.graph_baselines import (
+    PermutedTypedGraphEncoder,
     SharedWeightTypedGraphEncoder,
     StaticTypedGraphEncoder,
     UntypedGraphEncoder,
@@ -56,6 +57,7 @@ UNTYPED_GNN = "untyped_gnn"
 # tied across all four relations. Kept out of FAMILY/_WAVE so family_size and every landed aggregation
 # stay exactly what was pre-registered; reachable by name through run_screening --only.
 TYPED_SHARED = "typed_shared"
+TYPED_PERMUTED = "typed_permuted"
 NETWORK_PROP = "network_propagation"
 PRIMARY_METRIC = "systema"  # systema_pert_specific_delta — the locked H1 primary endpoint
 
@@ -133,11 +135,13 @@ def _egipg(gene_names, graph_encoder, basis_path, perturbation_encoder):
 
 
 def nested_family_factories(gene_names, graph, gene_to_idx, *, basis_path=None,
-                            perturbation_encoder_factory=None) -> dict:
+                            perturbation_encoder_factory=None, seed: int = 0) -> dict:
     """name -> zero-arg factory for the nested family + the untyped-graph diagnostic. Each factory builds a
     FRESH model (fresh graph encoder AND a fresh perturbation encoder), so two configs in one screening run
     never share or co-train weights. ``perturbation_encoder_factory`` is a callable returning a fresh encoder
-    (tests inject zero-embedding stores); None lets EGIPGModel build the default real-embedding encoder."""
+    (tests inject zero-embedding stores); None lets EGIPGModel build the default real-embedding encoder.
+    ``seed`` reaches only ``typed_permuted``, whose relation permutation is drawn from the TRAINING seed so
+    a multi-seed campaign averages over as many partitions as it has seeds rather than one lucky one."""
     def enc():
         return perturbation_encoder_factory() if perturbation_encoder_factory is not None else None
     return {
@@ -147,6 +151,9 @@ def nested_family_factories(gene_names, graph, gene_to_idx, *, basis_path=None,
         UNTYPED_GNN: lambda: _egipg(gene_names, UntypedGraphEncoder(graph, gene_to_idx), basis_path, enc()),
         TYPED_SHARED: lambda: _egipg(gene_names, SharedWeightTypedGraphEncoder(graph, gene_to_idx),
                                      basis_path, enc()),
+        TYPED_PERMUTED: lambda: _egipg(gene_names,
+                                       PermutedTypedGraphEncoder(graph, gene_to_idx, permute_seed=seed),
+                                       basis_path, enc()),
     }
 
 
@@ -157,7 +164,8 @@ def nested_family_configs(gene_names, graph, gene_to_idx, n_epochs: int, *, name
     """Build screening configs for the named members (default: the three nested-family members).
     ``lambda_graph=None`` keeps the config default; pass a float to override the edge-gate penalty."""
     factories = nested_family_factories(gene_names, graph, gene_to_idx, basis_path=basis_path,
-                                        perturbation_encoder_factory=perturbation_encoder_factory)
+                                        perturbation_encoder_factory=perturbation_encoder_factory,
+                                        seed=seed)
     if names is None:  # an explicit [] means "no configs", not "use the defaults"
         names = [EXPRESSION_ONLY, TYPED_STATIC, CONDITION_GATED]
     return [{"name": n, "model_factory": factories[n], "n_epochs": n_epochs, "lr": lr,

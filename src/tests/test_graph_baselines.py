@@ -315,3 +315,101 @@ def test_shared_weight_typed_keeps_the_static_contract_and_changes_the_function(
     nonempty = [r for r in gates if gates[r].numel()]
     assert nonempty and all(torch.allclose(gates[r], torch.ones_like(gates[r])) for r in nonempty)
     assert not torch.allclose(hg, static.eval().encode_one("G0", "Rest", h_do)[0])
+
+
+# --- permuted relations (A1: the tie-breaker for the shared-weight arm) ---------------------------
+def _pp_edge_set(sub):
+    """The subgraph's PP edges as GLOBAL undirected pairs, pooled across relations — the quantity a
+    relabelling must leave alone."""
+    orig = sub["protein"].orig_idx.numpy()
+    out = []
+    for rel in ("physical_ppi", "co_complex", "functional_assoc"):
+        ei = sub["protein", rel, "protein"].edge_index
+        for u, v in zip(ei[0].tolist(), ei[1].tolist()):
+            out.append(tuple(sorted((int(orig[u]), int(orig[v])))))
+    return sorted(out)
+
+
+def _rel_of(sub, pair):
+    """Which relation a GLOBAL undirected pair sits in, inside this subgraph."""
+    orig = sub["protein"].orig_idx.numpy()
+    for rel in ("physical_ppi", "co_complex", "functional_assoc"):
+        ei = sub["protein", rel, "protein"].edge_index
+        for u, v in zip(ei[0].tolist(), ei[1].tolist()):
+            if tuple(sorted((int(orig[u]), int(orig[v])))) == pair:
+                return rel
+    return None
+
+
+def _capped_graph():
+    """A hub whose functional neighbourhood alone exceeds NEIGHBORHOOD_CAP, so the sampler's relation
+    priority (physical / co-complex carry a 1e6 bonus over functional) actually decides who gets in."""
+    n = config.NEIGHBORHOOD_CAP + 200
+    rows = [_edge("HUB", f"F{i}", "string", 0.3, func=1) for i in range(n)]
+    rows += [_edge("HUB", f"P{i}", "biogrid", 0.9, phys=1) for i in range(20)]
+    edges = pd.DataFrame(rows)
+    complexes = pd.DataFrame([dict(protein_gene="HUB", complex_id=1, source_database="CORUM",
+                                   confidence=1.0, is_curated=1)])
+    id_map = pd.DataFrame([dict(hgnc_symbol="HUB", uniprot_id="PH")])
+    baseline = pd.DataFrame([dict(hgnc_symbol="HUB", control_baseline_expr=1.0)])
+    return build_hetero_graph(edges, complexes, id_map, baseline,
+                              plm_store=_ZERO_PLM, pinnacle_store=_ZERO_PIN)
+
+
+def test_permuted_relations_leave_the_sampled_neighbourhood_untouched():
+    """The one assertion that keeps D2 interpretable. The sampler ranks candidate neighbours BY
+    RELATION, so relabelling the stored graph would change which neighbours enter the subgraph and the
+    arm would differ from typed_static in two ways at once. Relabelling after sampling must leave the
+    node set and the pooled edge set bit-identical, under a cap that actually binds."""
+    from tcell_pipeline.baselines.graph_baselines import PermutedTypedGraphEncoder
+    graph, g2i = _capped_graph()
+    static = StaticTypedGraphEncoder(graph, g2i)
+    perm = PermutedTypedGraphEncoder(graph, g2i, permute_seed=3)
+    a, b = static._sample("HUB"), perm._sample("HUB")
+    assert a["protein"].x.shape[0] == config.NEIGHBORHOOD_CAP  # the cap really binds on this fixture
+    assert torch.equal(a["protein"].orig_idx, b["protein"].orig_idx)
+    assert _pp_edge_set(a) == _pp_edge_set(b)
+    moved = sum(_rel_of(a, p) != _rel_of(b, p) for p in set(_pp_edge_set(a)))
+    assert moved > 0, "the permutation is inert — D2 would re-run typed_static under a new name"
+
+
+def test_permuted_relations_preserve_every_relation_edge_count_globally():
+    """Exact counts, not a multinomial draw at the relation proportions: under norm='add' a relation's
+    contribution to a node update scales with its degree, so a drifting count would be a second
+    intervention riding along with the relabelling."""
+    from tcell_pipeline.baselines.graph_baselines import PermutedTypedGraphEncoder
+    graph, g2i = _capped_graph()
+    perm = PermutedTypedGraphEncoder(graph, g2i, permute_seed=7)
+    rels = ("physical_ppi", "co_complex", "functional_assoc")
+    before = [graph["protein", r, "protein"].edge_index.shape[1] for r in rels]
+    ei = torch.cat([graph["protein", r, "protein"].edge_index for r in rels], dim=1)
+    which = perm._assign(ei[0].numpy(), ei[1].numpy())
+    after = [int((which == k).sum()) for k in range(len(rels))]
+    assert after == before, f"relation counts drifted: {before} -> {after}"
+
+
+def test_permuted_relations_are_consistent_across_subgraphs_and_move_with_the_seed():
+    """One fixed alternative partition, not per-sample routing noise: an edge appearing in two
+    subgraphs must land in the SAME relation both times, or the four modules become a random router
+    and D2 stops holding the architecture fixed. A different permute_seed must give a different
+    partition, which is what makes the five lanes average over five partitions."""
+    from tcell_pipeline.baselines.graph_baselines import PermutedTypedGraphEncoder
+    graph, g2i = _graph()
+    perm = PermutedTypedGraphEncoder(graph, g2i, permute_seed=0)
+    shared = set(_pp_edge_set(perm._sample("G1"))) & set(_pp_edge_set(perm._sample("G2")))
+    assert shared, "fixture gives no edge in two subgraphs — the consistency claim is untested"
+    for pair in shared:
+        assert _rel_of(perm._sample("G1"), pair) == _rel_of(perm._sample("G2"), pair)
+    other = PermutedTypedGraphEncoder(graph, g2i, permute_seed=1)
+    a, b = perm._sample("G1"), other._sample("G1")
+    assert any(_rel_of(a, p) != _rel_of(b, p) for p in set(_pp_edge_set(a)))
+
+
+def test_permuted_relations_keep_the_static_contract():
+    from tcell_pipeline.baselines.graph_baselines import PermutedTypedGraphEncoder
+    graph, g2i = _graph()
+    enc = PermutedTypedGraphEncoder(graph, g2i, permute_seed=0).eval()
+    hg, gates, _ = enc.encode_one("G0", "Rest", torch.randn(config.GRAPH_HIDDEN_DIM))
+    assert hg.shape == (config.GRAPH_HIDDEN_DIM,) and torch.isfinite(hg).all()
+    nonempty = [r for r in gates if gates[r].numel()]
+    assert nonempty and all(torch.allclose(gates[r], torch.ones_like(gates[r])) for r in nonempty)

@@ -33,6 +33,7 @@ from tcell_pipeline.screening.screening import (  # noqa: E402
     CONDITION_GATED,
     EXPRESSION_ONLY,
     NETWORK_PROP,
+    TYPED_PERMUTED,
     TYPED_SHARED,
     TYPED_STATIC,
     UNTYPED_GNN,
@@ -48,7 +49,7 @@ _TABLE = _WAVE + [NETWORK_PROP]  # + the non-neural topology-diffusion reference
 # Diagnostic arms reachable ONLY by name (--only). Deliberately outside _WAVE/_TABLE: the wave, the
 # merge, promotion and every family-wise correction are sized on the pre-registered family, and adding a
 # member there would silently change family_size and re-flag every landed root as incomplete.
-_DIAGNOSTIC = [TYPED_SHARED]
+_DIAGNOSTIC = [TYPED_SHARED, TYPED_PERMUTED]
 _COLS = ["name", "primary", "pearson", "systema", "centroid", "prog_cos", "mae", "rmse", "topk", "sign"]
 
 

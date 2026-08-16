@@ -346,3 +346,54 @@ so a gate mean of 1.0 is correct rather than evidence of collapse. A lane is val
 at least as many epochs as its paired `typed_static` lane did before early stopping and returns a
 finite primary metric; a lane that fails is reported as a dropped seed, by name and reason, and
 shrinks n rather than being silently replaced.
+
+---
+
+## Amendment 4a — 2026-08-16 (correction to 4.2, BEFORE any `typed_permuted` lane is trained)
+
+Amendment 4 is unchanged except where this says otherwise. `typed_shared` was already running when
+this was written; `typed_permuted` had not started, so this is a pre-registration and not a
+post-hoc note.
+
+### 4a.1 The claim in 4.2 that was wrong
+
+4.2 said of `typed_permuted` that "edge attributes travel with the edge, so only which weight matrix
+processes it changes". That is false for the obvious implementation. The neighbourhood sampler ranks
+candidate neighbours BY RELATION — `_PRIORITY_BONUS` in
+`src/tcell_pipeline/graph/neighborhood_sampler.py` gives `physical_ppi` and `co_complex` a 1e6 bonus
+over `functional_assoc` — so a target whose neighbourhood exceeds `NEIGHBORHOOD_CAP` = 512 keeps its
+physical and co-complex neighbours and drops functional ones. Permuting the labels in the stored
+graph therefore changes WHICH NEIGHBOURS ARE IN THE SUBGRAPH, and `typed_permuted` would have
+differed from `typed_static` in two ways at once: the routing AND the sampled neighbourhood. D2
+would not have been interpretable, and nothing in the result would have shown it.
+
+### 4a.2 The design that replaces it
+
+The relabelling happens AFTER sampling, through a `_sample` hook on `TypedGraphEncoder` whose default
+is the plain sampler call (so every existing arm is bit-identical). `PermutedTypedGraphEncoder`
+samples under the TRUE relations and then moves each protein-protein edge, with its attributes, into
+its permuted relation store. The node set and the pooled edge multiset are therefore identical to
+`typed_static`'s, edge for edge, and only which weight matrix processes an edge changes. This is
+pinned by `test_permuted_relations_leave_the_sampled_neighbourhood_untouched`, which asserts it on a
+fixture whose cap actually binds.
+
+Two further properties are fixed here rather than left to the implementation:
+
+- **Globally consistent.** An edge's permuted label is a pure function of its GLOBAL endpoints and
+  the seed, so the same edge is relabelled the same way in every subgraph it appears in. The permuted
+  partition is therefore one fixed alternative partition of the same edge set. A per-subgraph
+  reshuffle would instead make the four modules a random router, which changes the architecture and
+  reintroduces exactly the confound this arm exists to remove.
+- **Exact global counts.** The two hash thresholds are read off the sorted hashes of every PP edge,
+  so each relation keeps its original edge count exactly. Under `norm='add'` a relation's
+  contribution to a node update scales with its degree, so a count that drifted would be a second
+  intervention riding along with the relabelling. A first implementation put the threshold
+  inclusivity the wrong way round and moved one edge; the count test caught it before any lane ran.
+
+### 4a.3 What does not change
+
+D1, D2, the 2x2 reading, the diagnostic family of size 2 with both corrections required, the ban on
+using either arm to promote a graph claim, and the lane-validity rules all stand as written in
+Amendment 4. Seeds are 0-4 on the frozen `blocked_target_ood` fold, paired per seed against the
+landed `typed_static` lanes, primary endpoint `systema_pert_specific_delta`. The permutation is drawn
+from the training seed, so the five lanes average over five partitions.

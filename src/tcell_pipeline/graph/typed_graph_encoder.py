@@ -272,9 +272,18 @@ class TypedGraphEncoder(nn.Module):
             out[rel] = (ei, ea, alpha * w)
         return out
 
+    def _sample(self, target_gene: str):
+        """This target's subgraph. A hook rather than an inline call because a subclass may need to
+        rewrite the sampled subgraph — ``PermutedTypedGraphEncoder`` relabels its relations here, and
+        must do it AFTER sampling: the sampler ranks candidate neighbours by relation
+        (``_PRIORITY_BONUS`` gives physical / co-complex 1e6 over functional), so permuting the graph
+        itself would change WHICH neighbours land in the subgraph and not merely which weight matrix
+        processes them. The default is the plain sampler call, so every existing arm is unchanged."""
+        return sample_subgraph(self.graph, target_gene, gene_to_idx=self.gene_to_idx)
+
     def encode_one(self, target_gene: str, condition, h_do: torch.Tensor):
         """Encode a single (target, condition) -> (h_graph (dim,), edge_gates dict, attn (N,))."""
-        sub = sample_subgraph(self.graph, target_gene, gene_to_idx=self.gene_to_idx)
+        sub = self._sample(target_gene)
         r = self.encode_subgraph(sub, condition, h_do)
         return r["h_graph"], r["gates"], r["attn"]
 
@@ -333,7 +342,7 @@ class TypedGraphEncoder(nn.Module):
         the latter two as per-relation lists holding one per-edge tensor per row of ``part``."""
         device = self.proj.weight.device
         rels = (*_PP_RELATIONS, _MEMBERSHIP)
-        subs = [sample_subgraph(self.graph, target_genes[b], gene_to_idx=self.gene_to_idx) for b in part]
+        subs = [self._sample(target_genes[b]) for b in part]
         bat = Batch.from_data_list(subs).to(device)  # concatenate on CPU, then ONE host->device copy
         h_cond = self.condition(
             torch.tensor([self._condition_index(conditions[b]) for b in part], device=device)

@@ -1,6 +1,7 @@
 from tcell_pipeline.baselines.graph_baselines import (
     GRAPH_BASELINES,
     NetworkPropagationBaseline,
+    PermutedTypedGraphEncoder,
     SharedWeightTypedGraphEncoder,
     StaticTypedGraphEncoder,
     UntypedGraphEncoder,
@@ -38,4 +39,5 @@ __all__ = [
     "UntypedGraphEncoder",
     "StaticTypedGraphEncoder",
     "SharedWeightTypedGraphEncoder",
+    "PermutedTypedGraphEncoder",
 ]
