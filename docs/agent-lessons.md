@@ -314,3 +314,75 @@ own several hours later and the held lane then ran normally.
 The instrument note: `nvidia-smi --query-compute-apps=pid,used_memory` maps memory to PIDs, which is
 how you tell your own lane's footprint from a co-tenant's. Per-card totals alone will mislead you
 about whose memory it is.
+
+
+---
+
+## 2026-08-10/16 — the replication and L4 campaigns
+
+Each of these cost real time or a wrong conclusion. The operative one-liners are in `AGENTS.md`; the
+evidence is here.
+
+### A file existing is not the same as it being current
+
+`stage_a_history.json` from a killed lane is indistinguishable from a live one by presence alone. This
+produced two wrong readings in one session: first an apparent 25x speedup after a relaunch (the "5-7
+epochs in 11 minutes" were leftovers from lanes killed an hour earlier, mtime 00:42 against a 02:11
+read), then an in-flight lane that appeared stalled. **Read mtime, or pair START/exit in the queue
+log.** The relaunched lanes in fact had no completed epoch at all.
+
+### `nvidia-smi` does not explain why you are slow
+
+These lanes are CPU-bound on row-by-row subgraph sampling — the encoder's own docstring calls it "the
+throughput floor" — and use about one core each. GPU utilisation reads 100% throughout and carries no
+information. The same `typed_static` lane measured ~38 min/epoch on a quiet box, ~45 with three of ours
+running, ~80 once a co-tenant's `load_data.py` took 5001% CPU (50 of 64 cores, load average 174), and
+~90 when six of ours competed. I attributed the slowdown to my own scheduling before measuring; it was
+mostly external. **Check `/proc/loadavg` and `ps -eo pcpu` before blaming your own design.**
+
+### A free GPU does not stay free
+
+`run_l4_card2.sh` preflighted card 2 at 78 GiB free and started a lane. 2h47m later a co-tenant
+reclaimed the card: the running lane was SIGTERMed (exit 143) and the next four died within a minute
+each with CUDA OOM reporting 161 MiB free. Preflight is necessary and not sufficient on shared
+hardware. What kept this cheap was releasing the claim file on failure, which left all five lanes
+schedulable by the main scheduler; the loss was four epochs of one lane.
+
+### CUDA index is not `nvidia-smi` index
+
+On this box smi index 3 is a T400, not an A100, and the four A100s are smi 0, 1, 2, 4. A preflight that
+only asks "is this an A100" will still schedule a 50 GiB lane onto a card with 1 GiB free. Read
+`torch.cuda.mem_get_info` per `CUDA_VISIBLE_DEVICES` and match on free memory. The user's remark that
+"gpu ids 0,1,3 have ample vram" was the exact mapping, and I first read it as a general remark.
+
+### Concurrency reduces throughput when the bottleneck is CPU
+
+Six lanes on four cards ran ~90 min/epoch against ~50 for four lanes: packing turned one queue into six
+slow ones and cost five OOM kills. Going from three to four of our lanes costs one core out of 64 and
+gains a whole GPU; going from four to six loses outright. Saturating VRAM is not the objective when the
+lane is single-threaded on the host.
+
+### A partially-filled cell gives a different answer, not a preliminary one
+
+The L4 variance decomposition run with one re-draw at n=1 concluded that partition noise exceeded the
+difficulty effect and the difficulty knob had no detectable effect. At n=5 the same cell moved from
+−0.0189 to −0.0051, within-level variance collapsed to indistinguishable-from-zero, and the ranking
+inverted. Nothing in the pipeline changed — only the number of seeds behind one cell mean. Report
+per-cell n and treat components estimated from unequal-n cells as provisional.
+
+### Two tests that passed against buggy code
+
+Worth recording because a green suite was not evidence. (1) A test for a `ZeroDivisionError` guard
+passed against the unguarded version, because the sampled data never happened to trigger the clamp it
+needed; rewritten to construct cells with identical means so the clamp is guaranteed. (2) A biased
+variance estimator (`ddof=0`) survived mutation testing at 8 seeds, where the error is only 6.5% —
+inside the tolerance; a dedicated test at 3 seeds, where the bias is 18%, kills it. **Verify the mutant
+dies, don't infer it from a passing suite.**
+
+### The estimator error that ran in the flattering direction
+
+The decomposition subtracted `sigma2_seed / mean(n_j)` where the expectation is
+`mean(sigma2_seed / n_j)`. With unequal cells (n = 5, 3, 1) those differ by 50%, and the wrong form
+inflates the re-draw component — which is the denominator of the verdict. It was handing out "the
+difficulty knob has no detectable effect" for free. Errors that flatter the more quotable conclusion
+deserve the check the conclusion itself would get.

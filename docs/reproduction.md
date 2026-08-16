@@ -1116,6 +1116,65 @@ which writes per-context files. And **`config.CONDITIONS` is read at import time
 `encoders/context_encoder.py` and `graph/typed_graph_encoder.py`, so it must be set in the environment
 *before* the first import; patching `config` afterwards silently does nothing.
 
+
+#### The full seven-stage chain, as actually run (2026-08-10/16)
+
+The adapter above is stage 1 of seven. All of it is wrapped so a dataset can be taken from raw h5ad to
+trained lanes with two commands:
+
+```bash
+# stages 2-6: perturbation table, q_post backfill, de_extraction, guide quality, blocked split,
+# program basis, plus an ESM-2 coverage gate that ABORTS below 50%. CPU, idempotent.
+./run_replication_prep.sh <dataset> <pinnacle-ctx|none> <K>
+
+# stage 7: all arms x 4 seeds across the GPUs, skipping anything already landed
+setsid nohup ./run_replication_campaign.sh > data/logs/repl/campaign.log 2>&1 &
+```
+
+`run_replication_stage.sh` sets the per-dataset environment and **must be sourced** before any manual
+stage; the two wrappers above do it for you. It exists because `INTERMEDIATE_ROOT` isolation also
+redirects the feature stores into an empty sandbox, so without it every target silently gets a zero
+vector and the graph arm trains on nothing while still reporting a number. It additionally redirects
+`SPLITS_ROOT` — which is NOT derived from `INTERMEDIATE_ROOT`, so the splits stage would otherwise
+overwrite the frozen reference fold — and reads `CONDITIONS` from the DE provenance, since its default
+is the reference screen's vocabulary and every replication lane dies on its first batch without it.
+
+Four failure modes this chain now handles, each of which previously produced a number rather than an
+error:
+
+- **q_post schema.** `de_extraction` asserts every `config.Q_POST_COLS` column is present. Matrices
+  built before the Amendment-2 builder emitted them die with a bare AssertionError naming thirteen
+  columns. `replication/backfill_qpost.py` is stage 3a and repairs them in place, as all-NaN — NaN says
+  "not measured here", zero would say "measured and negative".
+- **Guide-quality scalars.** `QualityEncoder` consumes `n_guides` and `single_guide_estimate` directly
+  with no imputation, so NaN propagates into the loss. `replication/guide_quality.py` derives them from
+  each dataset's guide IDs, and rejects any candidate column implying more than 20 guides per target —
+  Frangieh's `guide_id` is a per-cell barcode with a median of 299 distinct values per target.
+- **Program dimension.** K cannot exceed the train-fold row count. Prereg Amendment 3.1 fixes K = 128
+  where train rows >= 256, else the largest power of two <= train/2, and any dataset below 128 is a
+  labelled deviation reported separately.
+- **Degenerate arms.** The condition gate needs >= 2 contexts, so `condition_gated` is not run on
+  single-condition datasets — it would be arithmetically `typed_static`. That absence is
+  pre-registered, not attrition.
+
+Cross-dataset synthesis:
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.replication.pool --with-reference
+```
+
+Fold re-draws (`screening_c075c15`, `screening_c080c10*`) are deliberately excluded from that pool:
+they re-partition the SAME dataset, so pooling them would count one dataset several times and shrink
+the interval on a fiction.
+
+#### Aggregating a FRESH screening root
+
+`multiseed` reads fold-comparability evidence from the run registry, and a fresh root starts with an
+empty one — so the report carries a "NOT comparable" flag that is simply false. Run
+`merge_registry_n7.py` (or the equivalent merge for your root) first. Note the reference registry lives
+at `data/results/experiment_registry.yaml`, **not** inside `data/results/screening/`; a copy step
+pointed at the latter fails silently.
+
 ## Repository / data-mart layout
 
 Downloads stay immutable under `data/raw/`; everything else is derived and reproducible. `data/` is

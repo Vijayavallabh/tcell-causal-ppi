@@ -1,5 +1,50 @@
 # Session Handoff
 
+## STOP — READ FIRST (2026-08-16): all campaigns are done; only the submission is left
+
+**Nothing is running.** Eight replication datasets, the n=7 reference family and the L4 decomposition
+are all complete. The paper is at 8pp with everything integrated, 0 errors / 0 overfull / 0 undefined.
+
+**The three headline numbers.**
+
+    h2a pooled, 7 replication datasets   +0.0018  RE 95% CI [-0.0028, +0.0065]  I2 = 39.2%, Q p = 0.13
+    untyped arm, reference screen n=7    +0.0043  [+0.0017, +0.0069]  survives Bonferroni AND Holm
+    edge typing, reference screen n=7    -0.0120  [-0.0160, -0.0080]  7/7 seeds, survives BOTH
+
+The typed graph is a bounded null with NO significant heterogeneity across five cell types, both
+perturbation directions and 100-to-9,730 targets. Edge typing is actively harmful. The untyped arm
+clears correction on three datasets **in disagreeing directions** (+0.0043, +0.0675, -0.0790), so its
+sign is not predictable — that is the paper's central claim, not "the graph helps".
+
+**L4 is closed.** h2a variance components: seed 0.01067 (26 df) > level 0.00329 (3 df) > redraw
+0.00034 (2 df). The training seed moves the contrast 3.2x more than the difficulty knob. Only the seed
+component has enough df to quote precisely.
+
+**Corrections that are on the record and must not be silently re-reversed:**
+- Norman (-0.0790, survives both) overturned the "untyped positive on 5/5 datasets" pooled claim.
+- h2b survived at n=6 (bonf 0.0491) and does NOT at n=7 (bonf 0.1308).
+- An interim L4 run with a cell at n=1 gave the opposite verdict to the n=5 result.
+- The 0.80/0.10 re-draws identify h1's within-level variance, NOT h2a's.
+
+**The only thing left needs a human.** The ICBINB-BIO submission: create the anonymous.4open.science
+mirror, paste the URL at paper/icbinb/main.tex line ~238, rebuild, confirm 8pp, then upload main.pdf on
+the full-paper track. Deadline 29 Aug 2026 AoE. Everything else is in paper/icbinb/SUBMISSION.md,
+including a probe table showing this machine has no OpenReview credentials, no client library and no
+gh CLI.
+
+**Rails held throughout.** Sealed split never opened, `evaluation/sealed_eval.py` never run, reference
+roots verified byte-identical, every campaign in a fresh root, branch only.
+
+**Where things live.** Campaign scripts `run_replication_*.sh`, `run_l4_*.sh`; analysis
+`tcell_pipeline.replication.pool` and `tcell_pipeline.screening.variance_decomposition`; artifacts
+`data/results/replication/`, `data/results/screening_untyped_n7/`, `data/results/l4/`. Read
+NEXT_ACTIONS.txt for what is still open (OPEN A submission, OPEN B why typing hurts, OPEN C/L2 floor,
+OPEN D/L3 metrics, OPEN F/L6, OPEN G sealed split stays shut).
+
+---
+
+## SUPERSEDED 2026-08-11 handoff — kept for the record
+
 ## STOP — READ FIRST (2026-08-11): the replication is done, and the paper's conclusion changed
 
 **The multi-dataset null exists.** Four datasets, 52 lanes: pooled h2a fixed-effect +0.0031, 95% CI

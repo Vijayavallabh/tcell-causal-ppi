@@ -32,6 +32,12 @@ Key facts:
 - The model name is **EG-IPG**, not EG-CProG (legacy name in some older comments)
 - Feature availability is split into `q_pre` (prediction-time, eligible) and `q_post` (response-derived, prohibited as H1 input) — see README
 - All response-derived transformations (program bases, scaling, feature selection) must be fit inside training folds only
+- **Replication layer (added 2026-08-10/11):** eight datasets now train, not one. Per-dataset artifacts
+  live under `data/intermediate/replication/<dataset>/` and results under
+  `data/results/replication/<dataset>/`; `src/tcell_pipeline/replication/` holds the DE builder
+  (Amendment-2 cell-level Welch), the perturbation-table builder, guide-quality derivation, the q_post
+  backfill and the cross-dataset pooler. Every replication run is isolated by `INTERMEDIATE_ROOT`, and
+  that isolation is exactly why `run_replication_stage.sh` must be sourced — see Command Safety.
 
 ## Working Rules
 
@@ -338,6 +344,38 @@ before any Stage-B / rationale / faithfulness compute: three minutes decides a 4
 — read the collapse FACTOR it prints, not the rendered mean. Likewise `OMP_NUM_THREADS=64` on this shared
 box produced ~830 threads at load 600, turning a 4-minute fit into 87.
 
+### Added 2026-08-10/16 (the replication + L4 campaigns)
+
+**A results file existing is not the same as it being current.** `stage_a_history.json` from a killed
+lane sits on disk looking exactly like a live one. Twice this cost a wrong conclusion — once a reported
+"25x speedup" that was stale files, once an in-flight lane that looked stalled. Read **mtime**, or the
+queue log's START/exit pairing, never the file's mere presence.
+
+**This box is shared, and `nvidia-smi` does not show why you are slow.** These lanes are CPU-bound on
+row-by-row subgraph sampling and use about ONE core each, so GPU utilisation reads 100% and means
+nothing. The same `typed_static` lane measured ~38 min/epoch quiet and ~90 min/epoch when a co-tenant
+took 50 of 64 cores. Quote ETAs as ranges, re-measure, and check `/proc/loadavg` and `ps -eo pcpu`
+before blaming your own scheduling.
+
+**A free GPU does not stay free.** A worker preflighted card 2 at 78 GiB free, started a lane, and
+2h47m later a co-tenant reclaimed the card: the lane was SIGTERMed and the next four died instantly
+with CUDA OOM at "161 MiB free". Preflight is necessary, not sufficient. Any opportunistic worker must
+release its claim on failure so the main scheduler can retry, and be treated as best-effort.
+
+**Map `CUDA_VISIBLE_DEVICES` to physical cards before scheduling.** `nvidia-smi` index 3 on this box is
+a T400, not an A100, and smi ordering is not CUDA ordering. Read `torch.cuda.mem_get_info` per device
+and match on free memory; a preflight that only checks "is it an A100" will still put a 50 GiB lane on
+a card with 1 GiB free.
+
+**More concurrency is not more throughput when the bottleneck is CPU.** Six lanes on four cards ran
+~90 min/epoch against ~50 for four lanes; packing turned one queue into six slow ones and cost five
+OOM kills. Going 3→4 lanes costs one core of 64 and gains a whole GPU; going 4→6 loses outright.
+
+**An interim value from a partially-filled cell is not a preliminary answer, it is a different answer.**
+The L4 decomposition run with one re-draw at n=1 concluded the OPPOSITE of the n=5 result — that cell's
+mean carried a whole seed's worth of noise. Report per-cell n, and treat any component estimated from
+cells with unequal n as provisional until they fill.
+
 ## Verification Commands
 
 ```bash
@@ -353,6 +391,15 @@ Required checks:
 
 - **Safe to re-run anytime** (idempotent / deterministic): `./init.sh`, `pytest`, `compileall`,
   `run_module1_smoke.py`, `run_module2_smoke.py`, `run_module3_smoke.py`, `python -m tcell_pipeline.splits`.
+- **Idempotent campaign scripts — safe to re-run, they skip what landed:**
+  `run_replication_prep.sh`, `run_replication_campaign.sh`, `run_l4_finish.sh`, `run_l4_finalise.sh`,
+  `merge_registry_n7.py`, `tcell_pipeline.replication.pool`,
+  `tcell_pipeline.screening.variance_decomposition`.
+  `run_replication_stage.sh` must be SOURCED before any manual replication stage: it pins the feature
+  stores (without it every target silently gets a zero vector), redirects `SPLITS_ROOT` away from the
+  frozen `data/splits/`, and reads `CONDITIONS` from the DE provenance.
+  `merge_registry_n7.py` must be run before aggregating a FRESH screening root, or the report carries a
+  false "NOT comparable" flag — a fresh root starts with an empty registry and has no fold evidence.
 - **OVERWRITES THE FROZEN PROGRAM BASIS — treat as destructive:**
   `python -m tcell_pipeline.programs.run_program_basis`. This entry previously sat in the "safe to re-run"
   list above, which is true only in the narrow sense that the DEFAULT `sparse_pca`/K=128 fit is

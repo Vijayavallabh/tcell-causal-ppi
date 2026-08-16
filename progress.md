@@ -574,3 +574,59 @@ campaign and never trained; its on-target QC was run 2026-08-11 and passes (own-
 consistent). Norman and Tian CRISPRa are likewise built, passing and untrained, and both are
 activation where every trained dataset is knockdown. A fourth difficulty split (c070) is generated and
 untrained. All four are now queued.
+
+## 2026-08-11/16 — three untrained datasets, a reversal, and L4 closed
+
+A repo audit found three QC-passing DE matrices built during the previous campaign and never trained,
+plus a fourth difficulty split generated and never used. All were run. One of them overturned a
+conclusion written the same day.
+
+**The audit.** `ReplogleWeissman2022_K562_gwps` (genome-wide, 9,730 targets) was still building when
+the four-dataset campaign picked its datasets and nothing went back for it; its on-target QC was run
+2026-08-11 and passes (own-gene mean −1.361, 99% direction consistency, knockdown). Norman and Tian
+CRISPRa were likewise built, passing and untrained, and both are ACTIVATION where every trained dataset
+was knockdown. `splits_c070` (0.70/0.05) existed since the split sweep with nothing trained against it.
+
+**Four blockers cleared to run them.** The q_post schema gap recurred for a third time, so it is now
+stage 3a of the prep chain (`replication/backfill_qpost.py`) rather than another hand-patch. Writing it
+introduced a bug worth remembering: taking the row count as `len(obs[first_column])` returns 2 when
+that column is categorical (an h5py Group holding `categories`/`codes`), which wrote thirteen two-row
+columns into three matrices and made them unreadable. It only worked on the first four datasets because
+their first obs column happened to be a plain dataset. The module now reads n_obs from the index with a
+codes-aware fallback and ships a `repair()`; all ten matrices were verified to load through anndata.
+
+**NORMAN REVERSED THE UNTYPED-GRAPH CLAIM.** `untyped_gnn − expression_only` = **−0.0790**, 95% CI
+[−0.1351, −0.0229], Bonferroni 0.0414 — survives both corrections, NEGATIVE. Four of four seeds
+negative, gates alive. The five-dataset pool reported that morning (+0.0208 [+0.0047, +0.0369],
+p=0.011, excluding zero) is superseded: over eight datasets random-effects gives +0.0091
+[−0.0024, +0.0207], p=0.12, I²=87.5%. "Positive on 5 of 5" turned out to be a fact about which five
+datasets had been trained. Three per-dataset contrasts still clear correction — reference +0.0043,
+RPE1 +0.0675, Norman −0.0790 — and they **disagree in sign**. The paper was corrected throughout
+(abstract, Failure 3, cause C and its table row, checklist, conclusion), and the reading is stronger
+than the one it replaced: the structure-only arm has a real effect whose sign cannot be predicted from
+cell type or perturbation direction.
+
+**gwps strengthened the main null.** 9,730 targets, 12 lanes, zero failures. Where power is highest both
+contrasts are null with the tightest intervals in the study: h2a +0.0008 [−0.0042, +0.0058], untyped
++0.0069 [−0.0024, +0.0163]. The h2a pool over seven replication datasets became **+0.0018,
+RE 95% CI [−0.0028, +0.0065], I² = 39.2%, Q p = 0.13** — no significant heterogeneity, where every
+earlier version sat near I²=88%. Adding well-powered datasets shrank the between-dataset spread rather
+than widening it.
+
+**L4 closed.** 16 lanes across c070 and two 0.75/0.15 re-draws, 16/16 landed, 0 failures. Nested
+decomposition of h2a over 6 cells and 4 levels: sd_seed 0.01067 (26 df), sd_level 0.00329 (3 df),
+sd_redraw 0.00034 (2 df). For h1: 0.00524 / 0.00371 / 0.00250. The training seed is the largest term
+for both and 3.2× the difficulty effect for h2a; partition noise is contrast-dependent, large for h1
+and negligible for h2a; a difficulty effect on h2a is real but at 2–3 df the ratio is indicative only.
+The paper's appendix, which ended "this is cheap to check", now reports the check.
+
+**Two corrections on record.** (1) An interim L4 decomposition with one re-draw at n=1 concluded the
+opposite — that partition noise exceeded the difficulty effect. That cell mean rested on a single seed.
+(2) I asserted three re-draws already existed at 0.80/0.10 for h2a; they exist for **h1**, because
+`run_realization.sh` ran expression_only + condition_gated there. Each contrast has within-level spread
+at exactly one level, and the decomposition now reports that per contrast.
+
+**Operational lessons**, all in AGENTS.md: stale history files that look live, a shared box where
+`nvidia-smi` explains nothing (a co-tenant at 50 of 64 cores tripled per-epoch time), a "free" GPU
+reclaimed mid-flight, CUDA-vs-smi index mapping, and concurrency that reduces throughput when the
+bottleneck is CPU.

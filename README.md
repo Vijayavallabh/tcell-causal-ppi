@@ -147,6 +147,56 @@ The sealed challenge split stays sequestered: never run `evaluation/sealed_eval.
 per-experiment guide (architecture search, rationale audit, running seeds across several single-GPU
 machines) is in `docs/reproduction.md`.
 
+### Reproduce the multi-dataset replication (eight datasets)
+
+The replication trains the same nested family on public Perturb-seq screens from scPerturb. Every
+dataset is isolated by `INTERMEDIATE_ROOT`, which is why `run_replication_stage.sh` must be **sourced**
+before any manual stage: it pins the ESM-2 and PINNACLE stores back to the extended copies, redirects
+`SPLITS_ROOT` away from the frozen `data/splits/`, and reads the condition vocabulary from the DE
+provenance. Without it every target silently gets a zero feature vector and the graph arm trains on
+nothing.
+
+```bash
+# stages 2-6 for one dataset (CPU, idempotent). K per prereg Amendment 3.1: 128 where the train fold
+# has >= 256 rows, else the largest power of two <= train/2 -- a labelled deviation below that.
+./run_replication_prep.sh ReplogleWeissman2022_K562_gwps none 128
+
+# all lanes for all datasets across 4 GPUs; skips anything already landed, so it is safe to re-run
+setsid nohup ./run_replication_campaign.sh > data/logs/repl/campaign.log 2>&1 &
+
+# per dataset: the pre-registered contrasts under BOTH corrections
+SPLITS_ROOT=... SCREENING_ROOT=data/results/replication/<dataset> ... \
+PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3
+
+# pool across datasets: fixed-effect, random-effects, tau^2, I^2, Cochran's Q
+PYTHONPATH=src python -m tcell_pipeline.replication.pool --with-reference
+```
+
+Read the random-effects interval, not the fixed-effect one, whenever `I^2` is high — the two disagree
+for the untyped-graph contrast (FE excludes zero, RE does not, at `I^2` = 88%) and only one of them is
+honest about it.
+
+### Reproduce the difficulty-vs-noise decomposition (L4)
+
+Splits vary along two axes that are easy to confuse: the difficulty setting (threshold/cap) and the
+partition seed at a fixed setting. The decomposition separates them, plus training-seed noise.
+
+```bash
+# a fourth difficulty level, and re-draws at an existing one
+setsid nohup ./run_l4_finish.sh > data/logs/l4_finish.nohup.log 2>&1 &
+
+# waits for the workers, aggregates every root over exactly the seeds that landed, decomposes
+setsid nohup ./run_l4_finalise.sh > data/logs/l4_finalise.log 2>&1 &
+
+PYTHONPATH=src python -m tcell_pipeline.screening.variance_decomposition --contrast h2a
+```
+
+It returns `None`, never `0.0`, for a component no cell can identify, and prints the degrees of freedom
+behind each — with three or four levels these are 2-3 df, so the ratios are indicative and the tool
+says so. Coverage is not symmetric across contrasts: the 0.80/0.10 re-draws were run with
+`condition_gated`, so they identify h1's within-level variance, and the 0.75/0.15 re-draws identify
+h2a's.
+
 ## Repository layout
 
 | Path | What |

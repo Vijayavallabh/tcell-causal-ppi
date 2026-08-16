@@ -435,3 +435,44 @@ principled reason - no detectable perturbation effect - rather than only for bei
 cost of this: the pool loses BOTH of its primary/near-primary T-cell datasets, so the replication
 tests transfer to other lineages but contains no T-cell replication of the reference screen. That
 should be stated in the paper rather than left for a reader to notice.
+
+
+---
+
+## Trained pool, final (2026-08-16)
+
+Eight datasets have now been trained, not four. Three of the four added were found by a repo audit on
+2026-08-11: their DE matrices had been built during the earlier campaign, passed on-target QC, and were
+never trained — gwps because it was still building when the campaign picked its datasets, and nothing
+went back for it.
+
+| dataset | cells | rows | targets | K | direction | PINNACLE ctx | h2a | untyped − no-graph |
+|---|---|---|---|---|---|---|---|---|
+| ReplogleWeissman2022_K562_gwps | K562 | 9,730 | 9,730 | 128 | knockdown | none | +0.0008 | +0.0069 |
+| ReplogleWeissman2022_rpe1 | RPE1 | 2,122 | 2,122 | 128 | knockdown | RPE cell | −0.0196 | **+0.0675** |
+| ReplogleWeissman2022_K562_essential | K562 | 2,003 | 2,003 | 128 | knockdown | none | +0.0030 | +0.0081 |
+| FrangiehIzar2021_RNA | melanoma, 3 cond | 702 | 238 | 128 | knockdown | melanocyte | +0.0255 | +0.0194 |
+| TianKampmann2021_CRISPRi | iPSC neuron | 184 | 184 | 32 * | knockdown | none | +0.0332 | +0.0281 |
+| NormanWeissman2019_filtered | K562 | 105 | 105 | 16 * | **activation** | none | −0.0652 | **−0.0790** |
+| TianKampmann2021_CRISPRa | iPSC neuron | 100 | 100 | 16 * | **activation** | none | +0.0048 | +0.0226 |
+| PapalexiSatija2021_eccite_RNA | — | 25 | 25 | 8 * | — | none | not trained — below the 50-family floor |
+
+`*` K below the reference 128, a labelled deviation under prereg Amendment 3.1 (K = 128 where train
+rows >= 256, else the largest power of two <= train/2).
+
+**Excluded on QC:** DatlingerBock2017 and ShifrutMarson2018, no consistent on-target effect (51% / 50%
+direction consistency). They were the pool's only T-cell screens, so this replication still contains no
+T-cell replication of the reference — unchanged by the additions.
+
+**Coverage achieved:** five cell types (K562, RPE1, melanoma, iPSC neuron, and the reference's CD4 T
+cell), both perturbation directions, and target counts spanning 100 to 9,730.
+
+**Bold entries survive family-wise correction** and disagree in sign. That is the finding, not a
+tabulation artifact: the untyped arm's effect is real and its direction is not predictable from cell
+type or perturbation direction — the two activation datasets disagree with each other (−0.0790 and
++0.0226).
+
+Pooled: h2a over the seven replication datasets +0.0018, RE 95% CI [−0.0028, +0.0065], I² = 39.2%,
+Q p = 0.13. Untyped over all eight including the reference: FE +0.0051 [+0.0032, +0.0070] but RE
++0.0091 [−0.0024, +0.0207] at I² = 87.5%, so no pooled benefit.
+Reproduce: `PYTHONPATH=src .venv/bin/python -m tcell_pipeline.replication.pool [--with-reference]`.
