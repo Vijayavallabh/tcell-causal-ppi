@@ -1,3 +1,61 @@
+# A1 CLOSED (2026-08-18): edge typing hurts, and NEITHER of the two candidate routes is why
+
+Ten lanes, n=5 both arms, frozen fold, pre-registered in Amendments 4, 4a and 4b BEFORE any of them ran.
+83 GPU-hours. Artifact `data/results/screening_a1/a1_mechanism.json`.
+
+The n=7 family established that edge typing costs -0.0120 systema. Two explanations were confounded
+inside that number: the relation PARTITION being the wrong inductive bias, and typed message passing
+simply carrying 4x the message parameters over the same edges. Two arms separate them.
+
+| contrast | what it removes | mean | 95% CI | p | bonf | holm | survives |
+|---|---|---|---|---|---|---|---|
+| **D1** typed_shared − typed_static | the per-relation parameter multiplicity (4 message modules -> 1, 1.80M fewer parameters) | **+0.0004** | [-0.0048, +0.0057] | 0.83 | 1.000 | 0.829 | no |
+| **D2** typed_permuted − typed_static | the typing's information (labels reassigned at random, counts preserved exactly) | **+0.0065** | [-0.0017, +0.0147] | 0.091 | 0.182 | 0.182 | no |
+
+Family of two, Bonferroni AND Holm, survival requires both. **Both are null**, which is the
+("null","null") cell of the 2x2 fixed in Amendment 4.4:
+
+> The typed STRUCTURE hurts, and neither its parameter count nor its labels is the route.
+
+**Per-arm means at n=5 on the frozen fold:**
+
+    untyped_gnn      0.0902      the best graph arm
+    expression_only  0.0857      no graph
+    condition_gated  0.0838
+    typed_permuted   0.0791      random relation labels
+    typed_shared     0.0730      one message module for all relations
+    typed_static     0.0726      the true typing
+
+**What this rules out.**
+
+- **Not capacity.** Cutting the encoder's message parameters by a factor of four — 2,396,160 to 599,040,
+  a 47% cut in total parameters — moves systema by +0.0004. If the deficit were overfitting, this is the
+  intervention that would have fixed it.
+- **Not the annotation's content.** Giving every edge a random relation label, with each relation's edge
+  count preserved exactly and the sampled neighbourhood bit-identical, does not significantly change the
+  result. The point estimate is POSITIVE (+0.0065): if anything the true partition is slightly worse than
+  a random one. That is suggestive and NOT established — it does not clear correction and is reported as
+  a null under the rule fixed in advance.
+
+**What it leaves.** Both diagnostic arms remain far below the untyped GCN (shared -0.0172
+[-0.0199,-0.0145]; permuted -0.0111 [-0.0177,-0.0044]) and below no-graph (-0.0126 and -0.0065). So the
+damage lives in what all three typed arms SHARE and the untyped one lacks: signed messages
+(tanh x relu), the per-edge feature term, complex-membership nodes, the residual FFN, and `add`
+aggregation instead of GCN symmetric normalisation.
+
+**A4 makes that last item live again.** The 14-cell architecture search is what "refuted" the
+normalisation lever. Its entire spread across all 14 cells was 0.0089, while the untyped-minus-typed gap
+we measure at n=5 is 0.0176 — the search's single-seed cells were not resolving differences of the size
+that actually separate these arms. "Refuted within the searched space" was never established, for
+normalisation or for anything else it tried. This is a correction to a standing instruction in
+`NEXT_ACTIONS.txt` ("do not re-propose per-relation normalisation... a known dead end"), and it is on
+the record rather than acted on: nothing has been re-launched.
+
+**No contradiction stop.** Neither diagnostic arm beats expression_only; both are below it. Amendment
+4.5's ban stands anyway — a diagnostic arm may not be used to promote a graph claim.
+
+---
+
 # CONTRADICTION STOP FIRED — A3, 2026-08-16
 
 **The sign of "does the graph help" DEPENDS ON WHICH REPORTED METRIC YOU CHOOSE, and both signs clear a

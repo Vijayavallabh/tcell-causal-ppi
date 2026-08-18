@@ -1,5 +1,33 @@
 # Session Handoff
 
+## STOP — READ FIRST (2026-08-18 13:50): A1 closed; only the ladder is still running
+
+**RUNNING.** `run_a2_ladder.sh` since 13:46 on all four A100s — 48 lanes, ~66 GPU-h, about 17 wall-hours.
+`run_ladder_finalise.sh` is chained and writes `data/results/a2_ladder/floor.json` when they land.
+That is the LAST autonomous item; everything else in `NEXT_ACTIONS.txt` is closed.
+
+**A1's answer, and it is a clean negative.** Neither candidate route explains why edge typing costs
+$-0.0120$:
+
+    D1  typed_shared   - typed_static  = +0.0004  [-0.0048, +0.0057]  bonf 1.000   NULL
+    D2  typed_permuted - typed_static  = +0.0065  [-0.0017, +0.0147]  bonf 0.182   NULL
+
+Cutting the message parameters fourfold (47% of the whole model) does nothing, and randomising every
+relation label does nothing that clears correction — its point estimate is positive, i.e. the curated
+partition may be slightly worse than a random one, which is suggestive and NOT established. Both arms
+stay far below untyped and below no-graph, so the damage is in what all three typed arms share: signed
+messages, the per-edge feature term, complex nodes, the residual FFN, `add` instead of normalisation.
+
+**Eleven and a half hours of idle GPU, and why.** The first ladder launch refused at 02:06 because ONE
+card had 23 GiB free; the preflight exited rather than using the other three. Both runners now select
+usable cards and refuse only if none is usable.
+
+**A standing instruction is now wrong.** `NEXT_ACTIONS.txt` says not to re-propose per-relation
+normalisation because it was refuted. A4 measured that the search which refuted it spans 0.0089 across
+all 14 cells while the gap under study is 0.0176. Recorded, not acted on.
+
+---
+
 ## STOP — READ FIRST (2026-08-16 20:15): campaigns ARE running; A2-A5 closed today
 
 **RUNNING RIGHT NOW.**

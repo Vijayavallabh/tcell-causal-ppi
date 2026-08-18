@@ -63,14 +63,27 @@ echo "[a1] seeded fresh root with $(ls "$ROOT"/*/[0-4].parquet 2>/dev/null | wc 
 
 # nvidia-smi ordering is NOT cuda ordering on this box (its index 3 is a T400). Resolve every card
 # through torch, and refuse a card that is not an A100 or is already occupied.
+# SELECT usable cards; do not refuse the whole run because one is busy. The first version of this
+# preflight exited when ANY card failed, and a co-tenant holding card 2 at 02:06 cost eleven hours of
+# idle A100 time on the other three. A shared box makes per-card availability the normal case, so the
+# run proceeds on whatever is usable and says which cards it dropped.
+USABLE=""
 for g in $CARDS; do
   read -r name free <<< "$(CUDA_VISIBLE_DEVICES=$g .venv/bin/python -c \
     "import torch; f,_=torch.cuda.mem_get_info(0); \
      print(torch.cuda.get_device_properties(0).name.replace(' ','_'), int(f/2**30))" 2>/dev/null)"
-  case "$name" in *A100*) ;; *) echo "REFUSING: CUDA_VISIBLE_DEVICES=$g is '${name:-unreadable}', not an A100"; exit 2 ;; esac
-  [ "${free:-0}" -lt 40 ] && { echo "REFUSING: card $g has ${free:-0} GiB free (<40)"; exit 2; }
-  echo "[a1] card $g = $name, ${free} GiB free"
+  case "$name" in
+    *A100*)
+      if [ "${free:-0}" -lt 40 ]; then
+        echo "[a1] SKIP card $g: ${free:-0} GiB free (<40), someone else is on it"
+      else
+        USABLE="$USABLE $g"; echo "[a1] card $g = $name, ${free} GiB free"
+      fi ;;
+    *) echo "[a1] SKIP card $g: '${name:-unreadable}' is not an A100" ;;
+  esac
 done
+[ -z "$USABLE" ] && { echo "REFUSING: no usable A100 — every card is busy or unreadable"; exit 2; }
+CARDS="$USABLE"
 
 echo "[a1] $(date) START — root=$ROOT splits=$SPLITS_ROOT arms='$ARMS' seeds='$SEEDS' cards='$CARDS'"
 

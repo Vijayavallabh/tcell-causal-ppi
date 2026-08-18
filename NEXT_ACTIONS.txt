@@ -32,62 +32,46 @@ RAILS — never cross
   it governs. A factual record of what was run goes in RESULTS_SUMMARY.md, not the pre-registration.
 
 =======================================================================
-STATUS 2026-08-16 20:30 IST — what is running, what closed today
+STATUS 2026-08-18 13:50 IST — A1 CLOSED; the ladder is the only thing left
 =======================================================================
-EVERYTHING AUTONOMOUS IS NOW RUNNING OR DONE. run_overnight_chain.sh is driving the rest unattended:
-it waits for the typed_shared lanes, runs typed_permuted, aggregates A1, waits for the injected rung
-roots, runs the ladder, and writes the floor. Nothing below needs a human until the results land.
+A1  CLOSED 2026-08-18. Ten lanes, n=5 both arms, 83 GPU-h, pre-registered before any of them ran.
+      D1 typed_shared   - typed_static  = +0.0004 [-0.0048,+0.0057]  bonf 1.000  NULL
+      D2 typed_permuted - typed_static  = +0.0065 [-0.0017,+0.0147]  bonf 0.182  NULL
+    The ("null","null") cell of Amendment 4.4: the typed STRUCTURE hurts, and neither its parameter
+    count nor its labels is the route. Cutting message parameters 4x (2.40M -> 0.60M, 47% of the whole
+    model) moves systema by +0.0004. Randomising every relation label, counts preserved exactly, moves
+    it by +0.0065 and does not clear correction -- the point estimate says the curated partition is
+    slightly WORSE than a random one, which is suggestive and NOT established.
+    Both arms stay far below untyped (-0.0172, -0.0111) and below no-graph (-0.0126, -0.0065), so the
+    damage is in what all three typed arms SHARE: signed messages, the per-edge feature term, complex
+    nodes, the residual FFN, and `add` instead of degree normalisation.
+    data/results/screening_a1/a1_mechanism.json.
+A2(a) RUNNING since 2026-08-18 13:46, all four cards, 48 lanes (6 rungs x 2 arms x 4 seeds), ~66 GPU-h,
+    so roughly 17 wall-hours. run_ladder_finalise.sh is chained and writes
+    data/results/a2_ladder/floor.json when the lanes are quiet. THIS IS THE LAST AUTONOMOUS ITEM.
+A2(b), A3, A4, A5  CLOSED 2026-08-16. See RESULTS_SUMMARY.md.
 
-A1  RUNNING. typed_shared seeds 0-3 on all four A100s since 19:06 (seed 4 queued behind them),
-    ~35-50 min/epoch, early stop expected near epoch 11-13. typed_permuted is implemented, tested and
-    CHAINED. Pre-registered in Amendments 4, 4a and 4b; three corrections went in BEFORE any lane ran:
-      - typed_shared alone cannot attribute damage to parameter count (tying the weights removes the
-        partition and the parameters in ONE intervention under add-aggregation). typed_permuted breaks
-        the tie. The decision rule originally written in this file is superseded.
-      - permuting the STORED GRAPH would have been confounded: the sampler ranks neighbours BY
-        RELATION (_PRIORITY_BONUS gives physical/co-complex 1e6 over functional), so it changes WHICH
-        neighbours enter the subgraph. Relabelling now happens after sampling, via a _sample hook.
-      - Amendment 4.4 had a SIGN ERROR that would have reversed the reading of D2. 4b fixes it: both
-        contrasts are (arm - typed_static), so POSITIVE means the intervention improved on typed.
-A2(a) QUEUED, infrastructure complete. Rung roots building under data/intermediate/inject. The leakage
-    test caught a real leak before any lane ran: the scaling constant was computed over train AND
-    validation rows, so tampering with one validation response rescaled every injected value by 46x.
-    Amendment 6 also replaces the delta=0 negative control (the untouched data already contains a
-    corrected-significant +0.0043, so it is a control the data cannot pass) with a permuted rung, and
-    changes the arm to untyped_gnn (66 GPU-h against ~200, and it is the best detector we have).
-A2(b) CLOSED. data/results/a2_power/power_simulation.json. Detecting the untyped arm's own +0.0043
-    ACROSS DATASETS needs ~250 datasets (tau=0.0205, the datasets disagree in sign); scPerturb has 44.
-    On the frozen fold the measured MDE at n=7 is 0.0075, or 0.0185 if the claim must survive
-    re-drawing the fold. It also corrected the paper: the between-re-draw component is 0.0003, not
-    "at least as large as" the seed's 0.0107.
-A3  CLOSED, and it fired the CONTRADICTION STOP. The untyped contrast is -0.0424 on each
-    perturbation's top-20 DE genes (GEARS) and +0.0089 over all 10,282 (TxPert), BOTH surviving
-    Bonferroni and Holm over all twenty endpoint-by-contrast cells, crossing zero between the 250th
-    and 500th DE gene. Both effects are real; which one a paper reports is a choice of convention.
-    h2a is negative and corrected-significant at EVERY k, so the typed deficit is not a metric
-    artifact. data/results/a3_external/{rescored,k_sweep}.json. Flagged atop RESULTS_SUMMARY.md.
-A4  CLOSED. The 14-cell search spans +0.0051 to -0.0037; 14 draws of seed noise alone would span
-    0.0147. Its entire spread is inside what re-seeding ONE configuration produces, and its best cell
-    would need 12 paired seeds where every cell was run at 1.
-A5  CLOSED, and it corrected us. "92% of cases beat random on necessity" is a 49% improvement over a
-    quantity of order 1e-7. Cause E's source ablation is largely an edge-count effect: STRING is 85.4%
-    of the graph and leads HuRI by 1.7x per edge, not the ~200x the raw deltas suggest.
+COST OF A BRITTLE PREFLIGHT, recorded so it is not repeated. The first ladder launch REFUSED at 02:06
+on 2026-08-18 because ONE card had 23 GiB free, and the run_overnight_chain exited. Three idle A100s for
+eleven and a half hours. Both runner scripts now SELECT usable cards and refuse only if none is usable.
+On a shared box, per-card availability is the normal case and not an error.
 
-PAPER. Body still EXACTLY 8pp (References open page 9), 0 errors, 0 undefined, 0 overfull >2pt.
-./check_paper.sh checks all four gates in one command. SEPARATELY: abstract_plain.txt — the text
-SUBMISSION.md tells a human to paste into OpenReview — was a full campaign out of date and still
-carried the RETRACTED "positive on all five independent datasets". Regenerated from main.tex.
+A STANDING INSTRUCTION IN THIS FILE IS NOW WRONG, and it is recorded rather than acted on. This file
+says "DO NOT re-propose per-relation normalisation or confidence pruning -- both already refuted".
+A4 measured that the 14-cell search which refuted them spans 0.0089 across all its cells, while the
+untyped-minus-typed gap on the same fold is 0.0176. The search was not resolving differences of the
+size that separate these arms, so nothing was refuted within it. Whether to re-run the normalisation
+lever at n>=4 seeds is now an open question, not a dead end. Nothing has been launched.
 
-WHEN THE CHAIN FINISHES, read in order:
-  data/results/screening_a1/a1_mechanism.json   D1, D2 and the 2x2 verdict
-  data/results/a2_ladder/floor.json             the measured detection floor
-Then integrate: RESULTS_SUMMARY.md, the paper, and this file. The chain edits none of them.
+PAPER. Body still EXACTLY 8pp (References open page 9), 0 errors / 0 undefined / 0 overfull >2pt,
+20 pages total. ./check_paper.sh checks all four gates at once. A1 added as appendix app:mechanism plus
+one sentence in the cause-C paragraph.
 
 =======================================================================
 THE AUTONOMOUS WORK, in priority order
 =======================================================================
 
---- A1. WHY does edge typing hurt?  RUNNING since 2026-08-16 19:06. See STATUS above. ---------
+--- A1. WHY does edge typing hurt?  CLOSED 2026-08-18. See STATUS above. ---------------------
 The n=7 family says WHICH component costs the graph its benefit but not why, and the paper currently
 stops at "our encoder discards the signal". Naming the mechanism turns a diagnosis into a prescription,
 which is what this venue's rubric rewards most.

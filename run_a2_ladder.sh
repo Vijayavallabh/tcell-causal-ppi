@@ -10,9 +10,10 @@
 #       --out data/intermediate/inject          # BUILD THE RUNGS FIRST (CPU, ~20 min, ~11 GB)
 #   setsid nohup ./run_a2_ladder.sh > data/logs/a2_ladder.nohup.log 2>&1 &
 #
-# WAIT FOR A1. This wants all four A100s and A1's typed_shared wave is holding them. The preflight
-# refuses to start on a card with less than 40 GiB free, so an early launch fails fast rather than
-# fighting for memory, but it will not queue politely - do not start it until A1's lanes have landed.
+# CARD SELECTION IS BEST-EFFORT. The preflight SKIPS any card with less than 40 GiB free and runs on
+# whatever is left, refusing only if nothing is usable. An earlier version exited when any single card
+# failed, and a co-tenant on card 2 at 02:06 on 2026-08-18 cost eleven hours of idle time on the other
+# three. On a shared box, per-card availability is the normal case, not an error.
 #
 # IDEMPOTENT: every lane checks for its parquet and takes an atomic claim, so a re-run resumes.
 #
@@ -44,14 +45,27 @@ for r in $rungs; do
 done
 echo "[a2] rungs: $(echo $rungs | tr ' ' '\n' | xargs -n1 basename | tr '\n' ' ')"
 
+# SELECT usable cards; do not refuse the whole run because one is busy. The first version of this
+# preflight exited when ANY card failed, and a co-tenant holding card 2 at 02:06 cost eleven hours of
+# idle A100 time on the other three. A shared box makes per-card availability the normal case, so the
+# run proceeds on whatever is usable and says which cards it dropped.
+USABLE=""
 for g in $CARDS; do
   read -r name free <<< "$(CUDA_VISIBLE_DEVICES=$g .venv/bin/python -c \
     "import torch; f,_=torch.cuda.mem_get_info(0); \
      print(torch.cuda.get_device_properties(0).name.replace(' ','_'), int(f/2**30))" 2>/dev/null)"
-  case "$name" in *A100*) ;; *) echo "REFUSING: card $g is '${name:-unreadable}', not an A100"; exit 2 ;; esac
-  [ "${free:-0}" -lt 40 ] && { echo "REFUSING: card $g has ${free:-0} GiB free (<40) — is A1 still running?"; exit 2; }
-  echo "[a2] card $g = $name, ${free} GiB free"
+  case "$name" in
+    *A100*)
+      if [ "${free:-0}" -lt 40 ]; then
+        echo "[a2] SKIP card $g: ${free:-0} GiB free (<40), someone else is on it"
+      else
+        USABLE="$USABLE $g"; echo "[a2] card $g = $name, ${free} GiB free"
+      fi ;;
+    *) echo "[a2] SKIP card $g: '${name:-unreadable}' is not an A100" ;;
+  esac
 done
+[ -z "$USABLE" ] && { echo "REFUSING: no usable A100 — every card is busy or unreadable"; exit 2; }
+CARDS="$USABLE"
 
 echo "[a2] $(date) START — arms='$ARMS' seeds='$SEEDS' cards='$CARDS'"
 
