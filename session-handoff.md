@@ -12,7 +12,7 @@ $-0.0120$:
     D1  typed_shared   - typed_static  = +0.0004  [-0.0048, +0.0057]  bonf 1.000   NULL
     D2  typed_permuted - typed_static  = +0.0065  [-0.0017, +0.0147]  bonf 0.182   NULL
 
-Cutting the message parameters fourfold (47% of the whole model) does nothing, and randomising every
+Cutting the message parameters fourfold (34% of the whole model) does nothing, and randomising every
 relation label does nothing that clears correction — its point estimate is positive, i.e. the curated
 partition may be slightly worse than a random one, which is suggestive and NOT established. Both arms
 stay far below untyped and below no-graph, so the damage is in what all three typed arms share: signed

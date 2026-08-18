@@ -38,7 +38,7 @@ A1  CLOSED 2026-08-18. Ten lanes, n=5 both arms, 83 GPU-h, pre-registered before
       D1 typed_shared   - typed_static  = +0.0004 [-0.0048,+0.0057]  bonf 1.000  NULL
       D2 typed_permuted - typed_static  = +0.0065 [-0.0017,+0.0147]  bonf 0.182  NULL
     The ("null","null") cell of Amendment 4.4: the typed STRUCTURE hurts, and neither its parameter
-    count nor its labels is the route. Cutting message parameters 4x (2.40M -> 0.60M, 47% of the whole
+    count nor its labels is the route. Cutting message parameters 4x (2.40M -> 0.60M, 34% of the whole
     model) moves systema by +0.0004. Randomising every relation label, counts preserved exactly, moves
     it by +0.0065 and does not clear correction -- the point estimate says the curated partition is
     slightly WORSE than a random one, which is suggestive and NOT established.

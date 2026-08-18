@@ -9,7 +9,7 @@ simply carrying 4x the message parameters over the same edges. Two arms separate
 
 | contrast | what it removes | mean | 95% CI | p | bonf | holm | survives |
 |---|---|---|---|---|---|---|---|
-| **D1** typed_shared − typed_static | the per-relation parameter multiplicity (4 message modules -> 1, 1.80M fewer parameters) | **+0.0004** | [-0.0048, +0.0057] | 0.83 | 1.000 | 0.829 | no |
+| **D1** typed_shared − typed_static | the per-relation parameter multiplicity (4 message modules -> 1; 1.80M fewer parameters, 34% of the model) | **+0.0004** | [-0.0048, +0.0057] | 0.83 | 1.000 | 0.829 | no |
 | **D2** typed_permuted − typed_static | the typing's information (labels reassigned at random, counts preserved exactly) | **+0.0065** | [-0.0017, +0.0147] | 0.091 | 0.182 | 0.182 | no |
 
 Family of two, Bonferroni AND Holm, survival requires both. **Both are null**, which is the
@@ -29,7 +29,7 @@ Family of two, Bonferroni AND Holm, survival requires both. **Both are null**, w
 **What this rules out.**
 
 - **Not capacity.** Cutting the encoder's message parameters by a factor of four — 2,396,160 to 599,040,
-  a 47% cut in total parameters — moves systema by +0.0004. If the deficit were overfitting, this is the
+  a 34% cut in the model's total parameters (5,254,884 to 3,457,764) — moves systema by +0.0004. If the deficit were overfitting, this is the
   intervention that would have fixed it.
 - **Not the annotation's content.** Giving every edge a random relation label, with each relation's edge
   count preserved exactly and the sampled neighbourhood bit-identical, does not significantly change the
