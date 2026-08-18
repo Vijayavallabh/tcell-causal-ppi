@@ -165,7 +165,7 @@ Table~\ref{tab:causes} gives every cause its evidence and verdict. Causes A, B a
 
 \paragraph{C. The architecture is wrong, and this is the cause that survives.} We first recorded this cause as refuted. A $14$-cell search over per-relation normalization, edge-confidence pruning, STRING-weighted convolution and GATv2 attention \citep{velickovic2018gat,brody2022gatv2} left the default gated encoder on top, every lever neutral or worse (Appendix~\ref{app:archsearch}). Two results there are still instructive: per-relation normalization depresses the mean gate by an order of magnitude ($0.03$ and $0.12$ against $0.73$), the \S\ref{sec:confound} failure arriving through another door, and pruning low-confidence functional edges lowers the score, which is evidence for E against the intuition that motivated it.
 
-That search was the wrong shape. Every one of its $14$ cells varied \emph{how} the typed, gated encoder does its message passing; not one removed the typing and gating themselves. The lever it never pulled is the one that moves -- in both directions, depending on the dataset -- and running the whole family at $n{=}7$ on the frozen fold localises the damage to a single component. Ordered by \textsc{systema}: untyped $0.0904$, expression-only $0.0861$, condition-gated $0.0829$, typed-static $0.0740$. Plain topology beats no graph; adding per-relation edge typing does not merely fail to help but is \emph{actively harmful} ($-0.0120$, $95\%$ CI $[-0.0160,-0.0080]$, seven of seven seeds negative, Bonferroni and Holm both $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0077$ against typing's $-0.0120$; the raw interval excludes zero but it does \emph{not} survive correction, Bonferroni $0.131$). The gate is not adding signal. It is partly repairing a wound the typing inflicts, and the repair is not even reliable: the gated arm ends up $-0.0043$ against no graph at all. On this same reference screen and frozen fold, an untyped arm -- identical topology, no edge typing, no condition gating -- beats the expression-only baseline by $+0.0043$ \textsc{systema} at $n{=}7$ ($95\%$ CI $[+0.0017,+0.0069]$, all seven seeds positive, $p=0.0068$, Bonferroni $0.027$ and Holm $0.021$), surviving both corrections over the full pre-registered family of four. A search can only refute a cause inside the space it searches, and ours excluded its own premise. \textbf{Survives}, and it is the cause that best explains the null.
+That search was the wrong shape. Every one of its $14$ cells varied \emph{how} the typed, gated encoder does its message passing; not one removed the typing and gating themselves. The lever it never pulled is the one that moves -- in both directions, depending on the dataset -- and running the whole family at $n{=}7$ on the frozen fold localises the damage to a single component. Ordered by \textsc{systema}: untyped $0.0904$, expression-only $0.0861$, condition-gated $0.0829$, typed-static $0.0740$. Plain topology beats no graph; adding per-relation edge typing does not merely fail to help but is \emph{actively harmful} ($-0.0120$, $95\%$ CI $[-0.0160,-0.0080]$, seven of seven seeds negative, Bonferroni and Holm both $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0077$ against typing's $-0.0120$; the raw interval excludes zero but it does \emph{not} survive correction, Bonferroni $0.131$). The gate is not adding signal. It is partly repairing a wound the typing inflicts, and the repair is not even reliable: the gated arm ends up $-0.0043$ against no graph at all. On this same reference screen and frozen fold, an untyped arm -- identical topology, no edge typing, no condition gating -- beats the expression-only baseline by $+0.0043$ \textsc{systema} at $n{=}7$ ($95\%$ CI $[+0.0017,+0.0069]$, all seven seeds positive, $p=0.0068$, Bonferroni $0.027$ and Holm $0.021$), surviving both corrections over the full pre-registered family of four. A search can only refute a cause inside the space it searches, and ours excluded its own premise. \textbf{Survives}, and it is the cause that best explains the null. Which \emph{part} of the typing costs this is a further question, and the answer is neither of the obvious two: tying the relation weights together and randomising the relation labels both leave the deficit intact (Appendix~\ref{app:mechanism}).
 
 \paragraph{D. The baseline was never graph-free.} Our \textsc{expression\_only} arm turns the message-passing pathway off, and it is what the field would call the no-graph baseline. But the target is described by a frozen feature vector that already carries graph-derived information: three PPI degree scalars, of which the physical and functional degrees are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), plus a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-contextualized interaction network. So the contrast we and others label ``graph versus no graph'' actually measures \emph{the marginal value of message passing over a node-level graph summary}, and the ablation is blind to that summary by construction.
 
@@ -295,6 +295,62 @@ condition\_gated, prune functional $<0.7$    & $0.0828$ & $0.30$ \\
 
 % AUTO 2026-08-16: the search was also underpowered, which we can now say with a number rather than a worry.
 \paragraph{The search was not only the wrong shape. It could not have found anything.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. We ranked $14$ architectures on differences we had no power to resolve, and then reported the ranking as though it had refuted something. Anyone reading a single-seed architecture table, ours included, should ask what its rows would look like re-seeded.
+
+% AUTO 2026-08-18: A1 landed. Two diagnostic arms, pre-registered before they ran, 83 GPU-hours.
+\section{Which part of the typing does the damage?}
+\label{app:mechanism}
+
+\S\ref{sec:causes} localises the deficit to edge typing: $-0.0120$ \textsc{systema} at $n{=}7$, seven of
+seven seeds, surviving both corrections. It does not say what about typing costs that. Two explanations
+are confounded inside the number. The relation partition may be the wrong inductive bias; or typed
+message passing simply carries four times the message parameters over the same edges, in which case the
+damage is capacity and has nothing to do with evidence types. Two arms separate them, both registered
+with their decision rule before either was trained.
+
+\textsc{typed\_shared} ties one message module across all four relations instead of one each, cutting
+$2{,}396{,}160$ message parameters to $599{,}040$ and total parameters by $47\%$, and changing nothing
+else. \textsc{typed\_permuted} keeps the per-relation modules and reassigns every protein-protein edge's
+relation label at random, preserving each relation's edge count exactly. The relabelling happens
+\emph{after} neighbourhood sampling, because the sampler ranks candidate neighbours by relation, so
+permuting the stored graph would have changed which neighbours enter the subgraph rather than only which
+weights process them.
+
+\begin{table}[h]
+\centering\small
+\caption{The two diagnostic contrasts, $n{=}5$ paired seeds on the frozen fold, corrected as their own
+family of two with Bonferroni and Holm both required. Positive means the intervention improved on the
+typed encoder. Neither clears.}
+\label{tab:mechanism}
+\begin{tabular}{llrrr}
+\toprule
+contrast & what it removes & mean & $95\%$ CI & $p_{\mathrm{Bonf}}$ \\
+\midrule
+$D_1$ shared $-$ static   & the per-relation parameters & $+0.0004$ & $[-0.0048,+0.0057]$ & $1.000$ \\
+$D_2$ permuted $-$ static & the typing's information    & $+0.0065$ & $[-0.0017,+0.0147]$ & $0.182$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Neither route is it. Cutting the message parameters by a factor of four moves the primary endpoint by
+$+0.0004$; if the deficit were capacity or overfitting, that is the intervention that would have fixed
+it. Replacing the true relation partition with a random one of identical sizes moves it by $+0.0065$,
+which does not clear correction. That second point estimate is \emph{positive}, so if anything the
+curated partition is slightly worse than a random one, but we report it as the null our rule makes it
+and not as the finding it would be nice to have.
+
+What remains is what all three typed arms share and the untyped one does not. Both diagnostic arms sit
+well below the untyped \textsc{gcn} ($-0.0172$ and $-0.0111$) and below the no-graph baseline ($-0.0126$
+and $-0.0065$), so the deficit survives both interventions intact. The candidates left are the form of
+the message rather than its routing: signed messages, the per-edge feature term, the complex-membership
+node type, the residual feed-forward block, and summing a relation's messages instead of normalising
+them by degree.
+
+That last one deserves a note, because we previously reported it as refuted. The architecture search
+that refuted it spans $0.0089$ across all $14$ of its cells, while the untyped-minus-typed gap we measure
+at $n{=}5$ on the same fold is $0.0176$. A search whose whole range is half the size of the difference
+under study was not resolving these arms at all, so ``refuted within the searched space'' was never
+established for normalisation either. We did not re-run it; we are recording that the earlier refutation
+does not hold, which is the same lesson as \S\ref{sec:causes}, arriving one level further down.
 
 \section{Replication protocol and dataset survey}
 \label{app:repl}
