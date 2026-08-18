@@ -308,7 +308,7 @@ damage is capacity and has nothing to do with evidence types. Two arms separate 
 with their decision rule before either was trained.
 
 \textsc{typed\_shared} ties one message module across all four relations instead of one each, cutting
-$2{,}396{,}160$ message parameters to $599{,}040$ and total parameters by $47\%$, and changing nothing
+$2{,}396{,}160$ message parameters to $599{,}040$ and the model's total parameters by $34\%$ ($5{,}254{,}884$ to $3{,}457{,}764$), and changing nothing
 else. \textsc{typed\_permuted} keeps the per-relation modules and reassigns every protein-protein edge's
 relation label at random, preserving each relation's edge count exactly. The relabelling happens
 \emph{after} neighbourhood sampling, because the sampler ranks candidate neighbours by relation, so
@@ -331,8 +331,8 @@ $D_2$ permuted $-$ static & the typing's information    & $+0.0065$ & $[-0.0017,
 \end{tabular}
 \end{table}
 
-Neither route is it. Cutting the message parameters by a factor of four moves the primary endpoint by
-$+0.0004$; if the deficit were capacity or overfitting, that is the intervention that would have fixed
+Neither route is it. Cutting the message parameters by a factor of four, a third of the whole model, moves the primary
+endpoint by $+0.0004$; if the deficit were capacity or overfitting, that is the intervention that would have fixed
 it. Replacing the true relation partition with a random one of identical sizes moves it by $+0.0065$,
 which does not clear correction. That second point estimate is \emph{positive}, so if anything the
 curated partition is slightly worse than a random one, but we report it as the null our rule makes it
