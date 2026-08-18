@@ -155,3 +155,63 @@ def test_neighbour_operator_row_normalises_and_drops_the_diagonal():
     assert np.allclose(A.diagonal(), 0.0)
     assert np.allclose(np.asarray(A.sum(1)).reshape(-1), [1.0, 1.0, 1.0])
     assert A[0, 1] == pytest.approx(1.0)     # A's only neighbour is B
+
+
+# --- integration: the BUILT rungs, checked against the real artifacts ------------------------------
+def _rung_root():
+    from pathlib import Path
+    r = Path("data/intermediate/inject/d020")
+    return r if (r / "de_layers" / "zscore.npz").exists() else None
+
+
+@pytest.mark.skipif(_rung_root() is None, reason="no built rung under data/intermediate/inject/d020")
+def test_a_built_rung_injects_train_and_val_and_leaves_the_sealed_rows_bit_identical():
+    """Rail 1, checked on the real 33,983-row matrix rather than argued from the code. Challenge and
+    calibration rows must differ from the reference by EXACTLY zero, and train and validation rows
+    must differ by something. Run before spending GPU-days on the rungs, not after."""
+    import numpy as np
+    import pandas as pd
+
+    from tcell_pipeline import config
+    from tcell_pipeline.screening.inject_signal import role_map
+
+    root = _rung_root()
+    Zi = sp.load_npz(root / "de_layers" / "zscore.npz").tocsr()
+    Zr = sp.load_npz(config.DE_LAYERS_DIR / "zscore.npz").tocsr()
+    assert Zi.shape == Zr.shape and Zi.dtype == Zr.dtype
+
+    rt = pd.read_parquet(config.DE_OBS_PATH,
+                         columns=["target_contrast_gene_name"])["target_contrast_gene_name"]
+    roles = role_map()
+    role = np.array([roles.get(str(t), "absent") for t in rt])
+    for r in ("challenge", "calibration", "absent"):
+        idx = np.flatnonzero(role == r)[:300]
+        if idx.size:
+            d = Zi[idx].toarray() - Zr[idx].toarray()
+            assert np.abs(d).max() == 0.0, f"{r} rows were modified — rail 1 violated"
+    for r in ("train", "val"):
+        idx = np.flatnonzero(role == r)[:300]
+        assert idx.size and np.abs(Zi[idx].toarray() - Zr[idx].toarray()).max() > 0, \
+            f"{r} rows carry no injection"
+
+
+@pytest.mark.skipif(_rung_root() is None, reason="no built rung under data/intermediate/inject/d020")
+def test_a_built_rung_still_points_at_the_real_feature_stores():
+    """The manufactured-null hazard: INTERMEDIATE_ROOT isolation redirects the embedding stores too,
+    and a rung whose features are all-zero would train a graph arm on nothing and still report a
+    number. The rung symlinks them back; this asserts the symlinks resolve to real vectors."""
+    import numpy as np
+    import pandas as pd
+
+    from tcell_pipeline import config
+
+    root = _rung_root()
+    for name, dim in (("plm_embeddings.parquet", config.PLM_EMBED_DIM),
+                      ("pinnacle_embeddings.parquet", config.PINNACLE_EMBED_DIM)):
+        p = root / name
+        assert p.exists(), f"{name} missing from the rung root"
+        df = pd.read_parquet(p)
+        v = np.stack(df["embedding"].to_numpy()[:200])
+        assert v.shape[1] == dim
+        assert int((np.abs(v).sum(1) == 0).sum()) == 0, f"{name} has all-zero rows"
+        assert v.std() > 0.01
