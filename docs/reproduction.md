@@ -1106,6 +1106,18 @@ PYTHONPATH=src python -m tcell_pipeline.screening.rank_deciles \
     --out data/results/b2_deciles/deciles.json
 ```
 
+#### Is a planned run worth its GPU-hours? (B3)
+
+Answered *before* spending them, from the landed ladder's own intervals. The proposed second
+scrambled-control rung at `delta=0.10` turned out unable to distinguish proportional damage from zero at
+four seeds under any measured spread, so it was not run and the paper's claim was labelled with the
+magnitude it was measured at instead.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.b3_power \
+    --out data/results/a2_ladder/b3_power.json     # sensitivity analysis, NOT observed power
+```
+
 #### Could the architecture search have found anything? (A4) and what the rationale ratios mean (A5)
 
 ```bash
