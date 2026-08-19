@@ -122,14 +122,24 @@ machinery. That turns "it flips" into "the graph helps on genes ranked X to Y an
 a statement about what a PPI prior is actually good for and the most portable thing in the paper.
 CHEAP, needs no GPU, and it is the natural first item if the cards are contended.
 
---- B3. Does the wrong-prior damage SCALE?  ~22 GPU-h ------------------------------------------
+--- B3. Does the wrong-prior damage SCALE?  *** ANSWERED WITHOUT RUNNING IT, 2026-08-19 *** ----
 The scrambled control's increment over the zero point is -0.0050 ([-0.0083,-0.0016]): injecting
 structure that follows the WRONG graph destroys the real benefit rather than merely failing to help.
 That claim currently rests on ONE condition at ONE delta.
-CLOSE WITH: a second permuted rung at delta=0.10, 4 seeds x 2 arms, through the existing
-inject_signal --permute-seed path and run_a2_ladder.sh. Pre-register it as an extension of Amendment 6
-before running. If the damage is roughly proportional to delta the claim generalises; if it appears
-only at 0.40 it is a statement about large injections and must be labelled that way.
+DO NOT RUN THE delta=0.10 RUNG. The power calculation was done first and it cannot answer the question.
+Artifact data/results/a2_ladder/b3_power.json, module screening/b3_power.py, all numbers re-derived from
+the landed ladder's own intervals rather than assumed:
+  - proportional damage predicts -0.0012 at delta=0.10; constant damage predicts -0.0050.
+  - MDE at n=4 is 0.0044 on the control's own seed spread and 0.0082 on the injected rungs' median,
+    and 0.0080 once the enlarged ladder family is corrected for.
+  - So a delta=0.10 rung cannot distinguish proportional damage from ZERO under any measured spread,
+    and cannot clear correction even if the damage were CONSTANT. Detecting the proportional prediction
+    needs 25 seeds on the control's spread, 81 on the rungs'.
+An underpowered second rung would have produced a null that meant nothing - which is precisely the
+mistake A4 caught the 14-cell architecture search making, and it would have cost ~22 GPU-h to repeat it.
+WHAT WAS DONE INSTEAD, free: the paper's claim is now labelled with the magnitude it was measured at.
+app:floor says the damage is measured at one injection size, that the scaling is left open, and what
+settling it would cost. That is the honest version of the sentence B3 was going to check.
 
 --- B4. Tighten the floor below 0.02?  CONSIDERED AND DEPRIORITISED ----------------------------
 The floor is reported as "at or below 0.02" because 0.02 is the smallest rung we injected, so smaller
@@ -303,9 +313,9 @@ INTEGRATION + REPORTING
 
 ORDER OF WORK (updated 2026-08-19 20:30). B2, B5 and B6 are closed and B1a is running on three cards.
 Nothing CPU-only is left. The next decision point is b1_message_form.json: read it, then choose B1b-d
-under Amendment 7.3. B3 needs a card and all three usable ones are busy until B1a's second wave drains
-(card 2 sits at 22 GiB, below the 40 GiB preflight); it is the right thing to launch the moment a card
-frees. B4 is deprioritised on purpose and the reason is written above.
+under Amendment 7.3. B3 is now ANSWERED WITHOUT RUNNING and needs no card at all - see its section.
+B4 remains deprioritised on purpose. So once B1a lands there is no queued GPU work: the next decision
+is which of B1b-d to run, and that decision is Amendment 7.3's to make, not a default.
 
 RE-MEASURE per-epoch cost on the first lane of any new campaign rather than extrapolating: the same
 lane has measured 38 to 90 min/epoch on this box depending on who else is running.

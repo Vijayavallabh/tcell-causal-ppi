@@ -1,3 +1,38 @@
+# B3 ANSWERED WITHOUT RUNNING IT (2026-08-19): the delta=0.10 control rung cannot settle the question
+
+Artifact `data/results/a2_ladder/b3_power.json`, module `screening/b3_power.py`. A sensitivity analysis
+(what could this design detect?), NOT observed power - computed from the design and the measured
+variance, never from a p-value the experiment produced.
+
+A2(a) measured the scrambled control's damage at ONE injection size: -0.0050 at delta=0.40. Two
+hypotheses fit that single point equally well and differ fourfold at delta=0.10, which is where the
+planned second rung would sit.
+
+| quantity | value |
+|---|---|
+| proportional damage predicts at delta=0.10 | **-0.0012** |
+| constant damage predicts at delta=0.10 | -0.0050 |
+| measured per-seed sd, the control rung | 0.00212 |
+| measured per-seed sd, injected rungs (median) | 0.00392 |
+| MDE at n=4, control sd, uncorrected | 0.0044 |
+| MDE at n=4, injected-rung sd, uncorrected | 0.0082 |
+| MDE at n=4, control sd, Bonferroni over the enlarged family | 0.0080 |
+| seeds needed for the proportional prediction | **25** (control sd) / **81** (rung sd) |
+
+**Verdict: do not run it.** At n=4 the rung cannot distinguish proportional damage from zero under any
+measured spread, and cannot clear correction even if the damage were constant. A null from it would have
+meant nothing - the exact mistake A4 caught the 14-cell architecture search making - at a cost of about
+22 GPU-hours.
+
+**What was done instead, for free.** The paper's claim is now labelled with the magnitude it was
+measured at. `app:floor` states that the damage is measured at one injection size, that whether it
+scales is left open, and what settling it would cost. Before this the appendix generalised to "a prior
+that is confidently wrong is worse than no prior" with no delta qualifier.
+
+The SD is recovered by inverting each rung's REPORTED confidence interval, because the ladder report
+persists intervals rather than raw per-seed deltas; the inversion is round-tripped against scipy in
+`test_b3_power.py`, since every MDE above is wrong if it is wrong.
+
 # B2 CLOSED (2026-08-19): the graph's harm is confined to the twenty genes each perturbation moves hardest
 
 No training. Pre-registered as Amendment 8 before the numbers were read. Artifact

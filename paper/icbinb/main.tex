@@ -623,6 +623,20 @@ also the sharpest reply we can give to our own paper: a null can mean the prior 
 that the encoder discards it, or that the graph is wrong, and only the last of those makes the model
 worse than having no graph at all.
 
+% AUTO 2026-08-19: B3 --- what this control does NOT establish, and what settling it would cost.
+\textbf{This is one magnitude, and we say so rather than generalising it.} The damage is measured at a
+single injection size, $0.40$ response SDs, which is a large one. Whether it scales down --- whether a
+mildly wrong prior does proportionally less harm, or whether any wrong prior costs the same fixed amount
+--- is not settled here, and a second control rung at $\delta{=}0.10$ would not settle it either. If the
+damage were proportional it would be $-0.0012$ there, against a minimum detectable effect at four seeds
+of $0.0044$ using this control's own seed spread and $0.0082$ using the injected rungs' median --- and
+$0.0080$ once the enlarged ladder family is corrected for. Distinguishing proportional from absent
+damage at that size needs $25$ seeds on the control's spread and $81$ on the rungs', against the four
+the ladder ran. We report the claim at the
+magnitude we measured it and leave the scaling open, because an underpowered second rung would have
+produced a null that meant nothing, which is the mistake our own architecture search already made
+(Appendix~\ref{app:archsearch}).
+
 % AUTO 2026-08-16: new appendix. Re-scoring only; no model was retrained for it.
 \section{The null under other people's endpoints}
 \label{app:metrics}
