@@ -24,8 +24,8 @@ set -u
 cd "$(dirname "$0")" || exit 1
 
 SRC=data/results/screening                  # READ-ONLY reference root (the frozen fold's landed lanes)
-ROOT=data/results/screening_a1              # FRESH
-LOG=data/logs/a1
+ROOT="${ROOT:-data/results/screening_a1}"   # FRESH. Overridable: B1 uses screening_b1 (Amendment 7)
+LOG="${LOG:-data/logs/a1}"
 EPOCHS=20
 BATCH=8
 SEEDS="${SEEDS:-0 1 2 3 4}"                 # n=5, matching the landed reference family (Amendment 4.4)

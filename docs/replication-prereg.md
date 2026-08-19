@@ -598,3 +598,71 @@ equal capacity: the typing is actively misleading", which is correct.
 Nothing else in Amendment 4 or 4a changes. The rule is implemented in
 `src/tcell_pipeline/screening/a1_report.py`, whose tests drive every cell of the 2x2 and pin this sign
 convention directly.
+
+---
+
+## Amendment 7 — 2026-08-19 (BEFORE any `typed_gcnnorm` lane is trained)
+
+**Why this arm exists.** A1 asked which part of edge typing costs the graph its benefit and eliminated
+both of its candidates: tying the message weights (D1, +0.0004, Bonferroni 1.000) and randomising every
+relation label at preserved edge counts (D2, +0.0065, Bonferroni 0.182). Neither the parameter count nor
+the annotation's information content is the route. What remains is the message FORM — the way a message
+is built and combined, holding both capacity and evidence content fixed. This amendment governs the
+first component of that form.
+
+**The arm.** `typed_gcnnorm` = `StaticTypedGraphEncoder(graph, gene_to_idx, norm="gcn")`. Every other
+element is `typed_static` unchanged: per-relation weights, signed messages, the per-edge feature term,
+complex-membership nodes, the residual FFN, and the condition gate pinned to 1.0. The single difference
+is how a node's incoming messages for one relation are combined — symmetric `1/sqrt(d_i d_j)` instead of
+a plain sum.
+
+**It costs no parameters, and that is deliberate.** `norm` selects an aggregation rule, not a module.
+`typed_gcnnorm` and `typed_static` have byte-identical parameter counts, asserted in
+`test_gcn_norm_reaches_every_relation_module_and_costs_no_parameters`. A component test that also moved
+the capacity would re-confound precisely what A1 separated.
+
+**WHAT THIS ARM DOES NOT ISOLATE.** `_RelMessage`'s `gcn` weight is computed on THIS relation's degrees,
+where `UntypedGraphEncoder`'s `GCNConv` uses the degree of the pooled homogeneous graph. So the arm
+isolates degree NORMALISATION and not the pooling of relations into one degree. A null here therefore
+does not exonerate degree effects in general; it exonerates per-relation degree normalisation
+specifically. This limitation is stated in advance because it bounds what a null can be claimed to mean.
+
+**7.1 Seeds and pairing.** Seeds 0-4, n=5, the same five seeds as the landed reference and A1 lanes, so
+the contrast is paired on the seed exactly as A1's was. The comparison arm is the LANDED `typed_static`
+lanes; they are not re-run. A lane that fails to complete shrinks n rather than being replaced, and any
+n<5 is reported with its n.
+
+**7.2 The primary and its sign.** `D3 = typed_gcnnorm - typed_static` on
+`systema_pert_specific_delta`, paired per seed. The Amendment 4b convention holds unchanged: a POSITIVE
+D3 means the intervention IMPROVED on the typed encoder, i.e. degree normalisation recovers part of the
+deficit. A NEGATIVE D3 means normalisation makes the typed encoder worse still.
+
+**7.3 Multiplicity, including under staging.** The family is the set of B1 message-form arms actually
+trained, and `m` is that count. B1 is staged on purpose — B1a is read before B1b-d are launched — so the
+rule that stops staging from laundering the correction is fixed here: **every B1 contrast is corrected at
+the number of B1 arms run as of the moment the result is READ, and if further arms are later added, every
+earlier contrast is RE-corrected at the larger m and the paper carries the final m.** An m=1 p-value from
+the first stage is never carried forward once a second arm exists. Bonferroni AND Holm, both required,
+via the shared `apply_family_wise`.
+
+**7.4 The decision rule.** The gap under study is `untyped_gnn - typed_static` = +0.0176 on the frozen
+fold at n=5. The route is the component whose removal recovers the largest share of it AND clears both
+corrections. Recovery share is reported as `D3 / 0.0176`, and it is DESCRIPTIVE only: it is a ratio of
+two estimated quantities and carries no interval. The inferential statement is the CI on D3 itself.
+
+**7.5 What each outcome means, fixed before the numbers exist.**
+
+- **D3 positive and clears both corrections.** Degree normalisation is a route. If the share is large
+  (say above half) the paper names it as the principal component; if it clears but the share is small,
+  the paper reports it as one contributor among others and does not claim it as the explanation.
+- **D3 null.** Per-relation degree normalisation is not the route, and B1b-d proceed. Given A1's two
+  nulls, a third null narrows the message form further rather than being a non-result.
+- **D3 negative and clears.** Normalisation actively hurts the typed encoder. This is reported as such
+  and is NOT folded into "no effect" — it would mean the unnormalised sum is doing useful work and the
+  deficit lies elsewhere in the form.
+- **NONE of B1a-d clears.** The deficit is distributed across the message form rather than localised in
+  one component, and the paper says exactly that, naming the arms that failed to localise it.
+
+**7.6 Isolation.** Rail 2. `data/results/screening` stays read-only; the campaign writes a FRESH root
+`data/results/screening_b1` seeded with copies of the landed reference lanes, sha256-manifested before
+and after. The frozen fold `data/splits` is read, never written. No sealed-split artifact is touched.

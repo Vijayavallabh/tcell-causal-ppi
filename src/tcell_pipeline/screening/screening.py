@@ -58,6 +58,14 @@ UNTYPED_GNN = "untyped_gnn"
 # stay exactly what was pre-registered; reachable by name through run_screening --only.
 TYPED_SHARED = "typed_shared"
 TYPED_PERMUTED = "typed_permuted"
+# B1a diagnostic, same standing as the two above (NOT in FAMILY/_WAVE). typed_static with symmetric
+# degree normalisation instead of a plain sum. A1 ruled out both the parameter count and the annotation's
+# content as the route for the 0.0176 systema gap to untyped_gnn, which leaves the message FORM, and this
+# is its one component that is a single keyword: _RelMessage's "gcn" is documented as the isolated
+# difference against UntypedGraphEncoder's GCNConv. NOT an exact bridge — the weight is computed on each
+# relation's OWN degrees, where GCNConv uses the pooled homogeneous degree — so it isolates degree
+# normalisation, not the pooling. See docs/replication-prereg.md Amendment 7.
+TYPED_GCNNORM = "typed_gcnnorm"
 NETWORK_PROP = "network_propagation"
 PRIMARY_METRIC = "systema"  # systema_pert_specific_delta — the locked H1 primary endpoint
 
@@ -154,6 +162,9 @@ def nested_family_factories(gene_names, graph, gene_to_idx, *, basis_path=None,
         TYPED_PERMUTED: lambda: _egipg(gene_names,
                                        PermutedTypedGraphEncoder(graph, gene_to_idx, permute_seed=seed),
                                        basis_path, enc()),
+        TYPED_GCNNORM: lambda: _egipg(gene_names,
+                                      StaticTypedGraphEncoder(graph, gene_to_idx, norm="gcn"),
+                                      basis_path, enc()),
     }
 
 

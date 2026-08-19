@@ -413,3 +413,50 @@ def test_permuted_relations_keep_the_static_contract():
     assert hg.shape == (config.GRAPH_HIDDEN_DIM,) and torch.isfinite(hg).all()
     nonempty = [r for r in gates if gates[r].numel()]
     assert nonempty and all(torch.allclose(gates[r], torch.ones_like(gates[r])) for r in nonempty)
+
+
+# --- degree normalisation (B1a: the message-form component A4 un-refuted) --------------------------
+def test_gcn_norm_reaches_every_relation_module_and_costs_no_parameters():
+    """B1a's arm is ``StaticTypedGraphEncoder(..., norm="gcn")`` and carries no new encoder code, so the
+    thing to check is that the keyword actually ARRIVES: every _RelMessage in every layer must carry it.
+    Parameter count must be IDENTICAL to typed_static — that is the point of the arm. A1 already ruled
+    capacity out as the route, so a component test that also moved the parameter count would re-confound
+    exactly what A1 separated."""
+    graph, g2i = _graph()
+    gcn = StaticTypedGraphEncoder(graph, g2i, norm="gcn")
+    typed = StaticTypedGraphEncoder(graph, g2i)
+    for layer in gcn.layers:
+        assert layer.rel and all(m.norm == "gcn" for m in layer.rel.values()), "norm did not reach a relation"
+    assert all(m.norm == "add" for layer in typed.layers for m in layer.rel.values())
+    assert _msg_params(gcn) == _msg_params(typed)
+    assert sum(p.numel() for p in gcn.parameters()) == sum(p.numel() for p in typed.parameters())
+
+
+def test_gcn_norm_keeps_the_static_contract_and_changes_the_function():
+    """The intervention must be LIVE: from an identical seeded init the two arms must compute different
+    h_graph, or the campaign spends 32 GPU-hours re-running typed_static under a new name. Gates stay
+    pinned to 1.0 so the only difference against the landed typed_static lanes is the aggregation scale."""
+    from tcell_pipeline.training.trainer import seeded_init
+    graph, g2i = _graph()
+    h_do = torch.randn(config.GRAPH_HIDDEN_DIM)
+    with seeded_init(0):
+        gcn = StaticTypedGraphEncoder(graph, g2i, norm="gcn")
+    with seeded_init(0):
+        static = StaticTypedGraphEncoder(graph, g2i)
+    hg, gates, _ = gcn.eval().encode_one("G0", "Rest", h_do)
+    assert hg.shape == (config.GRAPH_HIDDEN_DIM,) and torch.isfinite(hg).all()
+    nonempty = [r for r in gates if gates[r].numel()]
+    assert nonempty and all(torch.allclose(gates[r], torch.ones_like(gates[r])) for r in nonempty)
+    assert not torch.allclose(hg, static.eval().encode_one("G0", "Rest", h_do)[0])
+
+
+def test_the_gcnnorm_arm_is_reachable_by_name_and_is_not_in_the_confirmatory_family():
+    """Rail: family_size is pre-registered at 4. A diagnostic arm that leaked into FAMILY would silently
+    re-size every landed correction and re-flag every landed root as incomplete."""
+    from tcell_pipeline.screening.multiseed import FAMILY
+    from tcell_pipeline.screening.run_screening import _DIAGNOSTIC
+    from tcell_pipeline.screening.screening import TYPED_GCNNORM, nested_family_factories
+    graph, g2i = _graph()
+    assert TYPED_GCNNORM in _DIAGNOSTIC and TYPED_GCNNORM not in FAMILY and len(FAMILY) == 4
+    enc = nested_family_factories(["G0"], graph, g2i)[TYPED_GCNNORM]().graph_encoder
+    assert all(m.norm == "gcn" for layer in enc.layers for m in layer.rel.values())
