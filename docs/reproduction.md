@@ -1016,6 +1016,117 @@ On this checkout the reproduction axis is `CANNOT_VERIFY` **by design** — the 
 defined on the sequestered challenge split, which is unopened. That is the correct verdict from a
 development checkout, not a defect.
 
+### 6. Bounding the null: the A-series and B-series (2026-08-16 .. 2026-08-19)
+
+Everything in this section exists to answer the question a null invites — *could this pipeline have
+detected an effect at all?* — plus the follow-ups that answer opened. Each item is pre-registered in
+`docs/replication-prereg.md` (Amendments 4-8) **before** the run it governs, and each writes an artifact
+that every number in the paper is re-derived from. Nothing here touches the sealed split, and all of it
+reads `data/results/screening/` read-only, writing to a FRESH root.
+
+**Two rules that will bite otherwise.** Run `merge_registry_n7.py` before aggregating any fresh
+screening root or the report carries a false "NOT comparable" flag. And `INTERMEDIATE_ROOT` isolation
+redirects the *feature stores* as well as the data, so a run that redirects it without also pinning
+`PLM_EMBEDDINGS_PATH` / `PINNACLE_EMBEDDINGS_PATH` / `ID_MAPPING_PATH` silently gives every target a
+ZERO vector and still reports a number. The runners do this for you; hand-launching does not.
+
+#### Why edge typing hurts — is it capacity, or the annotation? (A1)
+
+Two diagnostic arms bracket the typed encoder: one ties a single message module across all four
+relations (capacity), one keeps per-relation weights over randomly permuted relation labels at exactly
+preserved edge counts (information content).
+
+```bash
+# ~28 GPU-h, 5 seeds x 2 arms, resumable, atomic per-lane claims, selects usable cards
+SEEDS="0 1 2 3 4" ARMS="typed_shared typed_permuted" setsid nohup ./run_a1_mechanism.sh \
+    > data/logs/a1_mechanism.nohup.log 2>&1 &
+.venv/bin/python merge_registry_n7.py                     # MANDATORY before aggregating a fresh root
+PYTHONPATH=src python -m tcell_pipeline.screening.a1_report   # -> data/results/screening_a1/a1_mechanism.json
+```
+
+#### Which component of the message form? (B1)
+
+`typed_gcnnorm` is `typed_static` with symmetric degree normalisation and needs no encoder code — the
+`norm` keyword already reaches every `_RelMessage`. The runner takes `ROOT`/`LOG`/`ARMS` from the
+environment, so a new arm is a new value, not a forked script.
+
+```bash
+SEEDS="0 1 2 3 4" ARMS=typed_gcnnorm ROOT=data/results/screening_b1 LOG=data/logs/b1 \
+    setsid nohup ./run_a1_mechanism.sh > data/logs/b1_gcnnorm.nohup.log 2>&1 &   # ~32 GPU-h
+```
+
+#### The empirical detection floor — inject a known signal and see if it is recovered (A2a)
+
+Each rung adds `delta` times the mean response of each target's PPI neighbours, computed from **train
+rows only**, scaled so `delta` reads as a fraction of a response SD. One rung is a negative control in
+which each target gets some *other* target's neighbourhood at the same magnitude.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.inject_signal --ladder \
+    --out data/intermediate/inject                    # BUILD FIRST: CPU, ~20 min, ~11 GB
+PYTHONPATH=src python -m pytest src/tests/test_inject_signal.py -q   # rail-1 + leakage checks on the REAL rungs
+setsid nohup ./run_a2_ladder.sh > data/logs/a2_ladder.nohup.log 2>&1 &        # 48 lanes
+./run_ladder_finalise.sh                              # waits for the lanes, then runs the report
+PYTHONPATH=src python -m tcell_pipeline.screening.ladder_report \
+    --out data/results/a2_ladder/floor.json
+```
+
+The leakage test is the one that matters and it was watched to **fail** against a deliberately leaky
+variant before being trusted; a validation target's injected component must be a function of train
+responses only, or the graph arm detects leakage rather than structure.
+
+#### How many seeds / re-draws / datasets would a real effect need? (A2b)
+
+Monte-Carlo over the variance components this project measured (L4), applying the pipeline's own
+family-wise rule rather than a textbook formula.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.power_simulation \
+    --out data/results/a2_power/power.json
+PYTHONPATH=src python -m tcell_pipeline.screening.variance_decomposition --contrast h2a   # the inputs
+```
+
+#### Does the null survive other people's metrics? (A3)
+
+No training — the stored per-row predictions are re-scored under TxPert / GEARS / scPerturb endpoints,
+oriented so a positive delta always favours the better-named arm, corrected over all 20 cells.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.rescore_external \
+    --out data/results/a3_external/rescored.json      # metric defs in evaluation/external_metrics.py
+PYTHONPATH=src python -m tcell_pipeline.screening.rescore_external --k-sweep   # where the sign flips
+```
+
+#### Where in the gene ranking does the graph help? (B2)
+
+The disjoint decomposition of A3's cumulative k-sweep. CPU only, no training.
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.rank_deciles \
+    --out data/results/b2_deciles/deciles.json
+```
+
+#### Could the architecture search have found anything? (A4) and what the rationale ratios mean (A5)
+
+```bash
+PYTHONPATH=src python -m tcell_pipeline.screening.arch_search_power        # search spread vs seed noise
+PYTHONPATH=src python -m tcell_pipeline.screening.rationale_audit_bound    # necessity/sufficiency denominators
+```
+
+#### The paper's own gates
+
+`check_paper.sh` runs all five in one command; the body gate is "References open page 9", and overflow
+is fixed by MOVING content to an appendix, never by cutting.
+
+```bash
+./check_paper.sh                                          # errors, overfull, undefined, 8pp, plain-text drift
+.venv/bin/python paper/icbinb/make_abstract_plain.py      # abstract_plain.txt is DERIVED; never hand-edit
+```
+
+`abstract_plain.txt` is what `SUBMISSION.md` tells a human to paste into the portal. It had no generator
+and drifted a full campaign behind `main.tex`, still carrying a claim the paper had retracted — hence
+the generator and the `--check` gate.
+
 ### Multi-fold and split-realization runs (2026-08-03/06)
 
 **On a box whose NVML is mismatched, do this first or every cuda lane dies in <60 s:**
