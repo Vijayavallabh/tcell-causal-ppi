@@ -1,3 +1,60 @@
+# B2 CLOSED (2026-08-19): the graph's harm is confined to the twenty genes each perturbation moves hardest
+
+No training. Pre-registered as Amendment 8 before the numbers were read. Artifact
+`data/results/b2_deciles/deciles.json`, module `screening/rank_deciles.py`, n=5 seeds both arms.
+
+A3 left the paper saying the untyped contrast "crosses zero between the 250th and 500th DE gene". That
+is a fact about a CUMULATIVE statistic and it is misleading about the thing a reader cares about. Every
+top-k set contains all smaller ones, so a sign change in the running average only bounds where the
+per-gene effect turned. Re-scoring the same stored predictions on DISJOINT rank intervals separates them.
+
+## promotion_margin (untyped_gnn - expression_only), disjoint intervals, family of 36 cells
+
+| rank interval | mean | 95% CI | bonf | holm | seeds positive | survives |
+|---|---|---|---|---|---|---|
+| 1-20 | **-0.0424** | [-0.0485, -0.0363] | 0.0015 | 0.0014 | 0/5 | **YES (negative)** |
+| 21-50 | -0.0043 | [-0.0097, +0.0010] | 1.0000 | 0.6210 | 1/5 | no |
+| 51-100 | -0.0013 | [-0.0050, +0.0023] | 1.0000 | 1.0000 | 2/5 | no |
+| 101-250 | +0.0074 | [+0.0038, +0.0110] | 0.1643 | 0.1055 | 5/5 | no |
+| 251-500 | +0.0095 | [+0.0061, +0.0128] | 0.0497 | 0.0414 | 5/5 | **YES** |
+| 501-1000 | +0.0126 | [+0.0097, +0.0155] | 0.0093 | 0.0083 | 5/5 | **YES** |
+| 1001-2500 | +0.0137 | [+0.0108, +0.0166] | 0.0068 | 0.0062 | 5/5 | **YES** |
+| 2501-5000 | +0.0147 | [+0.0126, +0.0167] | 0.0014 | 0.0013 | 5/5 | **YES** |
+| 5001-10282 | +0.0096 | [+0.0084, +0.0107] | 0.0008 | 0.0008 | 5/5 | **YES** |
+
+Both directions clear correction over the SAME 36-cell family, which is the form Amendment 8.4 permits:
+the contrast is corrected-significant NEGATIVE on ranks 1-20 and corrected-significant POSITIVE on every
+interval from 251 to 10,282.
+
+**The cumulative crossover at 250-500 is an artifact of accumulation.** The per-interval effect is
+already positive in 5/5 seeds by rank 101-250; the running average stays negative to k=250-500 only
+because it carries the top-20 deficit forward until enough positive mass cancels it. The paper's
+appendix now says so, and states the reading as "the graph helps everywhere except the handful of genes
+each perturbation moves hardest" rather than "the graph helps beyond the 500th gene".
+
+## The resolution of the binning decides whether the harm is visible AT ALL
+
+At decile resolution the top decile spans ranks 1-1028 and reads **+0.0064, clearing nothing**: the
+twenty damaged genes are diluted by a thousand that benefit. A decile analysis of the identical
+predictions would have concluded the graph never hurts. This is why both binnings are reported, and it
+is the transferable methodological point: a claim about where a prior helps is only as sharp as the
+resolution it was measured at.
+
+## h2a is uniform, not localised
+
+typed_static - expression_only is negative in EVERY interval, shrinking monotonically from -0.0463
+(ranks 1-20) to -0.0051 (ranks 5001-10282), and clears nothing over the 36-cell family. That is NOT a
+contradiction of tab:ksweep, where h2a stars at every k: there the family is four cells, here it is
+thirty-six. The typed encoder's deficit is spread across the whole ranking, where the untyped arm's
+benefit is blocked only at the very top.
+
+## What is confounded, and conceded in advance (Amendment 8.2)
+
+Genes are selected into an interval by the same observed response that is the correlation's target, so
+range restriction and selection on a noisy statistic both bias a bin's LEVEL. No claim rests on
+comparing one interval's level to another's. The within-interval CONTRAST is clean: both arms are scored
+on the identical genes of the identical rows, and neither arm's prediction enters the selection.
+
 # A2(a) CLOSED (2026-08-19): the detection floor is at or below 0.02 response SDs, and the control works
 
 48 lanes, 6 conditions, 4 paired seeds each, 0 failures. Pre-registered in Amendment 6 before any lane

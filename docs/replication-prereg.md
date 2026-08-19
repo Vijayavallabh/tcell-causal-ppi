@@ -666,3 +666,54 @@ two estimated quantities and carries no interval. The inferential statement is t
 **7.6 Isolation.** Rail 2. `data/results/screening` stays read-only; the campaign writes a FRESH root
 `data/results/screening_b1` seeded with copies of the landed reference lanes, sha256-manifested before
 and after. The frozen fold `data/splits` is read, never written. No sealed-split artifact is touched.
+
+---
+
+## Amendment 8 — 2026-08-19 (BEFORE the rank-bin decomposition is read)
+
+**Why.** Amendment 5 governed A3, which found the promotion margin corrected-significant NEGATIVE on
+each perturbation's top-20 DE genes and corrected-significant POSITIVE over all 10,282, and located the
+crossover of its cumulative sweep between the 250th and 500th gene. A cumulative sweep cannot say what
+happens on either side of that point, because every k contains all smaller k: a sign change in a running
+average only bounds where the underlying per-gene effect turned. This amendment governs the disjoint
+decomposition that can say.
+
+**8.1 The statistic.** Genes are ranked within each row by DESCENDING `|observed response|`, computed
+from the observation alone. Within each disjoint rank bin, the mean row-wise Pearson correlation between
+predicted and observed `delta_x` restricted to that bin's genes, one number per arm per seed. Two
+binnings are reported: ten equal-width DECILES, and a HEAD binning on A3's own k-sweep boundaries
+(1-20, 21-50, 51-100, 101-250, 251-500, 501-1000, 1001-2500, 2501-5000, 5001-10282) so that a bin here
+is exactly the increment between two consecutive points of that sweep. No training; the frozen val
+fold's stored predictions are re-read.
+
+**8.2 WHAT A BIN'S LEVEL DOES NOT MEAN, stated before the numbers exist.** Genes are selected into a bin
+by the same observed response that serves as the correlation's y-variable. Two biases follow, and they
+are conceded rather than corrected:
+
+- **Range restriction.** Within a narrow bin the observed values span a short interval, which attenuates
+  Pearson regardless of how good a prediction is.
+- **Selection on a noisy statistic.** Ranking by an observed quantity and then correlating within the
+  selection biases the correlation's level, in the same way any winner's-curse selection does.
+
+Therefore **the LEVEL of a bin's correlation is not comparable across bins, and no claim in this
+analysis rests on comparing one bin's level to another's.** The CONTRAST within a bin is unaffected by
+both biases: the two arms are scored on the identical gene set of the identical rows, the selection is
+made once from the observation, and neither arm's prediction enters it. Every claim below is a
+within-bin contrast.
+
+**8.3 Multiplicity.** Ten bins (or nine) times four pre-registered contrasts is forty (or thirty-six)
+simultaneous tests, and this analysis exists precisely to look in several places at once. The family is
+therefore ALL CELLS OF A BINNING, corrected together, Bonferroni AND Holm, both required. Correcting
+within a bin and reporting whichever bin was kind is the look-elsewhere effect and is not done. The two
+binnings are reported as two families, not pooled into one: the head binning is a refinement of the
+same rows and genes, so pooling them would double-count the same data rather than widen the search.
+
+**8.4 The reading rule.** The claim this analysis can support is of the form "the contrast is positive
+on bins X and negative on bins Y, both clearing correction". A sign change between two ADJACENT bins is
+reported as a located crossover only if BOTH bins clear correction; otherwise it is reported as a sign
+change that the data does not resolve, with its interval. If no bin clears in either direction, the
+conclusion is that the crossover A3 bounded cannot be localised at n=5 and the paper continues to state
+only the bound.
+
+**8.5 Isolation.** Read-only. The stored predictions under `data/results/predictions/` and the frozen
+val fold are read; nothing is trained, and no sealed-split artifact is touched.

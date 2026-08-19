@@ -701,6 +701,55 @@ point. Our own null is stated on \textsc{systema}, one endpoint among several th
 readers should hold it to the same standard. The typed contrast h2a is the one row here that does not
 depend on the choice: it is negative and corrected-significant at every $k$ we tried.
 
+% AUTO 2026-08-19 --- B2, pre-registered as Amendment 8. The disjoint decomposition of the sweep above.
+\paragraph{The crossover is a property of the cumulative statistic, not of where the graph starts
+helping.} Every top-$k$ set contains all smaller ones, so a sign change in Table~\ref{tab:ksweep} only
+bounds where the underlying per-gene effect turned. Re-scoring the same stored predictions on
+\emph{disjoint} rank intervals --- the increments between consecutive rows of that table --- separates
+the two (Table~\ref{tab:bins}). The untyped arm's deficit is confined to each perturbation's twenty
+most-moved genes, where it is large ($-0.0424$), negative in $5/5$ seeds, and clears both corrections
+over all $36$ cells. By rank $101$ the per-interval contrast is already positive in $5/5$ seeds, and
+from rank $251$ down to the $10{,}282$nd gene every interval is positive and clears both corrections.
+The cumulative crossover sits at $250$--$500$ only because each running average carries the top-$20$
+deficit forward until enough positive mass accumulates to cancel it; the per-gene effect turns between
+rank $100$ and $250$. The honest reading of Table~\ref{tab:ksweep} is therefore not ``the graph helps
+beyond the $500$th gene'' but ``the graph helps everywhere except the handful of genes each
+perturbation moves hardest''.
+
+\begin{table}[h]
+\centering\small
+\caption{The same paired contrasts on \emph{disjoint} rank intervals of $|$observed response$|$, most
+moved first. $\star$ marks survival of Bonferroni and Holm over all $36$ cells of this binning ---
+a wider family than Table~\ref{tab:ksweep}'s four, which is why h2a stars nowhere here despite being
+negative in every interval. ``seeds'' counts how many of the five give a positive contrast.}
+\label{tab:bins}
+\begin{tabular}{rrcr}
+\toprule
+rank interval & untyped $-$ none & seeds & h2a \\
+\midrule
+$1$--$20$        & $-0.0424^{\star}$ & $0/5$ & $-0.0463$ \\
+$21$--$50$       & $-0.0043$         & $1/5$ & $-0.0446$ \\
+$51$--$100$      & $-0.0013$         & $2/5$ & $-0.0448$ \\
+$101$--$250$     & $+0.0074$         & $5/5$ & $-0.0379$ \\
+$251$--$500$     & $+0.0095^{\star}$ & $5/5$ & $-0.0357$ \\
+$501$--$1000$    & $+0.0126^{\star}$ & $5/5$ & $-0.0308$ \\
+$1001$--$2500$   & $+0.0137^{\star}$ & $5/5$ & $-0.0252$ \\
+$2501$--$5000$   & $+0.0147^{\star}$ & $5/5$ & $-0.0153$ \\
+$5001$--$10{,}282$ & $+0.0096^{\star}$ & $5/5$ & $-0.0051$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two cautions on reading Table~\ref{tab:bins}. First, the \emph{level} of a within-interval correlation
+is not comparable across intervals: genes are selected by the same observed response that serves as the
+correlation's target, so range restriction and selection on a noisy statistic both bias it. Only the
+contrast within an interval is clean, because both arms are scored on the identical genes of the
+identical rows and neither arm's prediction enters the selection. Second, the resolution of the binning
+decides whether the harm is visible at all: repeating this at decile resolution hides it entirely, since
+the top decile spans $1{,}028$ genes and the twenty damaged ones are diluted to a positive $+0.0064$
+that clears nothing. A coarser analysis of the same predictions would have concluded that the graph
+never hurts.
+
 \section{Reproducibility detail}
 \label{app:repro}
 
