@@ -1,6 +1,6 @@
 =======================================================================
-AUTONOMOUS GOAL SPEC — close the paper's remaining limitations by measuring them.
-Written 2026-08-16. Branch icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED.
+AUTONOMOUS GOAL SPEC — the A-series is closed; this is what its answers opened.
+Rewritten 2026-08-19. Branch icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED.
 ICBINB-BIO deadline 29 Aug 2026 AoE (re-check; the site marks it tentative).
 =======================================================================
 
@@ -8,9 +8,9 @@ This file is your standing authority. Work for hours or days unattended. Never a
 options: at each fork take the best choice on your own judgement and LOG IT WITH THE REASON. On
 failure, skip and move on. Snapshot every result to disk.
 
-The paper is FINISHED and submission-ready at 8pp. Nothing below is required for it to be submitted.
-Everything below either replaces a hedge in the Limitations section with a measured number, or answers
-a question the current results raise. A limitation you close is a paragraph you delete.
+The paper is FINISHED and submission-ready at 8pp with every A-item integrated. Nothing below is
+required for it to be submitted. Everything below answers a question the A-series raised, and the first
+item is the one the paper's own argument now points at.
 
 =======================================================================
 RAILS — never cross
@@ -21,149 +21,149 @@ RAILS — never cross
   sha256-manifested before and after where it seeds from a frozen one.
 3 Paper edits additive and reversible, marked `% AUTO <date>`. Body must stay EXACTLY 8pp with
   0 errors / 0 overfull / 0 undefined. Overflow is fixed by MOVING to an appendix, never by cutting.
+  ./check_paper.sh checks all four gates in one command; the body gate is "References open page 9".
 4 CONTRADICTION STOP: if the graph HELPS and survives Bonferroni AND Holm anywhere, do NOT rewrite the
-  null around it. Snapshot, flag atop RESULTS_SUMMARY.md, continue. This has now fired three times and
-  each one is in the paper.
+  null around it. Snapshot, flag atop RESULTS_SUMMARY.md, continue. This has fired four times and each
+  one is in the paper.
 5 Headline a result only at n>=4 seeds for BOTH arms of the contrast. Fewer is preliminary and must be
   labelled so, with its n.
 6 Branch only: no commit to main, no PR. Explicit paths only, never `git add .` or `-a` (shared
   checkout). Commit message BEFORE the `--`.
 7 docs/replication-prereg.md is FROZEN. Amend only by dated append, and only BEFORE running the thing
   it governs. A factual record of what was run goes in RESULTS_SUMMARY.md, not the pre-registration.
+  Amendments 4, 4a, 4b, 5 and 6 each went in before the run they govern. Keep it that way.
 
 =======================================================================
-STATUS 2026-08-19 12:30 IST — EVERY AUTONOMOUS ITEM IN THIS FILE IS NOW CLOSED
+WHERE THE A-SERIES LEFT THE ARGUMENT — read this before choosing work
 =======================================================================
-A1  CLOSED 2026-08-18. D1 = +0.0004 (bonf 1.000), D2 = +0.0065 (bonf 0.182), both NULL. The typed
-    structure hurts and neither its parameter count nor its labels is the route. Cutting message
-    parameters fourfold (34% of the model) does nothing; randomising every relation label does nothing
-    that clears correction. data/results/screening_a1/a1_mechanism.json.
-A2(a) CLOSED 2026-08-19. 48 lanes, 6 conditions, 0 failures. MEASURED FLOOR <= 0.02 response SDs: every
-    injected rung is recovered under both corrections, and the SCRAMBLED-NEIGHBOURHOOD control at the
-    largest delta is NOT (-0.0001, CI width 0.004 around zero). So the gaps are the graph being read,
-    not the injection being large. At delta=0.40 both arms gain 0.08-0.10 systema; under the scrambled
-    injection of identical magnitude both arms LOSE a little.
-    POST-HOC (committed while two rungs were still training): subtracting the pre-existing +0.0048, the
-    injection's own contribution is only significant at delta=0.40 (+0.0135, p=0.03). So the pipeline
-    detects graph structure at 0.02 and cannot separate an ADDED benefit from the one already there
-    below 0.40 at four seeds. The control's increment is significantly NEGATIVE (-0.0050): a
-    confidently WRONG prior destroys the real benefit rather than merely failing to help.
-    data/results/a2_ladder/floor.json.
-A2(b), A3, A4, A5  CLOSED 2026-08-16. See RESULTS_SUMMARY.md.
+On the frozen fold at n=5, ordered by systema:
 
-NOTHING IS RUNNING. The GPUs are free. What remains in this file is the NOT AUTONOMOUS section below:
-the OpenReview submission and the sealed split, both of which need a human.
+    untyped_gnn      0.0904     plain topology, no typing, no gating   <- the best graph arm
+    expression_only  0.0857     no graph
+    condition_gated  0.0838
+    typed_permuted   0.0791     per-relation weights, RANDOM labels
+    typed_shared     0.0730     one message module for all relations
+    typed_static     0.0726     the true typing
 
-PAPER. Body still EXACTLY 8pp (References open page 9), 21 pages total, 0 errors / 0 undefined /
-0 overfull >2pt. ./check_paper.sh checks all four gates at once. Added since 2026-08-16:
-app:metrics (A3), app:power rewritten (A2b), app:mechanism (A1), app:floor (A2a), an A4 paragraph in
-app:archsearch, an A5 paragraph in app:causes, and three short body clauses. Pre-registration
-amendments 4, 4a, 4b, 5 and 6 each went in BEFORE the run they govern.
+A1 asked which part of the typing costs the 0.0176 between untyped and typed, and eliminated both
+candidates. Cutting the message parameters fourfold (34% of the model) moves it +0.0004. Randomising
+every relation label, edge counts preserved exactly, moves it +0.0065 and does not clear correction.
+So it is NOT the parameter count and NOT the annotation's content.
 
-TWO STANDING INSTRUCTIONS IN THIS FILE ARE NOW WRONG, recorded rather than acted on:
- - "do not re-propose per-relation normalisation... a known dead end". A4 measured that the 14-cell
-   search which refuted it spans 0.0089 across all its cells while the gap under study is 0.0176. It
-   was not resolving these arms, so nothing was refuted within it. A1 then eliminated the two levers
-   that WERE untried, which makes normalisation the strongest remaining candidate.
- - the delta=0 rung as A2(a)'s negative control. Superseded by Amendment 6.4; the scrambled rung is the
-   control, and it worked.
+A2(a) showed the instrument is fine: an injected graph signal is recovered at 0.02 response SDs and a
+scrambled-neighbourhood control at 0.40 is not recovered at all.
+
+A4 removed the reason we had stopped looking. The 14-cell architecture search that "refuted"
+per-relation normalisation spans 0.0089 across ALL its cells while the gap under study is 0.0176; it
+was not resolving these arms, so nothing was refuted inside it.
+
+WHAT IS LEFT is the message FORM, and it is a short list: degree normalisation, signed messages, the
+per-edge feature term, complex-membership nodes, and the residual FFN. That is B1, and it is the only
+item here that can change what the paper concludes.
 
 =======================================================================
 THE AUTONOMOUS WORK, in priority order
 =======================================================================
 
---- A1. WHY does edge typing hurt?  CLOSED 2026-08-18. See STATUS above. ---------------------
-The n=7 family says WHICH component costs the graph its benefit but not why, and the paper currently
-stops at "our encoder discards the signal". Naming the mechanism turns a diagnosis into a prescription,
-which is what this venue's rubric rewards most.
+--- B1. WHICH COMPONENT of the message form does the damage?  HIGHEST VALUE -------------------
+Walk the bridge from typed_static to untyped_gnn one component at a time, each arm removing exactly
+one thing, paired per seed against the LANDED typed_static lanes on the frozen fold. n=4 minimum.
 
-WHAT IS ESTABLISHED. On the frozen fold at n=7: untyped +0.0904 > expression_only +0.0861 >
-condition_gated +0.0818 > typed_static +0.0740. Edge typing is worth -0.0120 (7/7 seeds, survives both
-corrections); the gate repairs only part of that and not significantly (+0.0077, bonf 0.131).
+  B1a  DEGREE NORMALISATION.  ~32 GPU-h.  START HERE.
+       `StaticTypedGraphEncoder(graph, g2i, norm="gcn")` ALREADY WORKS — _RelMessage supports
+       ("add","mean","gcn") and StaticTypedGraphEncoder defines no __init__, so it inherits the
+       keyword. Zero new encoder code; the wiring is the five-line pattern typed_shared used
+       (a name in screening.py, a factory entry, the _DIAGNOSTIC list in run_screening.py).
+       WHY FIRST: it is the one lever A4 un-refuted, it is the difference the arch search was built to
+       test and could not resolve, it is free to implement, and it is the only structural difference
+       between these encoders that is a single keyword.
+       It is also the mechanism already MEASURED to depress the mean gate tenfold (0.03 and 0.12
+       against 0.73) in that search, so there is a prior reason to expect it matters.
 
-CANDIDATE MECHANISMS, none isolated:
-  (i)   per-relation normalisation — already MEASURED to depress the mean gate tenfold (0.03 and 0.12
-        against 0.73) in the arch search. Strongest suspect: the epoch-0 gate-collapse failure arriving
-        through a second door.
-  (ii)  the condition gate's initialisation.
-  (iii) the decoder mixture gamma.
-  (iv)  relation-specific parameter count — typed message passing has ~3x the parameters over the same
-        edges, so this may be capacity/overfitting and not about types at all.
+  B1b  SIGNED MESSAGES.  ~32 GPU-h.  Replace tanh(W_sign h)*relu(W_mag h) with a plain linear message.
+       Needs a small subclass of _RelMessage. This is the largest remaining structural difference from
+       GCNConv after normalisation.
 
-THE DISCRIMINATING EXPERIMENT. Add an arm with typed relations but weights SHARED across relation
-types. It has the same parameter count as untyped and the same message-passing structure as typed.
-  - behaves like untyped  -> the damage is parameter count (iv)
-  - behaves like typed    -> the damage is the relation partition itself
-Implement beside StaticTypedGraphEncoder in src/tcell_pipeline/baselines/graph_baselines.py; the
-cheapest correct version shares one weight matrix across all relations rather than one per relation.
-Run n=4 on the frozen fold in a FRESH root, paired against the existing expression_only lanes.
-DECIDE IN ADVANCE, and write it into the prereg as a dated append BEFORE running: the comparison is
-(shared-weight typed) - (typed_static). If it is positive and clears both corrections, parameter count
-explains the damage; if indistinguishable, the relation partition does.
+  B1c  THE PER-EDGE FEATURE TERM.  ~32 GPU-h.  Drop u_r(edge_attr) from the message.
 
---- A2. L2. The detection floor.  (b) CLOSED 2026-08-16.  (a) CLOSED 2026-08-19. ------------
-PAPER SAYS: the CI upper limit is per fold; the MDE from 5 seeds is itself uncertain (0.005 to 0.025).
+  B1d  COMPLEX-MEMBERSHIP NODES.  ~32 GPU-h.  Run the typed encoder over protein nodes only.
 
-CLOSE WITH (a) AN EMPIRICAL FLOOR. Inject a known graph-dependent component into the real DE matrix at
-a ladder of effect sizes: for each target add delta * (mean response of its k-hop PPI neighbours,
-computed from TRAIN-FOLD RESPONSES ONLY) for delta in {0, 0.02, 0.05, 0.10, 0.20, 0.40} response SDs.
-Re-run condition_gated vs expression_only at n>=4 per rung. The smallest delta that reliably clears
-both corrections is the pipeline's MEASURED sensitivity, replacing an assumption-laden power formula.
-  LEAKAGE IS THE WHOLE RISK. If the injected signal touches val responses the control is worthless.
-  Write that check as a test and WATCH IT FAIL before trusting it — a test that has never failed is
-  not evidence (this project has shipped two such tests; see docs/agent-lessons.md).
-  A HIGH floor is also a finding: a limitation with a number instead of a hedge.
-  The delta=0 rung is the negative control and must NOT clear correction. If it does, stop and
-  investigate rather than reporting the ladder.
-CLOSE WITH (b) SIMULATION POWER over the variance structure now MEASURED at three levels (L4, closed):
-seed sd 0.01067 for h2a, re-draw sd 0.00034, level sd 0.00329; for h1 0.00524 / 0.00250 / 0.00371.
-Answer: how many seeds, re-draws and datasets are needed to detect the benefit graph-prior papers
-report? If it exceeds what anyone runs, that is the paper's most quotable sentence. CPU only.
-CALIBRATION NOW AVAILABLE that was not when this was written: the untyped arm's real +0.0043 on the
-reference screen is a known true positive the ladder can be checked against.
-CLOSED WHEN: the paper states the null in units of a measured floor rather than a modelled MDE.
+DECIDE IN ADVANCE, and write it into the prereg as a dated append BEFORE running anything:
+  - Primary per arm: (arm) - typed_static on systema, paired per seed, n>=4.
+  - Family = the arms actually run in the campaign, m = that count. Bonferroni AND Holm, both required.
+  - The route is the component whose removal recovers the largest share of the 0.0176 gap to
+    untyped_gnn AND clears both corrections. If several clear, report all of them and claim none
+    exclusively — the components are not independent and this design cannot separate interactions.
+  - If NONE clears, that is a result: the deficit is distributed across the message form rather than
+    localised in one component, and the paper says so instead of naming a culprit.
+  - A component whose removal makes things WORSE is reported as such, not folded into "no effect".
+STOP RULE so this does not become an unbounded search: run B1a first and read it before launching
+B1b-d. If B1a alone recovers most of the gap, the remaining arms are confirmatory, not exploratory,
+and should be run at that framing.
+Do NOT re-run confidence pruning. A4 un-refuted normalisation specifically; pruning was refuted by the
+same underpowered search but there is no positive reason to expect it, and it costs the same.
 
---- A3. L3. Commensurability with others' results.  CLOSED 2026-08-16. -----------------------
-PAPER SAYS: others' gains use different splits and metrics, so our bound constrains this task under
-this protocol rather than adjudicating their claims.
-CLOSE WITH: re-score the STORED predictions under THEIR metrics — arithmetic on artifacts that already
-exist under data/results/*/predictions/. Read TxPert / Stable-Shift / the foundation-model papers and
-VERIFY which endpoints they actually report; do not assume. Then compute all four arms under each, on
-the same folds.
-ALSO: add a distributional endpoint (energy distance / E-distance, standard in scPerturb) on at least
-one dataset. That simultaneously closes the separate metric-scope hedge — the paper currently admits
-"gene-space and full single-cell distribution conclusions can still differ".
-CLOSED WHEN: the null holds under >=1 metric an outside positive was reported in, plus one
-distributional metric.
-DO THIS FIRST IF THE GPUS ARE BUSY OR CONTENDED — it needs none.
+--- B2. WHERE in the gene ranking does the graph win and lose?  CPU ONLY, no training ----------
+A3 found the untyped contrast is corrected-significant NEGATIVE on each perturbation's top-20 DE genes
+and corrected-significant POSITIVE over all 10,282, crossing zero between the 250th and 500th. The
+paper states the crossover; it does not say what happens on either side of it.
+CLOSE WITH: the paired per-seed contrast computed within DECILES of |observed response|, on the stored
+predictions under data/results/predictions/. Reuse rescore_external's alignment and the k-sweep
+machinery. That turns "it flips" into "the graph helps on genes ranked X to Y and hurts on Z", which is
+a statement about what a PPI prior is actually good for and the most portable thing in the paper.
+CHEAP, needs no GPU, and it is the natural first item if the cards are contended.
 
---- A4. L6. Bound the architecture claim. ------------------------ CLOSED 2026-08-16 ---------
-Cause C now SURVIVES (it was "refuted within the searched space" until the untyped arm ran; the 14-cell
-search varied HOW the typed encoder passes messages and never whether the typing belonged, so it
-excluded its own premise). What remains is to bound it: with the A2 floor in hand the paper can say
-"no variant we searched improves on the baseline by more than the floor we can detect".
-Add search cells only if cards would otherwise idle, and prefer levers not yet tried (neighbourhood
-cap, layer count, readout). DO NOT re-propose per-relation normalisation or confidence pruning — both
-already refuted, and re-running them is a known dead end.
+--- B3. Does the wrong-prior damage SCALE?  ~22 GPU-h ------------------------------------------
+The scrambled control's increment over the zero point is -0.0050 ([-0.0083,-0.0016]): injecting
+structure that follows the WRONG graph destroys the real benefit rather than merely failing to help.
+That claim currently rests on ONE condition at ONE delta.
+CLOSE WITH: a second permuted rung at delta=0.10, 4 seeds x 2 arms, through the existing
+inject_signal --permute-seed path and run_a2_ladder.sh. Pre-register it as an extension of Amendment 6
+before running. If the damage is roughly proportional to delta the claim generalises; if it appears
+only at 0.40 it is a statement about large injections and must be labelled that way.
 
---- A5. L8. Rationale-audit hedges. ------------------------------ CLOSED 2026-08-16 ---------
-The audit reports relative comparisons against matched controls with small absolute gaps in a near-null
-regime. Bound it with the A2 floor and leave it. Do not spend GPU here.
+--- B4. Tighten the floor below 0.02?  CONSIDERED AND DEPRIORITISED ----------------------------
+The floor is reported as "at or below 0.02" because 0.02 is the smallest rung we injected, so smaller
+rungs look like the obvious next step. They are not, and the reason is in the artifact: the post-hoc
+increment shows the injection's own contribution is not separable from the pre-existing +0.0048 benefit
+below delta=0.40 at four seeds. A delta=0.005 rung would therefore mostly re-measure the benefit that
+is already there. If this becomes worth doing, buy SEEDS at an existing rung rather than new smaller
+rungs. Recorded so the next agent does not spend 40 GPU-hours rediscovering it.
+
+--- B5. The abstract sentence that did not fit.  CPU, one edit, defined gate -------------------
+The measured floor and its scrambled control are the answer to the standing objection to any null, and
+they are the strongest thing the paper can put in an abstract. The sentence was drafted, did not fit,
+and was reverted on 2026-08-19; it currently lives in Limitations and the checklist only.
+CLOSE WITH: free roughly 250 characters of body by MOVING one more duplicated block to an appendix
+(rail 3 permits moving, never cutting; the replication narrative has already gone this way and the
+"Two narrower limits" paragraph is the next candidate), then add:
+  "An injected graph signal is recovered at $0.02$ response SDs; the same signal over a scrambled
+   graph is not, so the null is bounded by a measured instrument."
+GATE: ./check_paper.sh must PASS, and abstract_plain.txt must be REGENERATED from main.tex afterwards
+— it is the text SUBMISSION.md tells a human to paste into the portal, and it has silently gone a full
+campaign out of date once already.
+
+--- B6. Harness and docs consistency.  CPU, cheap ---------------------------------------------
+docs/reproduction.md predates the A-series and does not mention power_simulation, external_metrics,
+rescore_external, arch_search_power, rationale_audit_bound, inject_signal, ladder_report, a1_report,
+check_paper.sh, run_a1_mechanism.sh, run_a2_ladder.sh or run_ladder_finalise.sh. Add them with the
+command that reproduces each artifact. Then run ./init.sh and fix whatever it reports.
 
 =======================================================================
 NOT AUTONOMOUS — do not attempt these
 =======================================================================
 THE SUBMISSION. paper/icbinb/ is finished: 8pp body, clean build, style file byte-identical to the
 workshop's, repo scrubbed of six deanonymising strings, deadline verified. Filing needs a human:
-  1 create the anonymous.4open.science mirror, paste the URL at paper/icbinb/main.tex line ~238,
-    rebuild, confirm 8pp. This comes FIRST — the venue's blinding requirement covers linked material.
+  1 create the anonymous.4open.science mirror, paste the URL in paper/icbinb/main.tex, rebuild,
+    confirm the body still ends on page 8. This comes FIRST — the venue's blinding requirement covers
+    linked material.
   2 upload main.pdf at openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO, full-paper track.
 Checked on this machine 2026-08-11 and recorded as a probe table in paper/icbinb/SUBMISSION.md: no
 OPENREVIEW_* env vars, no ~/.openreview, openreview-py not installed, no credential store, no gh CLI.
 Neither step is reachable from here even in principle. Do not spend turns re-establishing this.
 
 THE SEALED SPLIT (L7). Rail 1. Deliberately left open. It is a one-shot pre-registered test of a
-POSITIVE hypothesis and spending it to re-confirm a null buys no information. NOTE this is now a live
+POSITIVE hypothesis and spending it to re-confirm a null buys no information. This is now a live
 forward commitment rather than a hypothetical: a positive that survives both corrections DOES exist
 (untyped_gnn on the reference screen, +0.0043). Whether to spend the sealed split on it is a decision
 for a human, not an agent.
@@ -172,19 +172,31 @@ for a human, not an agent.
 ALREADY CLOSED — do not redo these
 =======================================================================
 L0   False RPE1 paragraph in Limitations        FIXED, replaced by the Amendment-2 account.
-L0b  Main text over 8pp                         CLOSED; body exactly 8pp, 0 errors.
+L0b  Main text over 8pp                         CLOSED; body exactly 8pp, References open page 9.
 L1   "One dataset"                              CLOSED. EIGHT datasets. h2a pooled over the seven
-     replication datasets: +0.0018, RE 95% CI [-0.0028,+0.0065], I2 = 39.2%, Q p = 0.13 — no
-     significant heterogeneity across five cell types, both perturbation directions, 100-9,730 targets.
-L1-PRE  ID-mapping + ESM-2 coverage gate        CLOSED; coverage 94-100% per dataset.
-L1-CHAIN  seven per-dataset stages              DONE; run_replication_{stage,prep,lane,campaign}.sh.
-L4   Difficulty vs realisation noise            CLOSED 2026-08-14. h2a: sd_seed 0.01067 (26 df),
-     sd_level 0.00329 (3 df), sd_redraw 0.00034 (2 df). The TRAINING SEED is the largest term for both
-     contrasts and 3.2x the difficulty effect for h2a. Partition noise is contrast-dependent: large for
-     h1, negligible for h2a. Artifacts data/results/l4/.
+     replication datasets: +0.0018, RE 95% CI [-0.0028,+0.0065], I2 = 39.2%, Q p = 0.13.
+L1-PRE / L1-CHAIN                               CLOSED; coverage 94-100%, seven per-dataset stages.
+L4   Difficulty vs realisation noise            CLOSED 2026-08-14. h2a sd_seed 0.01067 (26 df) >
+     sd_level 0.00329 (3 df) > sd_redraw 0.00034 (2 df). The TRAINING SEED is the largest term.
 L5   Cause D, baseline not graph-free           DONE and integrated (-0.0036 under correction).
 n=7 reference family                            DONE. h2a -0.0120 and promotion_margin +0.0043 both
      SURVIVE BOTH; h2b +0.0077 and h1 -0.0043 do not.
+A1   Why edge typing hurts                      CLOSED 2026-08-18. D1 +0.0004 (bonf 1.000) and
+     D2 +0.0065 (bonf 0.182), both null: not the parameter count, not the labels.
+     data/results/screening_a1/a1_mechanism.json, paper appendix app:mechanism.
+A2(a) The empirical detection floor             CLOSED 2026-08-19. Floor <= 0.02 response SDs; the
+     scrambled control at 0.40 is NOT recovered (-0.0001, CI width 0.004). 48 lanes, 0 failures.
+     data/results/a2_ladder/floor.json, paper appendix app:floor.
+A2(b) Simulation power                          CLOSED 2026-08-16. ~250 datasets to detect +0.0043
+     across datasets; MDE 0.0075 at n=7 on the frozen fold, 0.0185 across re-draws.
+A3   Commensurability with others' metrics      CLOSED 2026-08-16, and it fired the contradiction stop.
+     The untyped contrast is -0.0424 at k=20 (GEARS) and +0.0089 over all genes (TxPert), both
+     clearing both corrections over 20 cells. paper appendix app:metrics.
+A4   Bound the architecture claim                CLOSED 2026-08-16. Search spread 0.0089 against 0.0147
+     from seed noise alone; its best cell would need 12 seeds and was run at 1.
+A5   Rationale-audit hedges                      CLOSED 2026-08-16. Necessity's "49%" is over a control
+     of 3e-07; cause E's source ablation is largely an edge-count effect (STRING leads HuRI by 1.7x
+     per edge, not ~200x).
 
 CORRECTIONS ON RECORD — do not silently re-reverse any of these:
  - Norman (-0.0790, survives both) overturned the "untyped positive on 5/5 datasets" pooled claim.
@@ -192,8 +204,16 @@ CORRECTIONS ON RECORD — do not silently re-reverse any of these:
    per-dataset contrasts clear correction and DISAGREE IN SIGN (+0.0043, +0.0675, -0.0790).
  - h2b SURVIVED at n=6 (bonf 0.0491) and does NOT at n=7 (bonf 0.1308).
  - An interim L4 run with one cell at n=1 gave the OPPOSITE verdict to the n=5 result.
- - The 0.80/0.10 re-draws identify h1's within-level variance, NOT h2a's (run_realization.sh ran
-   condition_gated there, not typed_static).
+ - The 0.80/0.10 re-draws identify h1's within-level variance, NOT h2a's.
+ - The between-re-draw variance component is NOT "at least as large as" the between-seed one, as the
+   paper said before 2026-08-16. Measured: 0.0003 against 0.0107.
+ - The parameter cut in typed_shared is 34% of the model, not 47%. The 47% came from the six-gene test
+   fixture, where the complex-embedding table is one row.
+ - "Refuted within the searched space" was never established by the 14-cell architecture search, for
+   normalisation or for anything else it tried. A4 measured why.
+ - abstract_plain.txt is DERIVED from main.tex and had drifted a full campaign behind it, still
+   carrying the retracted "positive on all five independent datasets". Regenerate it after any
+   abstract edit.
 
 =======================================================================
 HOW TO RUN ANY OF THIS
@@ -258,15 +278,27 @@ INTEGRATION + REPORTING
 - RESULTS_SUMMARY.md and session-handoff.md stay current: n, per-seed values, both corrections,
   family_size, gate health, epochs, and the name and reason of any dropped seed.
 
-ORDER OF WORK. If the GPUs are contended, start with A3 (needs none). Otherwise A1 (highest value per
-GPU-hour, and it is the question the current results raise) -> A2 (the floor, which also bounds A4) ->
-A3 -> A4. A5 only if everything else is done. Re-measure per-epoch cost on the first lane of any new
-campaign rather than extrapolating: the same lane has measured 38 to 90 min/epoch on this box depending
-on who else is running.
+ORDER OF WORK. If the GPUs are contended, start with B2 (CPU only), then B5 and B6 (also CPU). With
+cards free, B1a is the first thing to launch: it is free to implement, it is the lever A4 un-refuted,
+and it is the only remaining item that can change what the paper concludes. Read B1a before launching
+B1b-d. B3 is worth doing while B1 runs only if a card would otherwise idle. B4 is deprioritised on
+purpose and the reason is written above.
 
-WHAT SUCCESS LOOKS LIKE. A Limitations section with three entries instead of eight, each carrying a
-measured number, and a Results section that says: across eight datasets and five cell types the typed
-graph does not help, bounded at +/-0.005; here is the effect size we would have detected; here is the
-component of our own architecture that destroys the signal, and here is which part of it; and here are
-five of our own claims that failed, including one we published in the morning and reversed the same
-day.
+RE-MEASURE per-epoch cost on the first lane of any new campaign rather than extrapolating: the same
+lane has measured 38 to 90 min/epoch on this box depending on who else is running.
+
+USE THE RUNNERS RATHER THAN HAND-LAUNCHING. run_a1_mechanism.sh takes ARMS from the environment, skips
+landed lanes, takes an atomic claim per lane and now SELECTS usable cards instead of refusing the whole
+run when one is busy. That last fix exists because the earlier version cost eleven and a half hours of
+idle A100 time when a co-tenant held one card of four.
+
+WATCH OUT FOR THE WATCHER. A `pgrep -f "<pattern>"` in a waiter matches any process whose command line
+contains the string, including the shell that WROTE the script with a heredoc. run_ladder_finalise.sh
+waited on its own creator and never fired. Use the bracket form, `pgrep -f "[r]un_screening --only"`,
+or pass the pattern as a function argument.
+
+WHAT SUCCESS LOOKS LIKE. The paper already says the typed graph does not help across eight datasets and
+five cell types, that the instrument recovers an injected signal at 0.02 response SDs while a scrambled
+control at 0.40 is not recovered, and that the damage is neither the parameter count nor the annotation.
+Success for THIS file is one more sentence: and here is the component of the message form that does it.
+If B1 finds no single component, success is saying that instead, with the arms that failed to find one.
