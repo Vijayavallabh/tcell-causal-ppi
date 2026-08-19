@@ -182,8 +182,8 @@
         "feat-011",
         "feat-017"
       ],
-      "status": "in-progress",
-      "evidence": "CLOSED: A2(b) data/results/a2_power/power_simulation.json (250 datasets to detect +0.0043 across datasets; MDE 0.0075 at n=7 on the frozen fold). A3 data/results/a3_external/{rescored,k_sweep}.json (the untyped contrast is -0.0424 at k=20 and +0.0089 over all genes, both surviving both corrections over 20 cells; crossover between the 250th and 500th DE gene) -- this fired the contradiction stop. A4 data/results/a2_power/arch_search_bound.json (search spread 0.0089 against 0.0147 from seed noise alone). A5 data/results/a2_power/rationale_bound.json (necessity's 49% is over a control of 3e-07; STRING leads HuRI by 1.7x per edge, not 200x). RUNNING: A1 typed_shared seeds 0-4; then typed_permuted; then the A2(a) ladder, chained by run_overnight_chain.sh. Pre-registered in Amendments 4, 4a, 4b, 5 and 6, each before the run it governs. 607 tests pass."
+      "status": "done",
+      "evidence": "ALL CLOSED. A1 data/results/screening_a1/a1_mechanism.json (D1 +0.0004, D2 +0.0065, both null: neither the parameter count nor the labels is the route). A2(a) data/results/a2_ladder/floor.json (floor <= 0.02 response SDs, every injected rung recovered, scrambled control -0.0001 not recovered; post-hoc the injection s own contribution is significant only at 0.40, and the control s increment is -0.0050 -- a confidently wrong prior destroys the real benefit). A2(b) data/results/a2_power/power_simulation.json (~250 datasets for +0.0043 across datasets; MDE 0.0075 at n=7). A3 data/results/a3_external/{rescored,k_sweep}.json (the untyped contrast crosses zero between the 250th and 500th DE gene, both sides clearing correction over 20 cells) -- fired the contradiction stop. A4 arch_search_bound.json (search spread 0.0089 vs 0.0147 from seed noise alone). A5 rationale_bound.json. Pre-registered in Amendments 4, 4a, 4b, 5 and 6, each before the run it governs. 610 tests pass."
     }
   ]
 }
