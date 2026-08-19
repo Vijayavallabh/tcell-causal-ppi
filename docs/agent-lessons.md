@@ -467,3 +467,24 @@ own number and reads as if nothing moved. The operative gate for "the body is ex
 page the References heading opens on, read out of the PDF. `check_paper.sh` now checks it, along with
 overfull boxes, undefined references and errors, in one command — and its own first version reported
 every page as page 1, because Python's `splitlines()` eats the form feed that separates PDF pages.
+
+### A watcher that waited on the shell that wrote it (2026-08-19)
+
+`run_ladder_finalise.sh` polls `pgrep -f "run_screening --only"` and proceeds when no lane is running.
+All 48 ladder lanes landed at 12:18; at 12:40 it was still waiting. The pattern was matching a
+`/bin/bash -c` process that was still alive — the tool-call shell that had CREATED the script with a
+heredoc. The script's own source text, including the `pgrep` line itself, sits in that shell's command
+line, so the watcher was waiting on its own creator.
+
+The report was already produced by hand, so nothing was lost but the automation.
+
+**Rule.** A `pgrep -f` pattern matches any process whose command line contains the string — including
+shells that merely *quote* the script, scripts that *write* the script, and editors that opened it.
+Write the pattern so it cannot match its own text: `pgrep -f "[r]un_screening --only"` matches the
+literal `run_screening` and not the characters `[r]un_screening`. Passing the pattern as a function
+argument also works, because arguments to a shell function do not appear in any command line — which is
+why `run_overnight_chain.sh`, written the same day with the same intent, did not deadlock.
+
+**And the general form:** any watcher that decides "is the thing I am waiting for still running?" by
+string-matching process lists is matching text, not intent. Before trusting one, ask what else on the
+box contains that text — then check, because on this box the answer included the watcher's own parent.

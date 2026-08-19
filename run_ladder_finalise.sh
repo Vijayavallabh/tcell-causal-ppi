@@ -14,7 +14,12 @@ export PYTHONPATH=src
 quiet=0
 echo "[fin] $(date) waiting for the ladder lanes"
 while [ $quiet -lt 3 ]; do
-  if pgrep -f "run_screening --only" > /dev/null; then quiet=0; else quiet=$((quiet + 1)); fi
+  # The bracket is load-bearing. `pgrep -f "run_screening --only"` matched the shell that WROTE
+  # this script with a heredoc, because the script's own source text -- including this very line --
+  # sits in that shell's command line, and it was still alive. The finaliser then waited on its own
+  # creator forever: all 48 lanes landed at 12:18 and it was still in this loop at 12:40.
+  # `[r]un_screening` matches the literal "run_screening" but not the text "[r]un_screening".
+  if pgrep -f "[r]un_screening --only" > /dev/null; then quiet=0; else quiet=$((quiet + 1)); fi
   sleep 180
 done
 echo "[fin] $(date) lanes are quiet; landed per rung:"
