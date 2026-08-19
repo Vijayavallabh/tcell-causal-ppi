@@ -193,6 +193,8 @@ That is \emph{larger than the effect the paper set out to measure}: on the same 
 \item \textbf{Redraw your split before you interpret a split sweep.} Regenerate one setting at a different partition seed and compare the spread to the range your knob spans. Ours moved the difficulty statistic $0.103$ against a designed range of $0.056$, so the sweep was measuring the seed more than the knob.
 \item \textbf{Report per-arm variance across seeds, not only the paired contrast.} Our graph arms carry $6$ to $32\times$ the seed-to-seed spread of the no-graph arm at the same mean. A component can change the variance without changing the expectation, and the contrast alone will not show you that.
 \item \textbf{Pre-register the contrast family and correct for it.} With four simultaneous contrasts, two of ours reach nominal significance and neither survives both corrections.
+% AUTO 2026-08-19: the ladder's transferable lesson belongs in the checklist, not only an appendix.
+\item \textbf{Inject a signal you know is there, with a scrambled control.} A null is a claim about your instrument. Ours recovers an injected graph signal at $0.02$ response SDs and recovers nothing when the same component follows a \emph{scrambled} graph (Appendix~\ref{app:floor}). The scrambled rung is the one people skip, and it separates reading structure from responding to magnitude.
 \item \textbf{Replicate the contrast that \emph{survived}, not only the one that failed.} Effort naturally goes into hardening a null. Our single corrected-significant result was the one that did not reproduce on a harder split, and we would not have known if we had treated the harder split as a robustness check on the null alone.
 \end{enumerate}
 }\vspace{2pt}\hrule\vspace{4pt}
@@ -204,9 +206,7 @@ That is \emph{larger than the effect the paper set out to measure}: on the same 
 \textbf{A bounded null, and the bound is per fold, not general.} No fold yields a benefit surviving correction, and no single fold's upper limit bounds the effect elsewhere; the per-fold intervals are in Appendix~\ref{app:power}. The instrument is not the limit: an injected graph signal is recovered at $0.02$ response SDs while a scrambled control at $0.40$ is not (Appendix~\ref{app:floor}).
 
 % AUTO 2026-08-11: heading and opening no longer claim one screen; the replication has run.
-\textbf{The replication almost did not happen, because our own pre-registration nearly prevented it.} We pre-registered a multi-dataset replication and built differential-expression matrices for six harmonized public candidates \citep{peidli2024scperturb}. Under the rules as written, four fell out; the best-powered casualty was Replogle RPE1, where a requirement of two or more replicate pseudobulks per (target, condition) at a $25$-cell floor left only $12$ of $2{,}393$ targets, and we declined to rescue it with random pseudo-replicates.
-
-Auditing that decision produced the more useful finding: the rule had never been applied to the \emph{reference} dataset, whose target is an artifact published with the source screen and computed over all cells per (perturbation, condition) against matched controls. Under that standard the same file yields $2{,}122$ targets, not $12$. A pre-registration guards against post-hoc flexibility, but it commits a plan before the analyst understands the data, so it can equally freeze a mistake and lend it the authority of a commitment (Appendix~\ref{app:prereg}).
+\textbf{The replication almost did not happen, because our own pre-registration nearly prevented it.} Under the rules as written, four of six candidate datasets fell out, the best-powered casualty being Replogle RPE1 at $12$ of $2{,}393$ targets. Auditing that decision produced the more useful finding, and it is about pre-registration rather than this dataset (Appendix~\ref{app:prereg}).
 % AUTO 2026-08-10: replication has now run; this limitation is narrowed, not removed.
 The replication has since run under the amended rule (Section~\ref{sec:repl}), so the null is no longer one screen. Two narrower limits replace the old one. The condition gate needs at least two experimental contexts, and only one qualified dataset has them, so h1 still rests on a single replication; every other dataset can speak only to the static graph. And the two screens that failed on-target quality control, Datlinger and Shifrut, were the pool's only T-cell data, so nothing in the replication replicates the reference \emph{cell type}. A prior that is genuinely T-cell-specific would fail exactly this way, and we cannot rule that out.
 
@@ -453,6 +453,11 @@ The degrees-only variant reproduces the full ablation within its interval, so th
 \section{When a pre-registration freezes a mistake}
 \label{app:prereg}
 
+% AUTO 2026-08-19: moved here from Limitations for the page budget; content unchanged.
+\paragraph{How the rule nearly cost us the replication.} \textbf{The replication almost did not happen, because our own pre-registration nearly prevented it.} We pre-registered a multi-dataset replication and built differential-expression matrices for six harmonized public candidates \citep{peidli2024scperturb}. Under the rules as written, four fell out; the best-powered casualty was Replogle RPE1, where a requirement of two or more replicate pseudobulks per (target, condition) at a $25$-cell floor left only $12$ of $2{,}393$ targets, and we declined to rescue it with random pseudo-replicates.
+
+\paragraph{The audit, in full.} Auditing that decision produced the more useful finding: the rule had never been applied to the \emph{reference} dataset, whose target is an artifact published with the source screen and computed over all cells per (perturbation, condition) against matched controls. Under that standard the same file yields $2{,}122$ targets, not $12$. A pre-registration guards against post-hoc flexibility, but it commits a plan before the analyst understands the data, so it can equally freeze a mistake and lend it the authority of a commitment (Appendix~\ref{app:prereg}).
+
 Our pre-registration fixed the differential-expression unit as ``two or more replicate pseudobulks per (target, condition)'' at a $25$-cell floor, and specified that a dataset unable to meet it is dropped rather than switched to a different test. That clause did what such clauses are for: when Replogle RPE1 yielded only $12$ of $2{,}393$ targets, we did not rescue it by splitting cells into random pseudo-replicates, which would have manufactured precision we did not have.
 
 The clause was also wrong, and it took an audit rather than a result to see it. The reference dataset's supervised target is not built that way. It is an artifact published with the source screen, computed by its authors over all cells for each (perturbation, condition) against matched controls, with no per-replicate requirement at all. We had imposed on every candidate replication a standard we had never imposed on the data the entire study rests on, and the consequence was to discard the best-powered replication available for failing a test the reference itself would have failed. Under the reference's own standard, retaining the $25$-cell floor per (target, condition), the same file yields $2{,}122$ targets.
@@ -510,66 +515,102 @@ The honest summary is therefore an ordering plus a floor. What we can assert: no
 \section{The detection floor, measured}
 \label{app:floor}
 
-The simulation in Appendix~\ref{app:power} says what this pipeline should be able to detect. This is
+The simulation in Appendix~\ref{app:power} says what this pipeline should be able to detect. This says
 whether it does. We add a known graph-dependent component to the real responses at a ladder of sizes and
 report the smallest one recovered. For each perturbation target the component is the mean response of its
 protein-interaction neighbours, computed over \emph{training rows only}, scaled so its spread matches the
 training response's and multiplied by $\delta$; so $\delta$ reads as a fraction of a response standard
 deviation. A model that can read the graph can predict a held-out target from its neighbours. One that
-cannot, cannot.
+cannot, cannot. Six conditions, two arms, four paired seeds each: $48$ training runs, no failures.
 
 Two properties make the number mean anything, and both were fixed before any lane ran. No validation
-response reaches any injected value, including through the scaling constant, which is asserted by a test
-that perturbs a validation response and requires the whole injection matrix to be bit-identical. And one
-rung is a NEGATIVE CONTROL in which each target receives some \emph{other} target's neighbourhood, at the
+response reaches any injected value, including through the scaling constant, asserted by a test that
+perturbs a validation response and requires the whole injection matrix to be bit-identical. And one rung
+is a NEGATIVE CONTROL in which each target receives some \emph{other} target's neighbourhood, at the
 largest $\delta$, preserving the injected component's size and distribution while destroying its relation
 to the graph. Rows outside the training and validation folds are left bit-identical, so the sequestered
 split is untouched.
 
 \begin{table}[h]
 \centering\small
-\caption{Injected-signal ladder. $\Delta$ is \textsc{untyped\_gnn} $-$ \textsc{expression\_only},
-paired over four seeds, corrected as one family of six with Bonferroni and Holm both required. The
-last row is the negative control: the same injection magnitude over a scrambled neighbourhood.}
+\caption{Injected-signal ladder. $\Delta$ is \textsc{untyped\_gnn} $-$ \textsc{expression\_only} on
+\textsc{systema}, paired over four seeds, corrected as one family of six with Bonferroni and Holm both
+required. ``increment'' subtracts the same seed's gap with no injection, and is post-hoc. The last row
+is the negative control: the same injection magnitude over a scrambled neighbourhood.}
 \label{tab:floor2}
-\begin{tabular}{lrrrrl}
+\begin{tabular}{lrrrrrl}
 \toprule
-condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & \\
+condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & increment & \\
 \midrule
-no injection & $0$ & $+0.0048$ & $[-0.0000,+0.0097]$ & & zero point \\
-injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & recovered \\
-injected & $0.05$ & $+0.0081$ & $[+0.0052,+0.0110]$ & $0.018$ & recovered \\
-injected & $0.10$ & $+0.0041$ & $[+0.0026,+0.0056]$ & $0.020$ & recovered \\
-injected & $0.20$ & $+0.0090$ & $[+0.0072,+0.0109]$ & $0.003$ & recovered \\
-injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.023$ & recovered \\
-\textbf{scrambled} & $0.40$ & $\mathbf{-0.0001}$ & $[-0.0021,+0.0018]$ & $1.000$ & \textbf{not recovered} \\
+no injection & $0$ & $+0.0048$ & $[-0.0000,+0.0097]$ & & & zero point \\
+injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & $+0.0040$ & recovered \\
+injected & $0.05$ & $+0.0081$ & $[+0.0052,+0.0110]$ & $0.018$ & $+0.0033$ & recovered \\
+injected & $0.10$ & $+0.0041$ & $[+0.0026,+0.0056]$ & $0.020$ & $-0.0007$ & recovered \\
+injected & $0.20$ & $+0.0090$ & $[+0.0072,+0.0109]$ & $0.003$ & $+0.0042$ & recovered \\
+injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.023$ & $+0.0135^{*}$ & recovered \\
+\textbf{scrambled} & $0.40$ & $\mathbf{-0.0001}$ & $[-0.0021,+0.0018]$ & $1.000$ & $-0.0050^{*}$ & \textbf{not recovered} \\
+\bottomrule
+\end{tabular}
+\\[2pt]{\footnotesize $^{*}$ the only two increments whose own interval excludes zero ($p=0.03$ and $p=0.02$).}
+\end{table}
+
+The floor is at or below $0.02$ response standard deviations, the smallest size we injected: every
+injected rung is recovered under both corrections.
+
+\paragraph{The control is what makes that readable.} At the same magnitude, a scrambled neighbourhood
+gives a gap of $-0.0001$ with an interval of width $0.004$ around zero, so the gaps above are the graph
+being read and not the injection being large. The absolute scores make the same point from the other
+side.
+
+\begin{table}[h]
+\centering\small
+\caption{Mean \textsc{systema} per arm, four seeds, and the change against the same arm with no
+injection. Injected structure that follows the graph makes the task easier for BOTH arms; the same
+amount of structure that does not follow it makes it slightly harder for both.}
+\label{tab:floorabs}
+\begin{tabular}{lrrrr}
+\toprule
+condition & \textsc{expression\_only} & \textsc{untyped\_gnn} & $\Delta$ expr. & $\Delta$ untyped \\
+\midrule
+no injection      & $0.0856$ & $0.0904$ & & \\
+$\delta{=}0.02$   & $0.0879$ & $0.0967$ & $+0.0023$ & $+0.0063$ \\
+$\delta{=}0.05$   & $0.0921$ & $0.1003$ & $+0.0065$ & $+0.0098$ \\
+$\delta{=}0.10$   & $0.1056$ & $0.1097$ & $+0.0200$ & $+0.0193$ \\
+$\delta{=}0.20$   & $0.1275$ & $0.1365$ & $+0.0418$ & $+0.0461$ \\
+$\delta{=}0.40$   & $0.1679$ & $0.1862$ & $+0.0823$ & $+0.0958$ \\
+\textbf{scrambled $0.40$} & $0.0830$ & $0.0828$ & $\mathbf{-0.0027}$ & $\mathbf{-0.0076}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The floor is at or below $0.02$ response standard deviations, the smallest size we injected: every
-injected rung is recovered under both corrections. The control is what makes that readable. At the same
-magnitude, a scrambled neighbourhood produces a gap of $-0.0001$ with a confidence interval of width
-$0.004$ around zero, so the gaps above are the graph being read and not the injection being large. The
-absolute scores make the same point from the other side: at $\delta{=}0.40$ both arms gain $0.08$ to
-$0.10$ \textsc{systema}, while under the scrambled injection of identical magnitude both arms
-\emph{lose} a little. Injected structure that follows the graph makes the task easier for everything;
-injected structure that does not follow it makes the task slightly harder for everything.
+\paragraph{What the injection bought, over what was already there.} Each rung is tested against zero,
+and this fold already carries a real graph benefit of $+0.0048$ with no injection at all, so a rung can
+clear on the pre-existing benefit alone. Subtracting the same seed's un-injected gap leaves the
+increment column of Table~\ref{tab:floor2}, and it is a weaker claim than the primary: only
+$\delta{=}0.40$ has an increment whose own interval excludes zero. So this pipeline detects
+graph-dependent structure at $0.02$, and at four seeds it cannot separate an \emph{added} benefit from
+the one already present until $\delta{=}0.40$. That subtraction is post-hoc and we say so; it was
+written and committed while two rungs were still training, which is the only reason it is worth reading.
 
-One caution belongs with the number, and we computed it because the primary comparison could not settle
-it. Each rung is tested against zero, and this fold already carries a real graph benefit of $+0.0048$
-with no injection at all, so a rung can clear on the pre-existing benefit alone. Subtracting the same
-seed's un-injected gap leaves what the injection bought: $+0.0040$ at $\delta{=}0.02$
-($p{=}0.14$), $+0.0042$ at $0.20$ ($p{=}0.11$), and $+0.0135$ at $0.40$ ($p{=}0.03$). So the pipeline
-detects graph-dependent structure at $0.02$, and at four seeds it cannot distinguish an \emph{added}
-benefit from the one already present until $\delta{=}0.40$. That subtraction is post-hoc and we say so;
-it was written and committed while two rungs were still training, which is the only reason it is worth
-reading.
+\paragraph{Do not read the rungs against each other by their own intervals.} The $\Delta$ column's
+intervals are within-rung and paired on the seed, so they are tight, and the $\delta{=}0.10$ rung's
+$+0.0041$ sits outside its neighbours' intervals on both sides. That comparison is not licensed: each
+rung is a different dataset, and the quantity with the right error bars for comparing across rungs is
+the increment, whose intervals are two to four times wider and overlap one another at every rung.
+A ladder is a set of separate experiments, not a curve.
 
-The scrambled control also carries a finding of its own. Its increment over the zero point is
-$-0.0050$ ($[-0.0083,-0.0016]$): injecting graph-shaped structure that follows the \emph{wrong} graph
-does not merely fail to help, it destroys the real benefit that was there. A prior that is confidently
-wrong is worse than no prior, and that is measurable here rather than asserted.
+\paragraph{Agreement with the simulation.} Appendix~\ref{app:power} put the smallest detectable effect
+at $0.0075$ \textsc{systema} on this fold at seven seeds. The $\delta{=}0.02$ rung produced a gap of
+$+0.0088$ and was detected at four. The modelled instrument and the built one give about the same
+answer, which is the check neither could provide alone.
+
+\paragraph{The scrambled control carries a finding of its own.} Its increment over the zero point is
+$-0.0050$ ($[-0.0083,-0.0016]$, $p=0.02$): injecting graph-shaped structure that follows the
+\emph{wrong} graph does not merely fail to help, it destroys the real benefit that was there. A prior
+that is confidently wrong is worse than no prior, and here that is measured rather than asserted. It is
+also the sharpest reply we can give to our own paper: a null can mean the prior is uninformative, or
+that the encoder discards it, or that the graph is wrong, and only the last of those makes the model
+worse than having no graph at all.
 
 % AUTO 2026-08-16: new appendix. Re-scoring only; no model was retrained for it.
 \section{The null under other people's endpoints}
