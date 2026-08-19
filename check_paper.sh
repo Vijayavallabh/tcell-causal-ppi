@@ -65,3 +65,13 @@ print(f"LaTeX errors     : {errors}")
 print("PASS" if not fails else "FAIL:\n  " + "\n  ".join(fails))
 sys.exit(1 if fails else 0)
 PY
+
+# Gate 5: abstract_plain.txt is DERIVED from main.tex and is what SUBMISSION.md tells a human to paste
+# into the portal. It had no generator and drifted a full campaign behind the paper, still carrying a
+# retracted claim. Making the drift a gate is the only thing that stops it recurring.
+GATE5=0
+.venv/bin/python paper/icbinb/make_abstract_plain.py --check || GATE5=$?
+if [ $GATE5 -ne 0 ]; then
+  echo "FAIL: abstract_plain.txt is stale — run .venv/bin/python paper/icbinb/make_abstract_plain.py"
+  exit 1
+fi
