@@ -200,7 +200,8 @@ That is \emph{larger than the effect the paper set out to measure}: on the same 
 \section{Limitations}
 \label{sec:limits}
 
-\textbf{A bounded null, and the bound is per fold, not general.} No fold yields a benefit surviving correction, and no single fold's upper limit bounds the effect elsewhere; the per-fold intervals are in Appendix~\ref{app:power}.
+% AUTO 2026-08-19: the bound now carries a measured floor and a working negative control.
+\textbf{A bounded null, and the bound is per fold, not general.} No fold yields a benefit surviving correction, and no single fold's upper limit bounds the effect elsewhere; the per-fold intervals are in Appendix~\ref{app:power}. The instrument is not the limit: an injected graph signal is recovered at $0.02$ response SDs while a scrambled control at $0.40$ is not (Appendix~\ref{app:floor}).
 
 % AUTO 2026-08-11: heading and opening no longer claim one screen; the replication has run.
 \textbf{The replication almost did not happen, because our own pre-registration nearly prevented it.} We pre-registered a multi-dataset replication and built differential-expression matrices for six harmonized public candidates \citep{peidli2024scperturb}. Under the rules as written, four fell out; the best-powered casualty was Replogle RPE1, where a requirement of two or more replicate pseudobulks per (target, condition) at a $25$-cell floor left only $12$ of $2{,}393$ targets, and we declined to rescue it with random pseudo-replicates.
@@ -503,7 +504,72 @@ datasets, untyped & between dataset & $0.0205$ & $252$ datasets & $0.02$ \\
 
 Three things follow, and the first corrects us. The old text said the between-re-draw component was at least as large as the between-seed one; measured, it is not, and not by a little. For h2a the training seed contributes $0.0107$ against the re-draw's $0.0003$, so the noise we blamed on re-drawing the split was mostly the seed. Second, the floor depends on what you want the claim to survive. On this fold as run, a $0.0043$ benefit would need $15$ seeds and we had $7$; a claim that must also survive re-drawing the fold would need $73$. Third, and least comfortable for the literature this sits in: the between-dataset spread of the \emph{untyped} contrast is $0.0205$, five times the effect anyone reports, because the datasets disagree in sign. Detecting a $0.0043$ pooled benefit against that spread needs on the order of $250$ datasets. The harmonized resource we drew from has $44$ \citep{peidli2024scperturb}, and the largest cross-dataset perturbation studies we know of use single digits. That is not a statement about our pipeline. It is a statement about what a pooled cross-dataset claim in this area can currently support.
 
-The honest summary is therefore an ordering plus a floor. What we can assert: no fold, and no re-draw of a fold, yields a graph benefit that survives family-wise correction over the pre-registered family of four, and the smallest effect we were positioned to detect on the frozen fold at the seven seeds we ran is $0.0075$, rising to $0.0185$ if the claim must also survive re-drawing the fold. Our headline null is an estimate of $-0.0009$, an order of magnitude inside the first of those. What we still cannot assert: that any particular upper limit constrains the effect on a fold, dataset or protocol we did not run. The remaining step, which we did not run, is the empirical version of this table: inject a known graph-dependent signal into the responses at a ladder of effect sizes and report the smallest one recovered. The simulation above says what the answer should be; only the injection would show whether the pipeline achieves it.
+The honest summary is therefore an ordering plus a floor. What we can assert: no fold, and no re-draw of a fold, yields a graph benefit that survives family-wise correction over the pre-registered family of four, and the smallest effect we were positioned to detect on the frozen fold at the seven seeds we ran is $0.0075$, rising to $0.0185$ if the claim must also survive re-drawing the fold. Our headline null is an estimate of $-0.0009$, an order of magnitude inside the first of those. What we still cannot assert: that any particular upper limit constrains the effect on a fold, dataset or protocol we did not run. We then ran the empirical version of this table rather than leaving it as future work; it is Appendix~\ref{app:floor}.
+
+% AUTO 2026-08-19: A2(a) landed. 48 lanes, 6 conditions, the negative control included.
+\section{The detection floor, measured}
+\label{app:floor}
+
+The simulation in Appendix~\ref{app:power} says what this pipeline should be able to detect. This is
+whether it does. We add a known graph-dependent component to the real responses at a ladder of sizes and
+report the smallest one recovered. For each perturbation target the component is the mean response of its
+protein-interaction neighbours, computed over \emph{training rows only}, scaled so its spread matches the
+training response's and multiplied by $\delta$; so $\delta$ reads as a fraction of a response standard
+deviation. A model that can read the graph can predict a held-out target from its neighbours. One that
+cannot, cannot.
+
+Two properties make the number mean anything, and both were fixed before any lane ran. No validation
+response reaches any injected value, including through the scaling constant, which is asserted by a test
+that perturbs a validation response and requires the whole injection matrix to be bit-identical. And one
+rung is a NEGATIVE CONTROL in which each target receives some \emph{other} target's neighbourhood, at the
+largest $\delta$, preserving the injected component's size and distribution while destroying its relation
+to the graph. Rows outside the training and validation folds are left bit-identical, so the sequestered
+split is untouched.
+
+\begin{table}[h]
+\centering\small
+\caption{Injected-signal ladder. $\Delta$ is \textsc{untyped\_gnn} $-$ \textsc{expression\_only},
+paired over four seeds, corrected as one family of six with Bonferroni and Holm both required. The
+last row is the negative control: the same injection magnitude over a scrambled neighbourhood.}
+\label{tab:floor2}
+\begin{tabular}{lrrrrl}
+\toprule
+condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & \\
+\midrule
+no injection & $0$ & $+0.0048$ & $[-0.0000,+0.0097]$ & & zero point \\
+injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & recovered \\
+injected & $0.05$ & $+0.0081$ & $[+0.0052,+0.0110]$ & $0.018$ & recovered \\
+injected & $0.10$ & $+0.0041$ & $[+0.0026,+0.0056]$ & $0.020$ & recovered \\
+injected & $0.20$ & $+0.0090$ & $[+0.0072,+0.0109]$ & $0.003$ & recovered \\
+injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.023$ & recovered \\
+\textbf{scrambled} & $0.40$ & $\mathbf{-0.0001}$ & $[-0.0021,+0.0018]$ & $1.000$ & \textbf{not recovered} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The floor is at or below $0.02$ response standard deviations, the smallest size we injected: every
+injected rung is recovered under both corrections. The control is what makes that readable. At the same
+magnitude, a scrambled neighbourhood produces a gap of $-0.0001$ with a confidence interval of width
+$0.004$ around zero, so the gaps above are the graph being read and not the injection being large. The
+absolute scores make the same point from the other side: at $\delta{=}0.40$ both arms gain $0.08$ to
+$0.10$ \textsc{systema}, while under the scrambled injection of identical magnitude both arms
+\emph{lose} a little. Injected structure that follows the graph makes the task easier for everything;
+injected structure that does not follow it makes the task slightly harder for everything.
+
+One caution belongs with the number, and we computed it because the primary comparison could not settle
+it. Each rung is tested against zero, and this fold already carries a real graph benefit of $+0.0048$
+with no injection at all, so a rung can clear on the pre-existing benefit alone. Subtracting the same
+seed's un-injected gap leaves what the injection bought: $+0.0040$ at $\delta{=}0.02$
+($p{=}0.14$), $+0.0042$ at $0.20$ ($p{=}0.11$), and $+0.0135$ at $0.40$ ($p{=}0.03$). So the pipeline
+detects graph-dependent structure at $0.02$, and at four seeds it cannot distinguish an \emph{added}
+benefit from the one already present until $\delta{=}0.40$. That subtraction is post-hoc and we say so;
+it was written and committed while two rungs were still training, which is the only reason it is worth
+reading.
+
+The scrambled control also carries a finding of its own. Its increment over the zero point is
+$-0.0050$ ($[-0.0083,-0.0016]$): injecting graph-shaped structure that follows the \emph{wrong} graph
+does not merely fail to help, it destroys the real benefit that was there. A prior that is confidently
+wrong is worse than no prior, and that is measurable here rather than asserted.
 
 % AUTO 2026-08-16: new appendix. Re-scoring only; no model was retrained for it.
 \section{The null under other people's endpoints}
