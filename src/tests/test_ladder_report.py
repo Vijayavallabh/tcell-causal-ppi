@@ -109,3 +109,31 @@ def test_verdict_needs_a_positive_not_merely_a_significant_rung():
                  "d200": {"n": 4, "mean": -0.06, "survives_family_wise": True}}
     v = _verdict(rungs, contrasts)
     assert v["floor"] is None and v["floor_status"] == "above_ladder"
+
+
+def test_the_post_hoc_increment_subtracts_the_zero_point_seed_by_seed(tmp_path, monkeypatch):
+    """POST-HOC secondary, committed before the last rungs ran. A rung whose gap equals the
+    un-injected gap must show an increment of zero: that is the whole point, since the primary tests
+    against zero and the un-injected gap on this fold is already about +0.005."""
+    import numpy as np
+
+    from tcell_pipeline.screening import ladder_report as lr
+
+    ref = tmp_path / "ref"
+    base = [0.080, 0.081, 0.079, 0.080]
+    gap0 = [0.004, 0.006, 0.005, 0.005]                        # the zero point, per seed
+    _rung(ref, ".", [b + g for b, g in zip(base, gap0)], base)  # reference lanes
+    monkeypatch.setattr(lr, "REFERENCE_ROOT", str(ref / "."))
+
+    root = tmp_path / "ladder"
+    _rung(root, "d020", [b + g for b, g in zip(base, gap0)], base)          # identical to the zero point
+    _rung(root, "d200", [b + g + 0.02 for b, g in zip(base, gap0)], base)   # zero point plus 0.02
+
+    rungs = lr.collect(str(root))
+    incr = lr.increment_over_zero(rungs)
+    assert incr["d020"]["mean"] == pytest.approx(0.0, abs=1e-9)
+    assert incr["d200"]["mean"] == pytest.approx(0.02, abs=1e-9)
+    # and the PRIMARY on the same data still reports the pre-existing gap, which is the gap the
+    # increment exists to remove
+    prim = lr.run(str(root), None)
+    assert prim["contrasts"]["d020"]["mean"] == pytest.approx(np.mean(gap0), abs=1e-9)

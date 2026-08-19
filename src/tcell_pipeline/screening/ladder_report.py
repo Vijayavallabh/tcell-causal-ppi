@@ -69,6 +69,45 @@ def collect(ladder_root: str = LADDER_ROOT, seeds=SEEDS) -> dict:
     return rungs
 
 
+def increment_over_zero(rungs: dict, seeds=SEEDS, alpha: float = 0.05) -> dict:
+    """POST-HOC, and labelled so wherever it appears. Each rung's gap MINUS the same seed's gap on the
+    UN-INJECTED reference lanes.
+
+    WHY IT EXISTS. The pre-registered primary tests each rung's ``untyped - expression_only`` against
+    ZERO. On this fold that contrast is already about +0.005 with no injection at all, because a real
+    graph benefit exists there (it is the paper's one corrected-significant positive). So a rung can
+    clear the primary on the pre-existing benefit alone, and the smallest clearing rung is then a floor
+    for "the graph helps", not for "the injected signal was recovered". This subtracts the zero point so
+    the remainder is what the INJECTION bought.
+
+    IT IS NOT THE RULE. Amendment 6.7 fixes the primary and this does not replace it; both are reported.
+    Written and committed while three rungs were still unrun, so it could not have been shaped by the
+    numbers it would produce - which is the only thing that makes a post-hoc analysis worth reading.
+
+    Paired on the SEED: the same seed means the same initialisation and data order, on the same frozen
+    fold, so the difference of differences removes that nuisance exactly as the primary does."""
+    zero = {}
+    root = Path(REFERENCE_ROOT)
+    if root.exists():
+        b = _metric_by_seed(root, UNTYPED_GNN, seeds)
+        w = _metric_by_seed(root, EXPRESSION_ONLY, seeds)
+        zero = {s: b[s] - w[s] for s in sorted(set(b) & set(w))}
+    if not zero:
+        return {}
+    out = {}
+    for name, r in rungs.items():
+        gap = {s: r["better"][s] - r["worse"][s]
+               for s in sorted(set(r["better"]) & set(r["worse"]))}
+        shared = sorted(set(gap) & set(zero))
+        if len(shared) < 2:
+            continue
+        out[name] = paired_delta_summary({s: gap[s] for s in shared},
+                                         {s: zero[s] for s in shared}, alpha=alpha, seeds=shared)
+        out[name]["delta"] = r["delta"]
+        out[name]["permuted"] = r["permuted"]
+    return out
+
+
 def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
         alpha: float = 0.05) -> dict:
     rungs = collect(ladder_root, seeds)
@@ -100,7 +139,22 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
     for line in verdict["notes"]:
         print(f"[ladder] {line}")
 
+    # POST-HOC, never the rule (see increment_over_zero's docstring). Printed under its own heading so
+    # it cannot be mistaken for the pre-registered primary above.
+    incr = increment_over_zero(rungs)
+    if incr:
+        print("\n[ladder] POST-HOC: each rung's gap MINUS the same seed's gap with NO injection.")
+        print("[ladder] Not the pre-registered primary; committed before the last rungs ran.")
+        print(f"{'rung':>16} {'delta':>6} {'n':>2} {'increment':>11} {'95% CI':>24} {'p':>8}")
+        for name in sorted(incr, key=lambda k: (incr[k]["permuted"], incr[k]["delta"] or 0)):
+            c = incr[name]
+            ci = "     -" if c["ci_low"] is None else f"[{c['ci_low']:+.4f}, {c['ci_high']:+.4f}]"
+            mean = "    -" if c["mean"] is None else f"{c['mean']:+.4f}"
+            pv = "  -" if c["p_value"] is None else f"{c['p_value']:.4f}"
+            print(f"{name:>16} {c['delta']:>6.3f} {c['n']:>2} {mean:>11} {ci:>24} {pv:>8}")
+
     report = {"family_size": m, "alpha": alpha, "seeds": list(seeds), "zero_point": zero,
+              "post_hoc_increment_over_zero": incr,
               "contrasts": contrasts, "rungs": {k: {kk: vv for kk, vv in v.items() if kk != "path"}
                                                 for k, v in rungs.items()}, **verdict}
     if out is not None:
