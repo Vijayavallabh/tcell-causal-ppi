@@ -1,3 +1,75 @@
+# A2(a) CLOSED (2026-08-19): the detection floor is at or below 0.02 response SDs, and the control works
+
+48 lanes, 6 conditions, 4 paired seeds each, 0 failures. Pre-registered in Amendment 6 before any lane
+ran. Artifact `data/results/a2_ladder/floor.json`.
+
+A known graph-dependent component was added to the real responses: for each target, delta times the mean
+response of its PPI neighbours, computed from TRAIN ROWS ONLY, scaled so delta reads as a fraction of a
+response SD. One rung is a NEGATIVE CONTROL in which each target gets some OTHER target's neighbourhood
+at the same magnitude.
+
+## The pre-registered primary (family of six, Bonferroni AND Holm, both required)
+
+| condition | delta | gap | 95% CI | bonf | holm | recovered |
+|---|---|---|---|---|---|---|
+| no injection | 0 | +0.0048 | [-0.0000, +0.0097] | — | — | zero point, not in the family |
+| injected | 0.02 | **+0.0088** | [+0.0071, +0.0105] | 0.0029 | 0.0029 | YES |
+| injected | 0.05 | +0.0081 | [+0.0052, +0.0110] | 0.0175 | 0.0117 | YES |
+| injected | 0.10 | +0.0041 | [+0.0026, +0.0056] | 0.0198 | 0.0117 | YES |
+| injected | 0.20 | +0.0090 | [+0.0072, +0.0109] | 0.0033 | 0.0029 | YES |
+| injected | 0.40 | +0.0183 | [+0.0112, +0.0254] | 0.0225 | 0.0117 | YES |
+| **scrambled** | 0.40 | **-0.0001** | [-0.0021, +0.0018] | 1.0000 | 0.8333 | **NO** |
+
+**MEASURED FLOOR = 0.02 response SDs**, the smallest size injected. Every injected rung is recovered;
+the control is not.
+
+## The control is what makes the number readable
+
+At the same injection magnitude, a scrambled neighbourhood gives a gap of -0.0001 with a CI of width
+0.004 around zero. So the gaps above are the graph being READ, not the injection being large.
+
+The absolute scores say it from the other side:
+
+| condition | expr_only | untyped | vs the un-injected reference |
+|---|---|---|---|
+| delta=0 | 0.0856 | 0.0904 | — |
+| delta=0.40 | 0.1679 | 0.1862 | expr **+0.0823**, untyped **+0.0958** |
+| **scrambled 0.40** | 0.0830 | 0.0828 | expr **-0.0027**, untyped **-0.0076** |
+
+Injected structure that FOLLOWS the graph makes the task easier for both arms. Injected structure of
+identical magnitude that does NOT follow it makes the task slightly harder for both. Nothing here is a
+magnitude artifact.
+
+## POST-HOC: what the injection bought over the benefit already there
+
+Committed while two rungs were still training, so it cannot have been shaped by its own numbers.
+
+| condition | increment over delta=0 | 95% CI | p |
+|---|---|---|---|
+| 0.02 | +0.0040 | [-0.0024, +0.0104] | 0.14 |
+| 0.05 | +0.0033 | [-0.0030, +0.0095] | 0.19 |
+| 0.10 | -0.0007 | [-0.0068, +0.0054] | 0.73 |
+| 0.20 | +0.0042 | [-0.0017, +0.0102] | 0.11 |
+| 0.40 | **+0.0135** | [+0.0022, +0.0248] | **0.03** |
+| **scrambled 0.40** | **-0.0050** | [-0.0083, -0.0016] | **0.02** |
+
+The primary tests each rung against ZERO, and this fold already carries a real +0.0048 with no injection,
+so a rung can clear on the pre-existing benefit alone. Subtracting it: the pipeline **detects
+graph-dependent structure at 0.02**, and at four seeds it **cannot distinguish an ADDED benefit from the
+one already present until delta=0.40**. Both numbers are reported; the first is the pre-registered rule.
+
+**The control carries its own finding.** Its increment is significantly NEGATIVE (-0.0050): injecting
+graph-shaped structure that follows the WRONG graph does not merely fail to help, it destroys the real
+benefit that was there. A confidently wrong prior is worse than no prior, measured rather than asserted.
+
+## Consistency with A2(b)
+
+The simulation predicted an MDE of 0.0075 systema at n=7 on the frozen fold. The delta=0.02 rung produced
+a gap of +0.0088 and was detected at n=4. The empirical instrument does about what the modelled one said
+it would.
+
+---
+
 # A1 CLOSED (2026-08-18): edge typing hurts, and NEITHER of the two candidate routes is why
 
 Ten lanes, n=5 both arms, frozen fold, pre-registered in Amendments 4, 4a and 4b BEFORE any of them ran.

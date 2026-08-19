@@ -32,40 +32,41 @@ RAILS — never cross
   it governs. A factual record of what was run goes in RESULTS_SUMMARY.md, not the pre-registration.
 
 =======================================================================
-STATUS 2026-08-18 13:50 IST — A1 CLOSED; the ladder is the only thing left
+STATUS 2026-08-19 12:30 IST — EVERY AUTONOMOUS ITEM IN THIS FILE IS NOW CLOSED
 =======================================================================
-A1  CLOSED 2026-08-18. Ten lanes, n=5 both arms, 83 GPU-h, pre-registered before any of them ran.
-      D1 typed_shared   - typed_static  = +0.0004 [-0.0048,+0.0057]  bonf 1.000  NULL
-      D2 typed_permuted - typed_static  = +0.0065 [-0.0017,+0.0147]  bonf 0.182  NULL
-    The ("null","null") cell of Amendment 4.4: the typed STRUCTURE hurts, and neither its parameter
-    count nor its labels is the route. Cutting message parameters 4x (2.40M -> 0.60M, 34% of the whole
-    model) moves systema by +0.0004. Randomising every relation label, counts preserved exactly, moves
-    it by +0.0065 and does not clear correction -- the point estimate says the curated partition is
-    slightly WORSE than a random one, which is suggestive and NOT established.
-    Both arms stay far below untyped (-0.0172, -0.0111) and below no-graph (-0.0126, -0.0065), so the
-    damage is in what all three typed arms SHARE: signed messages, the per-edge feature term, complex
-    nodes, the residual FFN, and `add` instead of degree normalisation.
-    data/results/screening_a1/a1_mechanism.json.
-A2(a) RUNNING since 2026-08-18 13:46, all four cards, 48 lanes (6 rungs x 2 arms x 4 seeds), ~66 GPU-h,
-    so roughly 17 wall-hours. run_ladder_finalise.sh is chained and writes
-    data/results/a2_ladder/floor.json when the lanes are quiet. THIS IS THE LAST AUTONOMOUS ITEM.
+A1  CLOSED 2026-08-18. D1 = +0.0004 (bonf 1.000), D2 = +0.0065 (bonf 0.182), both NULL. The typed
+    structure hurts and neither its parameter count nor its labels is the route. Cutting message
+    parameters fourfold (34% of the model) does nothing; randomising every relation label does nothing
+    that clears correction. data/results/screening_a1/a1_mechanism.json.
+A2(a) CLOSED 2026-08-19. 48 lanes, 6 conditions, 0 failures. MEASURED FLOOR <= 0.02 response SDs: every
+    injected rung is recovered under both corrections, and the SCRAMBLED-NEIGHBOURHOOD control at the
+    largest delta is NOT (-0.0001, CI width 0.004 around zero). So the gaps are the graph being read,
+    not the injection being large. At delta=0.40 both arms gain 0.08-0.10 systema; under the scrambled
+    injection of identical magnitude both arms LOSE a little.
+    POST-HOC (committed while two rungs were still training): subtracting the pre-existing +0.0048, the
+    injection's own contribution is only significant at delta=0.40 (+0.0135, p=0.03). So the pipeline
+    detects graph structure at 0.02 and cannot separate an ADDED benefit from the one already there
+    below 0.40 at four seeds. The control's increment is significantly NEGATIVE (-0.0050): a
+    confidently WRONG prior destroys the real benefit rather than merely failing to help.
+    data/results/a2_ladder/floor.json.
 A2(b), A3, A4, A5  CLOSED 2026-08-16. See RESULTS_SUMMARY.md.
 
-COST OF A BRITTLE PREFLIGHT, recorded so it is not repeated. The first ladder launch REFUSED at 02:06
-on 2026-08-18 because ONE card had 23 GiB free, and the run_overnight_chain exited. Three idle A100s for
-eleven and a half hours. Both runner scripts now SELECT usable cards and refuse only if none is usable.
-On a shared box, per-card availability is the normal case and not an error.
+NOTHING IS RUNNING. The GPUs are free. What remains in this file is the NOT AUTONOMOUS section below:
+the OpenReview submission and the sealed split, both of which need a human.
 
-A STANDING INSTRUCTION IN THIS FILE IS NOW WRONG, and it is recorded rather than acted on. This file
-says "DO NOT re-propose per-relation normalisation or confidence pruning -- both already refuted".
-A4 measured that the 14-cell search which refuted them spans 0.0089 across all its cells, while the
-untyped-minus-typed gap on the same fold is 0.0176. The search was not resolving differences of the
-size that separate these arms, so nothing was refuted within it. Whether to re-run the normalisation
-lever at n>=4 seeds is now an open question, not a dead end. Nothing has been launched.
+PAPER. Body still EXACTLY 8pp (References open page 9), 21 pages total, 0 errors / 0 undefined /
+0 overfull >2pt. ./check_paper.sh checks all four gates at once. Added since 2026-08-16:
+app:metrics (A3), app:power rewritten (A2b), app:mechanism (A1), app:floor (A2a), an A4 paragraph in
+app:archsearch, an A5 paragraph in app:causes, and three short body clauses. Pre-registration
+amendments 4, 4a, 4b, 5 and 6 each went in BEFORE the run they govern.
 
-PAPER. Body still EXACTLY 8pp (References open page 9), 0 errors / 0 undefined / 0 overfull >2pt,
-20 pages total. ./check_paper.sh checks all four gates at once. A1 added as appendix app:mechanism plus
-one sentence in the cause-C paragraph.
+TWO STANDING INSTRUCTIONS IN THIS FILE ARE NOW WRONG, recorded rather than acted on:
+ - "do not re-propose per-relation normalisation... a known dead end". A4 measured that the 14-cell
+   search which refuted it spans 0.0089 across all its cells while the gap under study is 0.0176. It
+   was not resolving these arms, so nothing was refuted within it. A1 then eliminated the two levers
+   that WERE untried, which makes normalisation the strongest remaining candidate.
+ - the delta=0 rung as A2(a)'s negative control. Superseded by Amendment 6.4; the scrambled rung is the
+   control, and it worked.
 
 =======================================================================
 THE AUTONOMOUS WORK, in priority order
@@ -100,7 +101,7 @@ DECIDE IN ADVANCE, and write it into the prereg as a dated append BEFORE running
 (shared-weight typed) - (typed_static). If it is positive and clears both corrections, parameter count
 explains the damage; if indistinguishable, the relation partition does.
 
---- A2. L2. The detection floor.  (b) CLOSED 2026-08-16.  (a) THE INJECTION LADDER IS OPEN ----
+--- A2. L2. The detection floor.  (b) CLOSED 2026-08-16.  (a) CLOSED 2026-08-19. ------------
 PAPER SAYS: the CI upper limit is per fold; the MDE from 5 seeds is itself uncertain (0.005 to 0.025).
 
 CLOSE WITH (a) AN EMPIRICAL FLOOR. Inject a known graph-dependent component into the real DE matrix at

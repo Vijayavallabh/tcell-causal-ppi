@@ -1,5 +1,33 @@
 # Session Handoff
 
+## STOP — READ FIRST (2026-08-19 12:30): every autonomous item is closed; nothing is running
+
+The GPUs are free. What is left in `NEXT_ACTIONS.txt` is the NOT AUTONOMOUS section: the OpenReview
+submission and the sealed split, both needing a human.
+
+**A2(a) landed and the negative control worked.** Measured floor <= 0.02 response SDs — every injected
+rung recovered under both corrections — while the scrambled-neighbourhood control at the same magnitude
+gives -0.0001, a CI of width 0.004 around zero. At delta=0.40 both arms gain 0.08-0.10 systema; under
+the scrambled injection of identical magnitude both arms LOSE a little. So the ladder measures the graph
+being read, not the injection being large.
+
+Post-hoc, subtracting the +0.0048 already on this fold, the injection's own contribution is significant
+only at delta=0.40. And the control's increment is significantly negative (-0.0050): a confidently wrong
+prior destroys the real benefit rather than merely failing to help.
+
+**A1 landed the day before.** Both diagnostic contrasts null: cutting the message parameters fourfold
+does nothing (+0.0004), randomising every relation label does nothing that clears correction (+0.0065).
+The damage is in what all three typed arms share, not in the typing.
+
+**Where the paper stands.** 21 pages, body still exactly 8pp, all four gates passing via
+`./check_paper.sh`. Four new appendices and three body clauses since 2026-08-16. Amendments 4, 4a, 4b, 5
+and 6 all pre-date the runs they govern.
+
+**Read in this order:** `RESULTS_SUMMARY.md` top to bottom — it is newest-first and the top four
+sections are A2(a), A1, A5, A4, then the A3 contradiction stop.
+
+---
+
 ## STOP — READ FIRST (2026-08-18 13:50): A1 closed; only the ladder is still running
 
 **RUNNING.** `run_a2_ladder.sh` since 13:46 on all four A100s — 48 lanes, ~66 GPU-h, about 17 wall-hours.
