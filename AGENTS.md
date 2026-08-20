@@ -12,7 +12,8 @@ Before writing code:
 4. **Run `./init.sh`** to verify environment is healthy
 5. **Read `feature_list.json`** to see current feature state
 6. **Read `session-handoff.md` and `NEXT_ACTIONS.txt`** for the recommended next step and the current
-   experiment backlog (E1–E6 for the AAAI submission)
+   experiment backlog. The target venue is ICBINB-BIO, not AAAI, and the A- and B-series are closed —
+   the old E1–E6 list is superseded (see the `NEXT_ACTIONS.txt` entry below)
 7. **Review recent commits** with `git log --oneline -5`
 
 If baseline verification is failing, repair that first before adding new scope.
@@ -28,7 +29,7 @@ Key facts:
 - Data lives under `data/raw/` (gitignored, ~100 GB) — see README for download instructions
 - Derived artifacts go under `data/intermediate/`, `data/graphs/`, `data/splits/`, `data/results/`, `data/checkpoints/`
 - Only `data/manifests/` and `data/splits/` are tracked in git
-- **The paper deliverable is gitignored and never enters git:** `paper/` (LaTeX source, figures, `main.pdf`), `EG_IPG_architecture_walkthrough.md`, and `perturbation_informed_causal_protein_program_graphs_report.md` live on disk only. `git add`/commit never captures them and `git status` never shows paper edits, so committing does **not** publish paper changes. Edit and verify them in place; the paper's own build/invariant checks (pdflatex + bibtex, page count, abstract word cap, 0 errors/undefined/overfull, 0 banned words, 0 dashes) are documented in `NEXT_ACTIONS.txt`, separate from `./init.sh`.
+- **The paper deliverable is gitignored and never enters git:** `paper/` (LaTeX source, figures, `main.pdf`), `EG_IPG_architecture_walkthrough.md`, and `perturbation_informed_causal_protein_program_graphs_report.md` live on disk only. `git add`/commit never captures them and `git status` never shows paper edits, so committing does **not** publish paper changes. Edit and verify them in place; the paper's own build/invariant checks run as one command, **`./check_paper.sh`** — five gates (0 LaTeX errors, 0 undefined, 0 overfull >2pt, body exactly 8pp with References opening page 9, and `abstract_plain.txt` not stale against `main.tex`), separate from `./init.sh`. Overflow is fixed by MOVING content to an appendix, never by cutting.
 - The model name is **EG-IPG**, not EG-CProG (legacy name in some older comments)
 - Feature availability is split into `q_pre` (prediction-time, eligible) and `q_post` (response-derived, prohibited as H1 input) — see README
 - All response-derived transformations (program bases, scaling, feature selection) must be fit inside training folds only
@@ -118,10 +119,19 @@ Key facts:
 - `progress.md` — Session continuity log
 - `init.sh` — Standard startup and verification path
 - `session-handoff.md` — For multi-session work
-- `NEXT_ACTIONS.txt` — Forward experiment backlog (current: the ICBINB-BIO workshop submission and the
-  second-dataset replication; the old E1–E6 AAAI list is superseded)
+- `NEXT_ACTIONS.txt` — Forward experiment backlog and the standing rails for autonomous work. Current
+  state: the A-series (A1–A5) and B-series (B1–B6) are all closed; what remains is the NOT AUTONOMOUS
+  section, the OpenReview submission and the sealed split, both needing a human. The old E1–E6 AAAI
+  list is superseded.
 - `RESULTS_SUMMARY.md` — the running result record for autonomous campaigns: what ran, every contrast
   with n and both corrections, gate health, and any contradiction-stop banner
+- `check_paper.sh` — the paper's five gates in one command (see the note on `paper/` above)
+- `docs/replication-prereg.md` — FROZEN. Amend only by dated append, and only BEFORE the run it governs
+  (Amendments 1–8). A factual record of what was run belongs in `RESULTS_SUMMARY.md`, not here.
+- `docs/reproduction.md` — the reproduction reference; section 6 covers every module built for the A-
+  and B-series, each with the command that reproduces its artifact
+- `docs/agent-lessons.md` — what previous sessions got wrong and the rule that came out of it. Read it
+  before designing a campaign; several entries cost GPU-days to learn.
 
 ## Definition of Done
 

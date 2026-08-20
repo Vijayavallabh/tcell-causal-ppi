@@ -1,5 +1,51 @@
 # Session Progress Log
 
+## 2026-08-19/20 — the B-series: the deficit is the unnormalised sum, and it buys nothing
+
+Every autonomous item in `NEXT_ACTIONS.txt` is now closed. Two were closed by measuring, one by
+deciding not to measure, and one was already deprioritised.
+
+| item | state | the number |
+|---|---|---|
+| B1a degree normalisation | **CLOSED** | D3 = **+0.0139** [+0.0029,+0.0248], 5/5 seeds, **79%** of the +0.0176 gap |
+| B1b-d remaining arms | **NOT RUN** | residual +0.0037 against an MDE of 0.0096 at n=5 |
+| B2 where in the ranking | **CLOSED** | harm confined to the top-20 genes; positive and corrected from rank 251 to 10,282 |
+| B3 does the damage scale | **ANSWERED WITHOUT RUNNING** | proportional damage -0.0012 vs MDE 0.0044-0.0082 |
+| B4 tighten the floor | deprioritised | reason recorded in `NEXT_ACTIONS.txt` |
+| B5 abstract sentence | **CLOSED** | in the abstract; plain-text drift now gated |
+| B6 docs and harness | **CLOSED** | 16 modules documented; `./init.sh` 631 tests, 0 failures |
+
+**B1a is the session's result and it does not help the graph.** A1 had eliminated the parameter count
+(+0.0004) and the annotation's content (+0.0065). Degree normalisation recovers 79% of the typed
+encoder's deficit at five seeds of five: under `norm="add"` a relation's contribution scales with its
+degree, so `functional_assoc` (86% of edges, median score 0.228) dominates each node update by count.
+The fix is one keyword and **not one parameter**, deliberately, so capacity stays excluded.
+
+But repairing the encoder buys nothing: `typed_gcnnorm - expression_only` is **+0.0008 (p=0.71)**, and
+it cannot be told apart from the plain untyped arm (-0.0037, p=0.22). **The contradiction stop does not
+fire.** The null is unchanged — it is the same null with one fewer artifact in front of it.
+
+**The caveat that must travel with the number:** the family is of size ONE, where Bonferroni and Holm
+are the identity. The uncorrected p=0.0245 clears at m=2 and fails at m=3 and m=4. What survives the
+multiplicity is the 5/5 sign agreement and the size of the share.
+
+**B2 is the most portable finding.** The graph's harm lives entirely in each perturbation's twenty
+most-moved genes (-0.0424, 0/5 seeds positive, clearing both corrections over 36 cells); every disjoint
+rank interval from 251 to 10,282 is positive and clears both. The cumulative crossover the paper used to
+quote at 250-500 is an artifact of accumulation. At DECILE resolution the harm vanishes entirely
+(+0.0064, clearing nothing) — a coarser cut of the identical predictions says the prior never hurts,
+which is now checklist item 14.
+
+**Two runs were declined on power rather than on preference**, each with the calculation persisted as an
+artifact: B3 (`b3_power.json`) and B1b-d. Both would have repeated A4's mistake of a null from an arm
+that could not have detected its own hypothesis.
+
+Amendments 7 and 8 both pre-date the runs they govern. Paper at 24 pages, body still exactly 8pp, five
+gates passing. Nothing is running; all processes verified stopped and the read-only roots verified
+byte-identical.
+
+# Session Progress Log
+
 ## 2026-08-16 evening — A2 through A5 closed, A1 and the ladder running
 
 Five of the six autonomous items in `NEXT_ACTIONS.txt` are done or in flight. Every one was

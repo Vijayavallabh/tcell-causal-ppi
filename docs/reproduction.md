@@ -1047,13 +1047,31 @@ PYTHONPATH=src python -m tcell_pipeline.screening.a1_report   # -> data/results/
 #### Which component of the message form? (B1)
 
 `typed_gcnnorm` is `typed_static` with symmetric degree normalisation and needs no encoder code — the
-`norm` keyword already reaches every `_RelMessage`. The runner takes `ROOT`/`LOG`/`ARMS` from the
-environment, so a new arm is a new value, not a forked script.
+`norm` keyword already reaches every `_RelMessage`, and it costs **zero extra parameters**, which is the
+point: A1 had already excluded capacity, so an arm that also moved the parameter count would re-confound
+what A1 separated. The runner takes `ROOT`/`LOG`/`ARMS` from the environment, so a new arm is a new
+value, not a forked script.
 
 ```bash
 SEEDS="0 1 2 3 4" ARMS=typed_gcnnorm ROOT=data/results/screening_b1 LOG=data/logs/b1 \
-    setsid nohup ./run_a1_mechanism.sh > data/logs/b1_gcnnorm.nohup.log 2>&1 &   # ~32 GPU-h
+    setsid nohup ./run_a1_mechanism.sh > data/logs/b1_gcnnorm.nohup.log 2>&1 &
+setsid nohup ./run_b1_finalise.sh > data/logs/b1_finalise.log 2>&1 &   # waits, merges, reports
+# or, once the lanes have landed, by hand:
+.venv/bin/python merge_registry_n7.py
+PYTHONPATH=src python -m tcell_pipeline.screening.b1_report \
+    --root data/results/screening_b1 --out data/results/screening_b1/b1_message_form.json
 ```
+
+**Measured cost, 2026-08-19/20:** five lanes on three A100s took **7h13m to 16h49m each** (32–50
+min/epoch) for a wall time of about 22 h. Quote that as a range: the first lane finished in 10h37m and
+an ETA extrapolated from it was wrong within three hours.
+
+**Result.** `D3 = typed_gcnnorm − typed_static = +0.0139` `[+0.0029,+0.0248]`, 5/5 seeds, **79% of the
++0.0176 gap** to the untyped arm. Two caveats travel with it: repairing the encoder beats no-graph by
+nothing (`+0.0008`, `p=0.71`), and the family is of size **one**, where Bonferroni and Holm are the
+identity — the uncorrected `p=0.0245` would not clear at `m≥3`. `b1_report` is staged-safe: it builds
+the family from the arms actually on disk and re-corrects at the larger `m` when arms are added
+(Amendment 7.3), so adding B1b–d cannot leave D3 corrected at the family it was first read under.
 
 #### The empirical detection floor — inject a known signal and see if it is recovered (A2a)
 

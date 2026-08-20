@@ -9,9 +9,11 @@ from tcell_pipeline.screening.b1_report import _verdict
 GAP = {"mean": 0.0176, "n": 5}
 
 
-def _c(mean, survives, n=5, arm="typed_gcnnorm", p=0.01):
+def _c(mean, survives, n=5, arm="typed_gcnnorm", p=0.01, m=1):
+    """Mirrors what paired_delta_summary + apply_family_wise actually put on a contrast, p_value
+    included - the report reads it to say whether a correction was really applied."""
     return {"mean": mean, "survives_family_wise": survives, "n": n, "arm": arm,
-            "p_bonferroni": p, "family_size": 1}
+            "p_value": p, "p_bonferroni": min(1.0, p * m), "family_size": m}
 
 
 def test_a_clearing_positive_arm_is_named_a_route_with_its_share():
@@ -46,7 +48,7 @@ def test_an_underpowered_arm_is_preliminary_and_never_a_route():
 
 
 def test_several_clearing_arms_are_all_reported_and_none_claimed_exclusively():
-    v = _verdict({"D3": _c(0.0100, True), "D4": _c(0.0080, True, arm="typed_unsigned")}, GAP)
+    v = _verdict({"D3": _c(0.0100, True, m=2), "D4": _c(0.0080, True, arm="typed_unsigned", m=2)}, GAP)
     assert set(v["routes"]) == {"D3", "D4"}
     assert "NONE is claimed exclusively" in " ".join(v["notes"])
 
@@ -63,3 +65,16 @@ def test_an_arm_with_no_landed_lane_is_excluded_from_the_family_not_counted_as_n
     col = collect(root=__import__("pathlib").Path("/nonexistent"))
     assert col["family_size"] == 0 and col["arms_present"] == []
     assert "typed_gcnnorm" in col["arms_absent"]
+
+
+def test_a_single_arm_family_is_never_reported_as_survived_correction():
+    """m=1 makes Bonferroni and Holm the identity, so 'clears both corrections' is true and empty. The
+    report must say which it is - this is the exact phrasing that made a raw p read as a corrected one."""
+    c = {"D3": _c(0.0139, True, p=0.0245, m=1)}
+    note = " ".join(_verdict(c, GAP)["notes"])
+    assert "NO correction" in note and "uncorrected" in note
+    assert "clears Bonferroni AND Holm" not in note
+
+    c2 = {"D3": _c(0.0139, True, p=0.0098, m=4)}
+    note2 = " ".join(_verdict(c2, GAP)["notes"])
+    assert "clears Bonferroni AND Holm at m=4" in note2 and "NO correction" not in note2

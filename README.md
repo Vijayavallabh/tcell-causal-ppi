@@ -20,6 +20,26 @@ paired seeds each, **no contrast survives correction on any fold**:
 contrast that ever cleared Bonferroni and Holm, and it holds only on the fold it was found on. We report
 that rather than the single-fold version. Full account: `RESULTS_SUMMARY.md`.
 
+**And "reliably worse" turned out to be mostly an implementation detail.** Three diagnostic arms took
+the typed encoder apart. Tying the message weights across relations moves the primary endpoint by
++0.0004; randomising every relation label at preserved edge counts moves it by +0.0065; neither clears
+correction. What does move it is the *aggregation*: weighting each relation's messages by
+`1/sqrt(d_i d_j)` instead of summing them recovers **+0.0139 (5/5 seeds, 79% of the gap** to a plain
+untyped GCN), because an unnormalised sum lets `functional_assoc` — 86% of all edges, median score
+0.228 — dominate every node update by sheer count. The deficit was barely about the typing.
+
+**It buys nothing.** The repaired encoder beats the no-graph baseline by **+0.0008 (p = 0.71)** and
+cannot be told apart from plain topology. Fixing the aggregation removes the damage and reveals nothing
+underneath, so the null above stands — with one fewer artifact in front of it. That contrast is a family
+of one, where Bonferroni and Holm are the identity; the robust parts are the 5/5 sign agreement and the
+size of the share, not the p-value.
+
+**Where a PPI prior helps, and where it hurts.** On disjoint intervals of the observed response, the
+untyped graph's harm is confined to each perturbation's **twenty most-moved genes** (−0.0424, 0/5 seeds
+positive), while every interval from rank 251 to 10,282 is positive and clears both corrections. At
+decile resolution the harm disappears entirely (+0.0064, clearing nothing) — a coarser cut of the same
+predictions would say the prior never hurts.
+
 > **Two failure modes worth knowing about.** (1) A conventional edge-sparsity regulariser, unnormalised
 > over edges, is ~103× the response term at its default weight and drives the edge gates to ~1e-7 in
 > epoch 0, silently switching the graph off while training still reports plausible numbers. Setting

@@ -488,3 +488,83 @@ why `run_overnight_chain.sh`, written the same day with the same intent, did not
 **And the general form:** any watcher that decides "is the thing I am waiting for still running?" by
 string-matching process lists is matching text, not intent. Before trusting one, ask what else on the
 box contains that text — then check, because on this box the answer included the watcher's own parent.
+
+## 2026-08-19/20 — the B-series session
+
+### A family of one applies no correction, and will read as though it did
+
+`b1_report` printed "clears both corrections" for B1a. At `m=1` Bonferroni and Holm are both the
+IDENTITY function, so the sentence was true and meant nothing: the number behind it was the uncorrected
+`p=0.0245`, which fails at `m=3` and `m=4`. Nothing in the code was wrong — `apply_family_wise` sized
+the family from what it was handed, exactly as designed — and that is what makes it dangerous. The
+report was honest, the phrasing was not, and only checking the family size caught it.
+
+**Rule.** Whenever a corrected p-value is reported, report `m` beside it, and treat `m=1` as "no
+correction applied" in prose rather than as "survived correction". If a campaign is staged, fix the
+re-correction rule in the pre-registration BEFORE the first stage runs (Amendment 7.3 did), because
+after the first stage lands there is an obvious incentive not to.
+
+### Do the power calculation before spending the GPU-hours, not after
+
+B3 was queued as ~22 GPU-h: a second scrambled-control rung at `delta=0.10` to test whether wrong-prior
+damage scales. Computing the minimum detectable effect FIRST, from the landed ladder's own intervals,
+showed proportional damage would be `-0.0012` against an MDE of `0.0044-0.0082` at four seeds. The rung
+could not have distinguished its own hypothesis from zero. It was not run; the paper's claim was
+labelled with the magnitude it was measured at instead, which is what the experiment was for.
+
+The same calculation then decided B1b-d: the residual they would partition is `+0.0037` against an MDE
+of `0.0096` at five seeds, so three more arms would have been underpowered by construction.
+
+**Rule.** For any planned run, compute what it could detect before queueing it. A null from an
+underpowered arm is not a cheap result, it is a misleading one — this project already documented that
+as A4, and then nearly repeated it twice in one session.
+
+### When stopping protects your p-value, say so
+
+Not running B1b-d keeps `m=1`, which keeps B1a significant. The reason for stopping was the power
+calculation, but the reader cannot see inside the decision. Both the paper and `RESULTS_SUMMARY.md` now
+state that stopping also preserves the p-value, and what to run to overturn it.
+
+**Rule.** When a methodological choice happens to favour your result, put that coincidence in the text
+yourself. A reader who finds it unaided discounts everything else too.
+
+### An idle GPU is not a reason to extend a pre-registered n
+
+Wave 1 drained a card while two lanes were still running, and `typed_static` seeds 5-6 existed in
+another root, so extending B1a from n=5 to n=7 was one command away and would have narrowed the
+interval ~15%. It was declined because seed 0's value had ALREADY been seen — extending n after
+glimpsing data is optional stopping whatever the stated motive, and this project has been burned by
+that exact shape before (h2b survived at n=6 and not at n=7).
+
+**Rule.** Free compute is not a reason to change a design mid-flight. If more seeds are warranted, that
+is a decision taken after the pre-registered analysis and declared as one.
+
+### A derived file with no generator drifts by default
+
+`abstract_plain.txt` is what `SUBMISSION.md` tells a human to paste into the OpenReview portal. It was
+produced by hand once, had no generator, and had silently fallen a full campaign behind `main.tex` —
+still carrying a claim the paper had already retracted. Writing the generator took minutes; the drift
+had survived weeks of otherwise careful gate-checking because no gate covered it.
+
+**Rule.** Any file derived from another gets a generator and a `--check` mode wired into the gate
+script, on the day it is created. "I will remember to regenerate it" is not a mechanism.
+
+### Two more `pgrep` self-matches, while auditing for leftover processes
+
+`run_ladder_finalise.sh` once blocked forever because `pgrep -f` matched the shell that wrote it. This
+session, auditing whether any process survived, `pgrep -af "sleep 300|sleep 60"` and
+`pgrep -af "[r]un_screening"` both matched the `bash -c` running the audit itself, because the pattern
+string appears in that shell's own command line. The bracket trick protects against the `pgrep` process
+but not against whatever shell holds the pattern as an argument.
+
+**Rule.** Prefer waiting on artifacts over waiting on processes. When you must match a process, expect
+your own command line to be among the matches and read results accordingly.
+
+### The runner's "next step" pointed at a module that does not exist
+
+`run_a1_mechanism.sh` finished by echoing `python -m tcell_pipeline.screening.a1_mechanism`. That module
+has never existed; the report is `a1_report`. The echo is not executed, so nothing failed and nothing
+caught it through two campaigns.
+
+**Rule.** Help text is code that never runs. When touching a script, execute its own suggested next
+command once, or it rots invisibly.

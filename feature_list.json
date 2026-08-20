@@ -184,6 +184,18 @@
       ],
       "status": "done",
       "evidence": "ALL CLOSED. A1 data/results/screening_a1/a1_mechanism.json (D1 +0.0004, D2 +0.0065, both null: neither the parameter count nor the labels is the route). A2(a) data/results/a2_ladder/floor.json (floor <= 0.02 response SDs, every injected rung recovered, scrambled control -0.0001 not recovered; post-hoc the injection s own contribution is significant only at 0.40, and the control s increment is -0.0050 -- a confidently wrong prior destroys the real benefit). A2(b) data/results/a2_power/power_simulation.json (~250 datasets for +0.0043 across datasets; MDE 0.0075 at n=7). A3 data/results/a3_external/{rescored,k_sweep}.json (the untyped contrast crosses zero between the 250th and 500th DE gene, both sides clearing correction over 20 cells) -- fired the contradiction stop. A4 arch_search_bound.json (search spread 0.0089 vs 0.0147 from seed noise alone). A5 rationale_bound.json. Pre-registered in Amendments 4, 4a, 4b, 5 and 6, each before the run it governs. 610 tests pass."
+    },
+    {
+      "id": "feat-019",
+      "name": "Message-form mechanism and the rank-resolved graph effect (B1-B6)",
+      "description": "Answer what A1 left open and bound what the ladder could not. B1a: a typed arm with symmetric degree normalisation (norm='gcn', zero new encoder code and zero extra parameters, so capacity stays excluded as A1 established), paired per seed against the landed typed_static lanes; it recovers 79% of the untyped-minus-typed gap at 5/5 seeds while beating no-graph by nothing, so the null is unchanged. Its report is staged-safe: the family is built from the arms on disk and re-corrected at the larger m as arms are added, and m=1 is reported as such rather than as survived correction. B2: decompose the cumulative top-k sweep into disjoint rank intervals, which localises the graph's harm to each perturbation's twenty most-moved genes and shows the harm is invisible at decile resolution. B3 and B1b-d: sensitivity analyses that decline the run, with the minimum detectable effects persisted as artifacts. B5: generator plus staleness gate for the derived abstract text. B6: reproduction reference synced to every module built since A1.",
+      "dependencies": [
+        "feat-011",
+        "feat-017",
+        "feat-018"
+      ],
+      "status": "done",
+      "evidence": "B1a: data/results/screening_b1/b1_message_form.json (D3 +0.0139 [+0.0029,+0.0248], 5/5 seeds, 79% of the +0.0176 gap; typed_gcnnorm - expression_only +0.0008 p=0.71, so the contradiction stop does not fire; family_size=1 reported as such). Pre-registered as replication-prereg Amendment 7 before the first lane. B2: data/results/b2_deciles/deciles.json, Amendment 8, paper tab:bins in app:metrics; all 32 published values re-derived from the artifact. B3 and the B1b-d stop: data/results/a2_ladder/b3_power.json. Tests: test_graph_baselines.py (norm reaches every _RelMessage, costs no parameters, and changes h_graph from a seeded init), test_rank_deciles.py (bins disjoint and covering; a bin test caught genes going unscored on a smaller panel), test_b1_report.py (every branch of Amendment 7.5; caught a significantly-negative arm being folded into 'no component clears'), test_b3_power.py (SD recovered from a reported interval, round-tripped against scipy). Harness: run_b1_finalise.sh waits on artifacts rather than pgrep; check_paper.sh gains a fifth gate on abstract_plain.txt drift, watched to fail before being trusted."
     }
   ]
 }

@@ -1,5 +1,9 @@
 #!/bin/bash
-# A1 — WHY does edge typing hurt? Pre-registered in docs/replication-prereg.md Amendment 4.
+# WHY does edge typing hurt? The mechanism runner. Now serves BOTH campaigns:
+#   A1  typed_shared / typed_permuted   Amendment 4, 4a, 4b   -> data/results/screening_a1
+#   B1  typed_gcnnorm                   Amendment 7           -> data/results/screening_b1
+# ARMS, ROOT and LOG all come from the environment, so a new arm is a new value and not a forked copy
+# of this script. Keep it that way.
 #
 # The n=7 family settled WHICH component costs the graph its benefit (edge typing, -0.0120 systema,
 # 7/7 seeds, survives Bonferroni AND Holm) and not WHY. Two explanations are confounded inside that
@@ -29,7 +33,8 @@ LOG="${LOG:-data/logs/a1}"
 EPOCHS=20
 BATCH=8
 SEEDS="${SEEDS:-0 1 2 3 4}"                 # n=5, matching the landed reference family (Amendment 4.4)
-ARMS="${ARMS:-typed_shared}"                # typed_permuted joins once it is implemented + amended
+ARMS="${ARMS:-typed_shared}"                # any diagnostic arm in run_screening.py _DIAGNOSTIC:
+                                            # typed_shared, typed_permuted, typed_gcnnorm
 CARDS="${CARDS:-0 1 2 3}"
 
 # Training configuration is pinned to what the landed typed_static lanes actually used
@@ -129,4 +134,6 @@ for arm in $ARMS; do
   echo "[a1]   $arm: $(ls "$ROOT/$arm"/[0-9].parquet 2>/dev/null | wc -l)/$(echo $SEEDS | wc -w) lanes"
 done
 echo "[a1] next: .venv/bin/python merge_registry_n7.py   (MANDATORY before aggregating a fresh root)"
-echo "[a1]       PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.a1_mechanism"
+echo "[a1]       A1 arms: PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.a1_report"
+echo "[a1]       B1 arms: PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.b1_report --root $ROOT"
+echo "[a1]       or let ./run_b1_finalise.sh do both; it waits on the parquets, never on pgrep"

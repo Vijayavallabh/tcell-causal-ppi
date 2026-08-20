@@ -81,9 +81,16 @@ def _verdict(contrasts: dict, gap: dict) -> dict:
                          f"({c['mean']:+.4f}, bonf {c['p_bonferroni']:.4f}) — this component is not the route")
         elif (c["mean"] or 0) > 0:
             routes.append(label)
+            m = c.get("family_size") or 0
+            # At m=1 Bonferroni and Holm are the IDENTITY, so "clears both corrections" is true and
+            # means nothing. Say which it is, in the artifact and on stdout, rather than letting a
+            # single-arm family read as a corrected result (docs/agent-lessons.md, 2026-08-19/20).
+            verdict = (f"clears at m={m}, but m=1 applies NO correction: this is the uncorrected "
+                       f"p={c['p_value']:.4f}" if m <= 1 else
+                       f"clears Bonferroni AND Holm at m={m}")
             notes.append(f"{label} ({c['arm']}): RECOVERS {c['mean']:+.4f}"
                          + (f", {share:.0%} of the {g:+.4f} gap" if share is not None else "")
-                         + " and clears both corrections")
+                         + f" and {verdict}")
         else:
             notes.append(f"*** {label} ({c['arm']}): significantly NEGATIVE ({c['mean']:+.4f}). Removing "
                          f"this component makes the typed encoder WORSE. Reported as such, NOT folded "
