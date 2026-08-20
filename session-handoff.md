@@ -1,10 +1,13 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-08-20 22:55): nothing is running. B-series closed. C1 is the open experiment.
+## STOP — READ FIRST (2026-08-21): nothing is running. B-series closed. Do the D-series, then decide on C1.
 
-**Nothing is running and no card is held by us.** Verified, not assumed: no `run_screening`, no runner,
-no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) are free; card 2 is a co-tenant at 64 GiB
-and card 4 is the T400.
+**Nothing is running and no card is held by us.** Verified 2026-08-21 00:54, not assumed: no
+`run_screening`, no runner, no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) are free at
+78/78/75 GiB; card 2 is a co-tenant holding 63 GiB and card 4 is the T400.
+**Load average is 102** on 64 cores, from other users' CPU jobs. These lanes are CPU-bound on
+row-by-row subgraph sampling, so that is the number that sets per-epoch time, not the free VRAM. Price
+any C1b estimate at the slow end of the measured 38-90 min/epoch until it is re-measured on a real lane.
 
 **The B-series is fully closed.** B1a found the route (degree normalisation recovers $+0.0139$, 5/5
 seeds, 79% of the gap, and still beats no graph by nothing). B1b-d were declined on power, B3 was
@@ -15,6 +18,17 @@ is about the typed, gated arm; the measured floor is the untyped arm's, because 
 that arm on cost. The paper now says twice that the typed arm's own floor is unmeasured. Closing it is
 lanes only, since the rungs already exist: `ARMS="expression_only condition_gated" ./run_a2_ladder.sh`,
 180-380 GPU-h. Pre-register as an extension of Amendment 6 BEFORE any lane starts.
+
+**A D-series was added to `NEXT_ACTIONS.txt` on 2026-08-21: four zero-GPU items, do them first.**
+They came from auditing what the 2026-08-20 rewrite left ungated, and D1 is the one that matters most.
+**Nothing in the harness checks anonymity** — `check_paper.sh` gates the build, the page budget and
+abstract drift, and none of its checks looks for a name. The repo scrub is dated 2026-08-11; the whole
+paper was rewritten on 2026-08-20 with no re-check after. Verified today and currently clean: `main.tex`,
+the rendered PDF text, and an empty `/Author` and `/Title` in `pdfinfo`. So D1 is a gate to keep a clean
+thing clean, and it is the only failure on the list that cannot be repaired after the deadline. D2 extends
+artifact agreement from 3 of the paper's 11 tables to all of them, D3 re-verifies venue facts last checked
+on 2026-08-11, D4 audits all eight prereg amendments the way the devil's advocate audited one. C1 also
+split: **C1a is its pre-registration, free, and rail 7 needs it before any lane**; C1b is the 180-380 GPU-h.
 
 **The paper is submission-ready and was heavily reworked on 2026-08-20.** Every section rewritten,
 audited against the ICBINB content spec, and restructured to Problem / Proposed approach / Observed

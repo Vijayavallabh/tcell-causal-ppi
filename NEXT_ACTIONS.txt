@@ -1,6 +1,7 @@
 =======================================================================
-AUTONOMOUS GOAL SPEC — the A-series is closed; this is what its answers opened.
-Rewritten 2026-08-19. Branch icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED.
+AUTONOMOUS GOAL SPEC — the A- and B-series are closed; this is what their answers opened.
+Rewritten 2026-08-19, D-series appended 2026-08-21. Branch icbinb-multidataset-2026-08-03.
+4x A100 80GB, SHARED.
 ICBINB-BIO deadline 29 Aug 2026 AoE (re-check; the site marks it tentative).
 =======================================================================
 
@@ -177,7 +178,8 @@ rescore_external, arch_search_power, rationale_audit_bound, inject_signal, ladde
 check_paper.sh, run_a1_mechanism.sh, run_a2_ladder.sh or run_ladder_finalise.sh. Add them with the
 command that reproduces each artifact. Then run ./init.sh and fix whatever it reports.
 
---- C1. The typed arm's OWN detection floor.  ~200 GPU-h.  THE ONE REAL EXPERIMENT LEFT --------
+--- C1b. The typed arm's OWN detection floor.  ~200 GPU-h.  THE ONE REAL EXPERIMENT LEFT -------
+(C1a below is its pre-registration, which is free and must land first. C1b is the lanes.)
 CREATED BY THE DEVIL'S ADVOCATE PASS, 2026-08-20. The paper's headline null is about the typed, GATED
 arm. The measured floor is not: Amendment 6.5 registered the ladder on untyped_gnn against
 expression_only, on cost (2.3-2.5 GPU-h per lane against 7.5-16) and on sensitivity, and closed with
@@ -200,12 +202,100 @@ WHAT IT BUYS: either the null is bounded by an instrument demonstrably able to s
 size, which is the strongest form of the paper's central claim; or it is not, which is a bigger finding
 than anything else left on this list and one the paper would have to carry.
 
+--- C1a. WRITE C1's PRE-REGISTRATION NOW. Free, and rail 7 requires it before any lane ----------
+Split out 2026-08-21. Rail 7 forbids starting C1's lanes before the amendment lands, so the amendment
+is the part that can be done unattended and the lanes are the part that spends 180-380 GPU-h. Writing
+it costs nothing, commits nothing, and turns launching C1 into a one-command decision instead of a
+design session. Pre-registering something that is never run is harmless; running it unregistered is
+not recoverable.
+CLOSE WITH: a dated append to docs/replication-prereg.md as Amendment 9, extending Amendment 6, fixing
+BEFORE any lane: the primary (condition_gated minus expression_only per rung, on systema, paired per
+seed, n=4), the family (the six injected conditions, m=6, Bonferroni AND Holm, both required), the
+floor rule and the monotonicity red flag copied from 6.7 so the two ladders are read the same way, the
+permuted control's veto, and what EACH outcome means, including the one that hurts.
+STATE THE UNCOMFORTABLE OUTCOME IN ADVANCE, in the amendment, in writing: if the typed arm's floor
+lands far above 0.02, the paper's headline null is a statement about an instrument that could not see
+what it was pointed at, and the paper carries that. Committing to it before the numbers exist is the
+only thing that makes the answer worth anything.
+
 --- C2. Bookkeeping the paper work of 2026-08-20 -----------------------------------------------
 Done in-session and NOT reflected here until now: the devil's advocate pass
 (docs/devils-advocate-2026-08-20.md), the full section-by-section rewrite, the number-drift verifier
 (paper/icbinb/verify_numbers.py plus numbers.snapshot.json, run --check after ANY paper edit), the
 ICBINB content-spec compliance pass, and the section restructure to Problem / Proposed approach /
 Observed outcome / Reason for failure.
+
+=======================================================================
+D-SERIES. SUBMISSION HARDENING. Zero GPU. All four are yours to finish unattended.
+=======================================================================
+Written 2026-08-21 after auditing what the 2026-08-20 rewrite left ungated. The paper is submission
+ready and none of this changes a result. These are the failure modes still live on filing day, ordered
+by how badly each one bites if it fires.
+
+--- D1. GATE THE DOUBLE-BLIND COMPLIANCE. Do this one first ------------------------------------
+NOTHING in the harness checks anonymity. check_paper.sh gates the build, the page budget and abstract
+drift, and not one of its checks looks for a NAME; verify_numbers.py checks numbers only. The repo
+scrub is dated 2026-08-11 and the ENTIRE paper was rewritten section by section on 2026-08-20 with no
+anonymity re-check afterwards.
+STATE AS OF 2026-08-21, verified rather than assumed: main.tex is clean, `pdftotext main.pdf` is
+clean, and pdfinfo reports an EMPTY /Author and /Title with Creator "LaTeX with hyperref". So this is
+a gate to keep a clean thing clean, not a leak to plug. That is exactly when it is cheap to add.
+CLOSE WITH: a new gate in check_paper.sh (its last shell variable is GATE5, so this one is GATE6),
+failing the build on any hit across main.tex, main.bbl and `pdftotext main.pdf -`:
+  - the strings the 2026-08-11 scrub removed (read the list out of SUBMISSION.md, do not re-invent
+    it), the author name, the email, the institution, and any github.com/<user> URL;
+  - a non-empty /Author or /Title from pdfinfo.
+IT MUST NOT REJECT the anonymous.4open.science placeholder. That URL stays a placeholder until a human
+creates the mirror (NOT AUTONOMOUS, step 1), so the gate ACCEPTS anonymous.4open.science and REJECTS
+github.com. Write that distinction as a comment beside the deny-list or the next agent will "fix" the
+gate in the wrong direction.
+WHY FIRST: it is minutes of work, and it is the only failure on this entire file that CANNOT be
+repaired after the deadline. Every other item here makes the paper worse. This one is a desk reject.
+MINOR, decide it either way and record which: the PDF timestamps carry IST, a weak locality signal,
+standard in every LaTeX submission, removable with \pdfinfoomitdate. Not a compliance failure. Say
+what you decided rather than leaving it unexamined.
+
+--- D2. EXTEND ARTIFACT AGREEMENT FROM 3 TABLES TO 11 -------------------------------------------
+verify_numbers.py has two checks and they are not equally strong. The literal INVENTORY covers every
+number in the body and catches one that changes or vanishes during an edit. The ARTIFACT AGREEMENT
+check re-derives numbers from JSON and catches one that was WRONG ALL ALONG. It covers three tables:
+tab:ksweep, tab:bins, tab:mechanism.
+The paper has ELEVEN: family, causes, mechanism, repl, folds, floor, floor2, floorabs, metrics,
+ksweep, bins. Eight are guarded by drift alone.
+THIS IS THE CLASS OF ERROR THAT ACTUALLY OCCURRED. Three factual errors in the 2026-08-20 rewrite,
+I2 89% for 87.5%, condition_gated 0.0829 for 0.0818, and "five of our seven datasets" for eight, were
+each a number that was wrong when it was snapshotted, which the inventory check passes by
+construction. All three were caught by hand, and hand-checking does not survive the next rewrite.
+CLOSE WITH: one table per commit, each against its named artifact:
+  tab:floor / floor2 / floorabs   data/results/a2_ladder/floor.json
+  tab:repl / tab:folds            the replication pool artifacts
+  tab:metrics                     data/results/a3_external/rescored.json
+  tab:family                      the n=7 reference family
+  tab:causes                      whichever artifact each verdict cites; it is a summary table and may
+                                  legitimately have no single one
+WHERE A TABLE HAS NO ARTIFACT, say so IN THE MODULE, with the reason, as a NAMED no-op. A silent skip
+reads as coverage and is worse than no check at all.
+
+--- D3. RE-VERIFY THE VENUE FACTS. Eight days out -----------------------------------------------
+SUBMISSION.md's venue table is dated 2026-08-11 and its own deadline row says the site marks 29 Aug
+"subject to final confirmation, so re-check". Ten days have passed and nobody re-checked.
+CLOSE WITH: re-fetch https://icbinb-bio.github.io/submit/ and re-confirm the deadline, the page limit,
+double-blind, the full-paper track, and that neurips_2026.sty is still the file the workshop ships.
+Update the table WITH A NEW DATE whatever the answer is. If a fact moved, fix the paper first, then
+flag it at the top of RESULTS_SUMMARY.md. If the site is unreachable, record the attempt and its date.
+An unchecked table that LOOKS checked is the thing to avoid.
+
+--- D4. AUDIT ALL EIGHT AMENDMENTS AGAINST WHAT WAS ACTUALLY DONE --------------------------------
+The devil's advocate pass found a pre-registration promise that was never kept: Amendment 6.5 said the
+floor would be labelled as the pipeline's rather than the typed encoder's, and until 2026-08-20 it was
+not. That was found BY HAND, by reading one amendment. There are eight.
+CLOSE WITH: for each of Amendments 1 to 8, extract what it PROMISED, a primary, a family size, a
+decision rule, a labelling commitment, and check that the artifact and the paper deliver it. Write
+docs/prereg-audit-2026-08-21.md with one verdict per amendment, quoting the promise and naming where
+it is kept, or reporting plainly that it is not.
+RECORD THE KEPT ONES TOO. This project's credibility rests on four self-reported retractions, and an
+audit that finds nothing is evidence only if it could have found something.
+Anything unkept is a PAPER fix, never a prereg edit. Rail 7: the pre-registration is frozen.
 
 =======================================================================
 NOT AUTONOMOUS — do not attempt these
@@ -350,11 +440,21 @@ INTEGRATION + REPORTING
 - RESULTS_SUMMARY.md and session-handoff.md stay current: n, per-seed values, both corrections,
   family_size, gate health, epochs, and the name and reason of any dropped seed.
 
-ORDER OF WORK (updated 2026-08-19 20:30). B2, B5 and B6 are closed and B1a is running on three cards.
-Nothing CPU-only is left. The next decision point is b1_message_form.json: read it, then choose B1b-d
-under Amendment 7.3. B3 is now ANSWERED WITHOUT RUNNING and needs no card at all - see its section.
-B4 remains deprioritised on purpose. So once B1a lands there is no queued GPU work: the next decision
-is which of B1b-d to run, and that decision is Amendment 7.3's to make, not a default.
+ORDER OF WORK (updated 2026-08-21). THE WHOLE B-SERIES IS CLOSED and nothing is running. Verified on
+2026-08-21 00:54: no run_screening, no runner, no finaliser, no monitor; CUDA cards 0/1/3 free at
+78/78/75 GiB, card 2 held by a co-tenant at 63 GiB. LOAD AVERAGE 102 on 64 cores from other users'
+CPU jobs, and these lanes are CPU-bound on subgraph sampling, so price C1b at the SLOW end of the
+measured 38-90 min/epoch until a real lane says otherwise.
+Do the D-series FIRST, in order, and C1a with it. All five are zero-GPU, each has a hard finish line,
+and D1 is the only item in this file whose failure cannot be repaired after the deadline. Together
+they are a few hours and they leave the submission gated rather than merely correct.
+C1b, the lanes, is the only GPU work left anywhere in this file and the only item that can still
+change what the paper concludes. It is 180-380 GPU-h on a shared box. Do not launch it until C1a's
+amendment has landed (rail 7), and re-measure per-epoch cost on the first lane rather than trusting
+the estimate.
+B3 is answered without running. B4 is deprioritised on purpose. B1b-d are declined on power under
+Amendment 7.3 and overturning that decision means running them AND re-correcting at m=4, where D3
+does not clear.
 
 RE-MEASURE per-epoch cost on the first lane of any new campaign rather than extrapolating: the same
 lane has measured 38 to 90 min/epoch on this box depending on who else is running.
