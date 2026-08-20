@@ -68,6 +68,18 @@ done
 [ -z "$USABLE" ] && { echo "REFUSING: no usable A100 — every card is busy or unreadable"; exit 2; }
 CARDS="$USABLE"
 
+# REAP STALE CLAIMS BEFORE ANYTHING ELSE. The atomic claim is what makes this idempotent, but it is
+# only released when a lane exits non-zero INSIDE the worker. A campaign killed from outside - a
+# SIGTERM to the process group, a reboot, a co-tenant OOM - leaves a claim with no parquet, and every
+# future run then SKIPS that lane silently and reports a short ladder as if it were complete. A claim
+# whose parquet is absent is by definition a lane that did not finish, so it is safe to clear here.
+stale=0
+for c in $(find "$ROOT" -name ".*.claim" 2>/dev/null); do
+  d=$(dirname "$c"); s=$(basename "$c" .claim); s=${s#.}
+  if [ ! -f "$d/$s.parquet" ]; then rm -f "$c"; stale=$((stale+1)); fi
+done
+[ $stale -gt 0 ] && echo "[c1] reaped $stale stale claim(s) from an interrupted run"
+
 echo "[c1] $(date) START — arms='$ARMS' seeds='$SEEDS' cards='$CARDS' lambda_graph=0"
 
 # JOB ORDER IS SEED-MAJOR, AND THAT IS A DELIBERATE CHOICE WITH A REASON.
@@ -117,8 +129,16 @@ worker () {  # $1 = gpu
     # the lane's epochs is echoed here and read again by the finaliser. Below config.GATE_DEAD (1e-3)
     # the lane is UNDECIDABLE under Amendment 3.4 and must shrink n, never be counted as evidence.
     if [ "$arm" = "condition_gated" ]; then
-      gmin=$(grep -o "gate mean [0-9.eE+-]*" "$LOG/${tag}.log" 2>/dev/null \
-             | awk '{print $3}' | sort -g | head -1)
+      # FROM THE TRAINER'S OWN HISTORY, not from the lane log. run_screening's lane log carries no
+      # per-epoch line at all; the "gate mean" wording belongs to run_rescreen_lambda0.sh, which
+      # post-processes this same file. Grepping the log would report nothing for a healthy lane.
+      gmin=$(.venv/bin/python -c "
+import json,sys,pathlib
+p=pathlib.Path('$out/$arm/$s/logs/stage_a_history.json')
+if not p.exists(): print('no-history'); raise SystemExit
+g=[e['train']['gate_mean'] for e in json.loads(p.read_text())
+   if e.get('train',{}).get('gate_mean') is not None]
+print(f'{min(g):.6f}' if g else 'ungated')" 2>/dev/null)
       echo "[c1] $tag gate_mean_min=${gmin:-none}"
       case "${gmin:-1}" in
         0|0.000*) echo "[c1] *** $tag GATE COLLAPSED (${gmin}) — UNDECIDABLE, Amendment 3.4 ***" ;;

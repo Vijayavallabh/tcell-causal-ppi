@@ -42,8 +42,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from tcell_pipeline.config import GATE_DEAD
 from tcell_pipeline.screening.multiseed import apply_family_wise, paired_delta_summary
 from tcell_pipeline.screening.screening import EXPRESSION_ONLY, PRIMARY_METRIC, UNTYPED_GNN
+
+# The ONLY arm in this project whose edge gate is learned rather than pinned to 1.0. Everything else
+# here - untyped_gnn, typed_static, typed_shared, typed_permuted, typed_gcnnorm - fixes the gate by
+# construction, so lambda_graph cannot suppress anything and Amendment 3.4's collapse criterion cannot
+# bind. Scoping the two Amendment 9.2 checks to this set is what keeps them from crying wolf on
+# Amendment 6's landed ladder, which ran at the config default 0.01 quite harmlessly.
+LIVE_GATE_ARMS = frozenset({"condition_gated"})
 
 LADDER_ROOT = "data/results/a2_ladder"
 REFERENCE_ROOT = "data/results/screening_untyped_n7"     # the delta=0 zero point, already landed
@@ -66,6 +74,80 @@ def _metric_by_seed(root: Path, arm: str, seeds=SEEDS) -> dict:
             continue
         out[s] = float(v)
     return out
+
+
+def lane_config(ladder_root: str, arm: str, seeds=SEEDS) -> dict:
+    """Every lane's recorded ``lambda_graph``, read from the lane's OWN parquet.
+
+    AMENDMENT 9.2 MADE THIS A REPORTED QUANTITY RATHER THAN AN ASSUMPTION, and this is the half of it
+    that an artifact can settle. `condition_gated` is the only arm here with a live edge gate, and at
+    the config default of 0.01 the gate is annihilated inside epoch 0 - so a ladder accidentally run
+    at the default would measure a floor for a model the paper's null is not about, and would look
+    exactly like a real result. The lane records what it actually ran at; this reads it back."""
+    out = {}
+    for d in sorted(Path(ladder_root).glob("*d[0-9][0-9][0-9]")):
+        for f in sorted((d / arm).glob("[0-9].parquet")) if (d / arm).is_dir() else []:
+            if int(f.stem) not in seeds:
+                continue
+            row = pd.read_parquet(f).iloc[0].to_dict()
+            out[f"{d.name}/{arm}@{f.stem}"] = row.get("lambda_graph")
+    return out
+
+
+def gate_health(ladder_root: str, arm: str, seeds=SEEDS) -> dict:
+    """Per-lane minimum gate mean, the other half of Amendment 9.2, read from the LANE'S OWN ARTIFACT.
+
+    THE SOURCE IS `<root>/<arm>/<seed>/logs/stage_a_history.json`, NOT THE LANE LOG. A first version
+    of this scraped the runner logs for "gate mean", which is the wording `run_rescreen_lambda0.sh`
+    prints - but that is a RUNNER post-processing the history file, and `run_screening`'s own lane log
+    contains no per-epoch line at all. Scraping it would have found nothing and reported "unavailable"
+    for every lane of a campaign that was in fact perfectly healthy, which is a promise silently
+    unkept rather than a check. The history file is written by the trainer, sits inside the results
+    root beside the parquet this module already reads, and carries `train.gate_mean` per epoch.
+
+    Reports ``unavailable`` with a reason rather than an empty dict when no history is found: an empty
+    result reads as "all healthy" and is exactly the failure this project keeps finding in its harness.
+    """
+    root = Path(ladder_root)
+    if not root.is_dir():
+        return {"status": "unavailable", "reason": f"no ladder root at {ladder_root}", "lanes": {}}
+    lanes, incomplete, ungated = {}, [], []
+    for d in sorted(root.glob("*d[0-9][0-9][0-9]")):
+        for s in seeds:
+            h = d / arm / str(s) / "logs" / "stage_a_history.json"
+            if not h.exists():
+                if (d / arm / f"{s}.parquet").exists():
+                    incomplete.append(f"{d.name}_{arm}_s{s}")   # landed but no history: say so
+                continue
+            try:
+                # A NULL gate_mean is not a dead gate, it is an arm with NO LEARNED GATE: the
+                # trainer records None wherever the gate is pinned to 1.0 by construction. Treating
+                # None as a number makes min() raise; treating it as 0.0 would report every pinned
+                # arm as collapsed, which is the same claim as "the graph was switched off" and is
+                # false. It is filtered, and a lane with only Nones is reported as ungated below.
+                series = [e["train"]["gate_mean"] for e in json.loads(h.read_text())
+                          if e.get("train", {}).get("gate_mean") is not None]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                incomplete.append(f"{d.name}_{arm}_s{s}")
+                continue
+            if series:
+                lanes[f"{d.name}_{arm}_s{s}"] = min(series)
+            else:
+                ungated.append(f"{d.name}_{arm}_s{s}")
+    if not lanes and ungated:
+        return {"status": "ungated", "lanes": {}, "ungated_lanes": ungated,
+                "reason": f"{len(ungated)} lanes have history but record gate_mean=None throughout: "
+                          f"{arm} has no learned gate, so there is nothing for Amendment 3.4 to bind on",
+                "history_unreadable": incomplete}
+    if not lanes:
+        return {"status": "unavailable",
+                "reason": f"no stage_a_history.json with train.gate_mean under {ladder_root}/*/{arm}/",
+                "lanes": {}, "history_unreadable": incomplete}
+    worst = min(lanes.values())
+    return {"status": "collapsed" if worst <= GATE_DEAD else "live",
+            "min_gate_mean": worst, "gate_dead_threshold": GATE_DEAD,
+            "collapsed_lanes": sorted(k for k, v in lanes.items() if v <= GATE_DEAD),
+            "history_unreadable": incomplete, "ungated_lanes": ungated, "lanes": lanes}
 
 
 def _delta_of(name: str) -> float | None:
@@ -129,12 +211,31 @@ def increment_over_zero(rungs: dict, seeds=SEEDS, alpha: float = 0.05,
 
 def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
         alpha: float = 0.05, arm: str = UNTYPED_GNN,
-        reference_root: str | None = None) -> dict:
+        reference_root: str | None = None, log_dir: str | None = None) -> dict:
     # NONE means "the module default, read NOW". A module global bound as a default argument is
     # frozen at import, which silently defeats monkeypatching it - and the failure is not an error,
     # it is a plausible number computed against the real reference root instead of the fixture.
     reference_root = reference_root if reference_root is not None else REFERENCE_ROOT
     rungs = collect(ladder_root, seeds, arm)
+
+    # AMENDMENT 9.2: gate health and lane configuration are REPORTED, not assumed. Both run BEFORE
+    # any contrast is formed, because a collapsed gate makes a lane UNDECIDABLE under Amendment 3.4
+    # and an undecidable lane must SHRINK n rather than be counted as evidence about the graph.
+    cfg = lane_config(ladder_root, arm, seeds)
+    lam = sorted({v for v in cfg.values() if v is not None})
+    live_gate = arm in LIVE_GATE_ARMS
+    health = (gate_health(log_dir if log_dir is not None else ladder_root, arm, seeds)
+              if live_gate else
+              {"status": "not_applicable",
+               "reason": f"{arm} pins its edge gate to 1.0 by construction, so there is no gate to "
+                         f"collapse and Amendment 3.4's criterion cannot bind", "lanes": {}})
+    dropped_for_gate = []
+    for stem in health.get("collapsed_lanes", []):
+        m = re.match(rf"(.+)_{re.escape(arm)}_s(\d+)$", stem)
+        if m and m.group(1) in rungs:
+            if rungs[m.group(1)]["better"].pop(int(m.group(2)), None) is not None:
+                dropped_for_gate.append(stem)
+
     if not rungs:
         print(f"[ladder] no rungs under {ladder_root} — nothing has landed yet")
         return {"rungs": {}, "floor": None, "status": "no lanes"}
@@ -161,6 +262,20 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
               f"{str(c['survives_family_wise']):>9}")
 
     verdict = _verdict(rungs, contrasts, seeds)
+    if live_gate and lam and lam != [0.0]:
+        verdict["notes"].insert(0, f"*** {arm} HAS A LIVE GATE AND THESE LANES DID NOT ALL RUN AT "
+                                   f"lambda_graph=0: observed {lam}. At 0.01 the gate is annihilated "
+                                   f"inside epoch 0, so this is not a floor for {arm}, it is a "
+                                   f"measurement of a different model (Amendment 9.2). ***")
+    elif lam and lam != [0.0]:
+        verdict["notes"].append(f"lambda_graph was {lam}, not 0. Harmless for {arm}, which pins its "
+                                f"gate to 1.0; recorded so the configuration is on the record.")
+    if dropped_for_gate:
+        verdict["notes"].insert(0, f"*** GATE COLLAPSED, n SHRUNK: {dropped_for_gate} dropped as "
+                                   f"UNDECIDABLE under Amendment 3.4, never counted as evidence. ***")
+    if live_gate and health.get("status") == "unavailable":
+        verdict["notes"].append(f"gate health UNCHECKED: {health['reason']}. Amendment 9.2 requires "
+                                f"it to be reported; this is a NAMED gap, not a pass.")
     for line in verdict["notes"]:
         print(f"[ladder] {line}")
 
@@ -178,7 +293,13 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
             pv = "  -" if c["p_value"] is None else f"{c['p_value']:.4f}"
             print(f"{name:>16} {c['delta']:>6.3f} {c['n']:>2} {mean:>11} {ci:>24} {pv:>8}")
 
+    print(f"[ladder] lambda_graph observed across lanes: {lam or 'not recorded'}  (gate: [0.0])")
+    print(f"[ladder] gate health: {health.get('status')}"
+          + (f", min gate mean {health['min_gate_mean']:.4g} over {len(health['lanes'])} lanes"
+             if health.get("lanes") else f" ({health.get('reason', '')})"))
     report = {"arm": arm, "comparison_arm": EXPRESSION_ONLY, "reference_root": reference_root,
+              "lane_lambda_graph": cfg, "lambda_graph_ok": (lam == [0.0]) if lam else None,
+              "gate_health": health, "dropped_for_gate_collapse": dropped_for_gate,
               "ladder_root": str(ladder_root),
               "family_size": m, "alpha": alpha, "seeds": list(seeds), "zero_point": zero,
               "post_hoc_increment_over_zero": incr,
@@ -260,6 +381,10 @@ if __name__ == "__main__":
                          "configuration: Amendment 9's lanes run at lambda_graph=0, so its zero "
                          "point comes from screening_lambda0, not from the default root")
     ap.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS))
+    ap.add_argument("--log-dir", default=None,
+                    help="override where per-lane stage_a_history.json files are looked for, for the "
+                         "Amendment 9.2 gate-health report. Defaults to --root itself, which is where "
+                         "the trainer writes them")
     a = ap.parse_args()
     run(a.root, Path(a.out) if a.out else None, tuple(a.seeds), arm=a.arm,
-        reference_root=a.reference_root)
+        reference_root=a.reference_root, log_dir=a.log_dir)

@@ -203,3 +203,87 @@ def test_the_reference_root_parameter_moves_the_zero_point(tmp_path):
     b = lr.increment_over_zero(rungs, reference_root=str(lifted / "."))
     assert a["d200"]["mean"] == pytest.approx(0.020, abs=1e-3)
     assert b["d200"]["mean"] == pytest.approx(0.015, abs=1e-3)
+
+
+# --- Amendment 9.2: gate health and lane configuration are REPORTED, not assumed --------------------
+def _gated_rung(root, name, better, worse, lam=0.0, seeds=SEEDS):
+    """A rung on the one arm with a LIVE gate, carrying the lambda_graph the lane actually ran at."""
+    d = root / name
+    for arm, vals in (("condition_gated", better), ("expression_only", worse)):
+        (d / arm).mkdir(parents=True, exist_ok=True)
+        for s, v in zip(seeds, vals):
+            pd.DataFrame([{"name": arm, "seed": s, "status": "completed", "systema": v,
+                           "lambda_graph": lam}]).to_parquet(d / arm / f"{s}.parquet")
+    return d
+
+
+def _lane_history(root, rung, seed, gate_means, arm="condition_gated"):
+    """The trainer's own per-lane history, which is where gate_mean actually lives.
+
+    NOT a log file. `run_screening`'s lane log carries no per-epoch line at all - the "gate mean"
+    wording belongs to run_rescreen_lambda0.sh, a RUNNER that post-processes this very file. A first
+    version of the gate check scraped logs and would have reported "unavailable" for every lane of a
+    perfectly healthy campaign."""
+    import json
+    d = root / rung / arm / str(seed) / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "stage_a_history.json").write_text(json.dumps(
+        [{"epoch": i, "train": {"gate_mean": g}, "val": {}} for i, g in enumerate(gate_means)]))
+
+
+def test_a_collapsed_gate_shrinks_n_instead_of_counting_as_evidence(tmp_path):
+    """Amendment 3.4: a lane whose mean edge gate falls to <=1e-3 is an UNDECIDABLE experiment,
+    reported as such and NEVER as evidence the graph does not help. So it must leave n smaller, not
+    contribute a number. The guard can fail: seed 0's lane below carries a healthy gate in the sibling
+    assertion and a dead one here, and only the dead one may shrink n."""
+    from tcell_pipeline.screening import ladder_report as lr
+
+    base = [0.080, 0.081, 0.079, 0.080]
+    root = tmp_path / "ladder"
+    _gated_rung(root, "d200", _lift(base, 0.02), base)
+    for s in SEEDS:
+        _lane_history(root, "d200", s, [0.7, 0.6, 0.55])        # all healthy
+    healthy = lr.run(str(root), None, arm="condition_gated")
+    assert healthy["contrasts"]["d200"]["n"] == 4
+    assert healthy["gate_health"]["status"] == "live"
+
+    _lane_history(root, "d200", 0, [0.7, 0.0004, 0.0001])      # seed 0's gate dies
+    collapsed = lr.run(str(root), None, arm="condition_gated")
+    assert collapsed["contrasts"]["d200"]["n"] == 3, "an undecidable lane was counted as evidence"
+    assert collapsed["dropped_for_gate_collapse"] == ["d200_condition_gated_s0"]
+    assert any("GATE COLLAPSED" in n for n in collapsed["notes"])
+    assert collapsed["gate_health"]["status"] == "collapsed"
+
+
+def test_a_live_gate_arm_run_at_the_wrong_lambda_is_flagged_and_a_pinned_one_is_not(tmp_path):
+    """The trap Amendment 9.2 exists to close: run_a2_ladder.sh does not pass --lambda-graph, so the
+    config default of 0.01 applies, and at 0.01 the gate is annihilated inside epoch 0. That is fatal
+    for condition_gated and harmless for every arm that pins its gate, so the warning must
+    discriminate - a check that cries wolf on Amendment 6's landed ladder would be turned off."""
+    from tcell_pipeline.screening import ladder_report as lr
+
+    base = [0.080, 0.081, 0.079, 0.080]
+    bad = tmp_path / "bad"
+    _gated_rung(bad, "d200", _lift(base, 0.02), base, lam=0.01)
+    r = lr.run(str(bad), None, arm="condition_gated")
+    assert r["lambda_graph_ok"] is False
+    assert any("LIVE GATE" in n and "lambda_graph=0" in n for n in r["notes"])
+
+    good = tmp_path / "good"
+    _gated_rung(good, "d200", _lift(base, 0.02), base, lam=0.0)
+    ok = lr.run(str(good), None, arm="condition_gated")
+    assert ok["lambda_graph_ok"] is True
+    assert not any("LIVE GATE" in n for n in ok["notes"])
+
+
+def test_missing_gate_logs_are_a_named_gap_for_a_live_gate_arm_not_a_silent_pass(tmp_path):
+    """A skipped check that prints nothing is indistinguishable from a passing one, which is the
+    failure mode this project keeps finding in its own harness."""
+    from tcell_pipeline.screening import ladder_report as lr
+
+    base = [0.080, 0.081, 0.079, 0.080]
+    root = tmp_path / "ladder"
+    _gated_rung(root, "d200", _lift(base, 0.02), base)
+    r = lr.run(str(root), None, arm="condition_gated", log_dir=str(tmp_path / "absent"))
+    assert r["gate_health"]["status"] == "unavailable"
+    assert any("gate health UNCHECKED" in n for n in r["notes"])
