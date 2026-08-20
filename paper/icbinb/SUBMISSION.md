@@ -3,16 +3,45 @@
 Prepared 2026-08-11. Two steps remain and both need your accounts. Everything else is done and
 verified; nothing below has to be re-derived.
 
-## Venue facts (verified 2026-08-11 from https://icbinb-bio.github.io/submit/, not from memory)
+## Venue facts
+
+**RE-VERIFIED 2026-08-21** against https://icbinb-bio.github.io/submit/ and https://icbinb-bio.github.io/,
+eight days out. First verified 2026-08-11. **Every fact below is unchanged.** Re-checked because the
+deadline row said to and ten days had passed; an unchecked table that looks checked is the thing to
+avoid.
 
 | | |
 |---|---|
-| deadline | **29 Aug 2026, 11:59 p.m. AoE** — the site still says "subject to final confirmation", so re-check |
+| deadline | **29 Aug 2026, 11:59 p.m. AoE** — **still tentative on 2026-08-21.** Verbatim: "All deadlines are 11:59 p.m. Anywhere on Earth and remain subject to final confirmation", and every date is additionally marked "Tentative". It has not been confirmed in the ten days since the first check, so do not read the delay as confirmation |
 | portal | https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO |
-| length | up to 8 pages, **excluding** references and appendices |
-| blinding | double-blind; **linked material must also preserve anonymity** |
-| archival | non-archival (so the AAAI dual submission is fine) |
-| LLM | short paragraph disclosing LLM role — REQUIRED |
+| length | verbatim: "up to **eight pages**, excluding references and appendices" |
+| blinding | verbatim: "Submissions are double-blind; linked material must also preserve anonymity" |
+| archival | verbatim: "the workshop remains non-archival" (so the AAAI dual submission is fine) |
+| LLM | verbatim: "Disclose any use of large language models (LLMs) with a short paragraph describing their role" — REQUIRED |
+| tracks | **two**: Full papers (8pp) and Tiny papers (4pp of main text, unlimited appendices that are not required to be reviewed). We are submitting to the **full-paper** track |
+| rest of the timeline | review 29 Aug – 21 Sep; acceptance notification 29 Sep; camera-ready and poster 20 Oct; in-person workshop 11 or 12 Dec 2026. All marked tentative |
+
+### The one fact that could NOT be re-verified from this machine
+
+The submit page **no longer names a style file**. It links the template as a Google Drive download,
+`Formatting_Instructions_For_ICBINB_Failure_Modes_in_AI_for_Biology___NeurIPS_2026.zip`. The filename
+was read from the Drive page; the **zip itself cannot be fetched from here** — Drive serves a sign-in
+interstitial rather than the file, and this machine has no credentials for it (same finding as the
+OpenReview probe below). So the 2026-08-11 "byte-identical to the workshop's own zip" diff is
+**not re-confirmed as of 2026-08-21**.
+
+What IS confirmed, so the gap is bounded rather than open:
+
+- Our `neurips_2026.sty` has not drifted locally. sha256 `cedbda3f16ceae6eeb85b5aacd3e4b4d654de71427dfe82a9b553327f15e9c7c`,
+  13,834 bytes, mtime 3 Aug 2026 — untouched since before the 2026-08-11 diff was run against it.
+- The preamble still matches the template's required form: `\usepackage[dblblindworkshop]{neurips_2026}`
+  plus `\workshoptitle{...}`, both present.
+- The workshop's own name on the site, "I Can't Believe It's Not Better: Failure Modes of AI in
+  Biology", matches what `\workshoptitle` carries.
+
+**Human step, 2 minutes, worth doing before upload:** download that zip, unzip it, and diff its `.sty`
+against ours. If it differs, the paper needs a rebuild against the new one and the page budget
+re-checked, because a style change moves the body page count.
 
 ## Compliance, checked rather than assumed
 
