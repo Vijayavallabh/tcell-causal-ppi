@@ -98,7 +98,7 @@ not graph-free, and on our fold what it discards outweighs what it measures. And
 a prior can belong instead to the encoder built to exploit it, which one extra arm would have caught
 at any point in the project.
 
-\section{Setup}
+\section{Problem}
 \label{sec:setup}
 
 \paragraph{Task and data.} For each (perturbation, condition) pair we predict the transcriptional
@@ -108,6 +108,21 @@ donors; conditions Rest, Stim8hr, Stim48hr). The supervised target is a differen
 of $33{,}983$ (perturbation $\times$ condition) rows over $10{,}282$ genes, covering $11{,}526$
 distinct gene targets, modelled in a $K{=}128$ sparse-PCA program basis \citep{zou2006sparsepca} fit
 \emph{inside} each training fold.
+
+\paragraph{Metric and split.} The primary endpoint is \textsc{systema}, the perturbation-specific
+delta-correlation of \citet{vinas2025systema}, which asks whether a prediction recovers the
+\emph{correct} perturbation's response profile rather than a generic average treatment effect. The
+headline split is biologically blocked target-OOD: targets are grouped by centered ESM-2 sequence
+similarity (cosine $\geq 0.85$, group size capped at $5\%$) so that no training target is a close
+paralog of a validation target, and every response-derived transform is fit inside the training fold.
+Five paired seeds share one frozen fold. Four contrasts are pre-registered and controlled with
+\emph{both} Bonferroni and Holm \citep{holm1979}; a contrast counts only if it clears both. A benefit
+counts only if it is positive and clears both corrections at $n\geq4$ paired seeds, a bar fixed before
+any lane ran. Everything below rests on $379$ training lanes on A100 80GB cards, $2.3$ to $16.8$
+GPU-hours each, $20$ epochs at batch size $8$.
+
+\section{Proposed approach}
+\label{sec:approach}
 
 \paragraph{Graph.} Nodes are proteins and protein complexes over $\sim$$8$M typed edges: physical PPI
 \citep{huttlin2021bioplex,luck2020huri,oughtred2021biogrid}, co-complex \citep{tsitsiridis2023corum},
@@ -133,19 +148,10 @@ curated interaction evidence carries co-regulation information that expression a
 the gate can suppress the edges that do not. Both preconditions are testable, and
 \S\ref{sec:confound} shows the second failing silently.
 
-\paragraph{Metric and split.} The primary endpoint is \textsc{systema}, the perturbation-specific
-delta-correlation of \citet{vinas2025systema}, which asks whether a prediction recovers the
-\emph{correct} perturbation's response profile rather than a generic average treatment effect. The
-headline split is biologically blocked target-OOD: targets are grouped by centered ESM-2 sequence
-similarity (cosine $\geq 0.85$, group size capped at $5\%$) so that no training target is a close
-paralog of a validation target, and every response-derived transform is fit inside the training fold.
-Five paired seeds share one frozen fold. Four contrasts are pre-registered and controlled with
-\emph{both} Bonferroni and Holm \citep{holm1979}; a contrast counts only if it clears both. A benefit
-counts only if it is positive and clears both corrections at $n\geq4$ paired seeds, a bar fixed before
-any lane ran. Everything below rests on $379$ training lanes on A100 80GB cards, $2.3$ to $16.8$
-GPU-hours each, $20$ epochs at batch size $8$.
+\section{Observed outcome}
+\label{sec:outcome}
 
-\section{Failure 1: the instrument was off}
+\subsection{The instrument was off}
 \label{sec:confound}
 
 Our first multi-seed comparison found the graph inert: edge gates sat near $10^{-7}$ and the graph and
@@ -192,7 +198,7 @@ means anything.
 \label{fig:lambda}
 \end{figure}
 
-\section{Failure 2: with the instrument working, the graph still does not help}
+\subsection{With the instrument working, the graph still does not help}
 \label{sec:null}
 
 Table~\ref{tab:family} reports the corrected five-seed comparison on live gates. The evidence-gated graph is statistically indistinguishable from expression-only ($\Delta\,\textsc{systema}=-0.0009$, $95\%$ CI $[-0.0072,+0.0054]$, $p=0.71$); the interval crosses zero and the contrast clears neither correction. The typed \emph{static} graph is worse than no-graph on this fold ($-0.0131$, $p=0.0036$, surviving both corrections): forcing every typed edge on, without the gate's ability to switch noisy edges off, hurts. This is the one contrast to clear correction anywhere in the paper, and it does not survive the harder split below.
@@ -254,14 +260,13 @@ stable and every graph arm is not, by $5.9$ to $31.7\times$ at $n{=}5$: the grap
 spread without moving the expected score (Appendix~\ref{app:power}).
 
 % AUTO 2026-08-10: new section carrying the multi-dataset replication result.
-\section{Failure 3: the null replicates, but the graph is not the thing that fails}
+\subsection{The null replicates, but the graph is not the thing that fails}
 \label{sec:repl}
 
 We replicated the comparison on seven further Perturb-seq screens \citep{peidli2024scperturb}:
 Frangieh melanoma, three Replogle screens including a genome-wide one ($9{,}730$ targets), Tian
-iPSC-neuron CRISPRi, and two activation screens, Norman K562 and Tian CRISPRa. That spans four cell
-types beyond the reference's own, both perturbation directions, and a hundredfold range of target
-counts. Each dataset gets its own blocked target-OOD split, its own program basis refit inside its own
+iPSC-neuron CRISPRi, Norman K562 and Tian CRISPRa. That spans four cell types beyond the reference's
+own, both perturbation directions, and a hundredfold range of target counts. Each dataset gets its own blocked target-OOD split, its own program basis refit inside its own
 training fold, four seeds per arm, and the family correction at the size that dataset can support
 (Appendix~\ref{app:repl}).
 
@@ -309,7 +314,7 @@ one. The prior is not what failed. This is what flips cause C in \S\ref{sec:caus
 surviving, and why distinguishing an uninformative prior from an encoder that discards it costs
 exactly one extra arm: the same topology with the clever parts switched off.
 
-\section{Why does the graph not help? Five candidate causes}
+\section{Reason for failure: five candidate causes}
 \label{sec:causes}
 
 A negative result is only useful if it says something about \emph{why}. We enumerated the causes we could think of, and for each asked what evidence would speak to it and what that evidence says. Table~\ref{tab:causes} summarizes; the text gives the reasoning.
