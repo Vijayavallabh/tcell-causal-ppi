@@ -1,35 +1,35 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-08-20 18:10): B1a is CLOSED. Nothing is running. The B-series is done.
+## STOP — READ FIRST (2026-08-20 22:5x): nothing is running. B-series closed. C1 is the open experiment.
 
-**B1a is the route, and it is not the typing.** `typed_gcnnorm` (degree normalisation, one keyword, no
-new parameters) recovers **+0.0139** systema [+0.0029,+0.0248], **5/5 seeds**, **79%** of the +0.0176
-gap to the untyped arm. A1 had eliminated the parameter count and the annotation's content; the deficit
-is the UNNORMALISED SUM, where `functional_assoc` (86% of edges, median score 0.228) dominates by degree.
+**Nothing is running and no card is held by us.** Verified, not assumed: no `run_screening`, no runner,
+no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) are free; card 2 is a co-tenant at 64 GiB
+and card 4 is the T400.
 
-**Two caveats that must travel with that number.**
-1. Repairing the encoder buys NOTHING. `gcnnorm - expression_only` = +0.0008 (p=0.71, 3/5 seeds), and it
-   cannot be told apart from the plain untyped arm (-0.0037, p=0.22). Rail 4 does NOT fire; the null
-   stands, with one fewer artifact in front of it.
-2. **m=1, so both corrections are the IDENTITY.** Raw p=0.0245 clears at m=2 and FAILS at m=3 and m=4.
-   The robust parts are the 5/5 sign agreement and the share, not the p.
+**The B-series is fully closed.** B1a found the route (degree normalisation recovers $+0.0139$, 5/5
+seeds, 79% of the gap, and still beats no graph by nothing). B1b-d were declined on power, B3 was
+answered without running it, B2/B5/B6 closed, B4 deprioritised. All reasons are in `NEXT_ACTIONS.txt`.
 
-**B1b-d: decided NOT to run, on power.** Residual `untyped_gnn - typed_gcnnorm` = +0.0037 against an MDE
-of 0.0096 at n=5 (2.6x the whole residual, before each arm's share). 21 seeds for the residual, 77 for
-half. Three arms at n=5 would repeat the A4 mistake. Stopping also preserves D3's p and that is recorded
-in the paper rather than hidden. To overturn: run them, re-correct at m=4, where D3 does not clear.
+**C1 is the one real experiment left, and yesterday's devil's advocate created it.** The headline null
+is about the typed, gated arm; the measured floor is the untyped arm's, because Amendment 6.5 chose
+that arm on cost. The paper now says twice that the typed arm's own floor is unmeasured. Closing it is
+lanes only, since the rungs already exist: `ARMS="expression_only condition_gated" ./run_a2_ladder.sh`,
+180-380 GPU-h. Pre-register as an extension of Amendment 6 BEFORE any lane starts.
 
-**Lane timings, for anyone planning a campaign here:** 10h37m / 13h02m / 16h49m / 9h08m / 7h13m for the
-five seeds -- 32 to 50 min/epoch on the same box on the same day. Quote ranges, never a point estimate
-from one lane; I quoted 17:20 off the fastest and was wrong within three hours.
+**The paper is submission-ready and was heavily reworked on 2026-08-20.** Every section rewritten,
+audited against the ICBINB content spec, and restructured to Problem / Proposed approach / Observed
+outcome / Reason for failure. Body exactly 8pp, References open page 9, 24 pages, all six gates pass.
 
-**Where the paper stands.** 24 pages, body still exactly 8pp (References open page 9), five gates via
-`./check_paper.sh`, 631 tests green. Amendments 7 and 8 both pre-date the runs they govern. Every
-published B1a and B2 figure was re-derived from its artifact after the edit.
+**Two new tools, use them.** `paper/icbinb/verify_numbers.py --check` diffs every numeric literal in
+`main.tex` against a snapshot and re-derives the tables from artifacts; run it after ANY paper edit and
+re-snapshot only once a change is justified. `./check_paper.sh` now has a sixth gate on
+`abstract_plain.txt` drift, and its body-page gate counts body lines above the References heading
+rather than asking whether the word appears on page 9, which is how a 0.9-page overrun hid for weeks.
 
-**Everything autonomous in NEXT_ACTIONS is now closed.** B1a closed, B1b-d decided, B2/B5/B6 closed, B3
-answered without running it, B4 deprioritised. What remains is the NOT AUTONOMOUS section: the
-OpenReview submission and the sealed split, both needing a human.
+**Corrections made on 2026-08-20, do not re-reverse.** I^2 for the eight-dataset pool is 87.5% (89% was
+the seven-dataset value); condition_gated at n=7 is 0.0818 (0.0829 contradicted the paper's own
+h1=-0.0043); the study spans eight datasets and the replication panel four cell types; h1 is testable
+on exactly one replication dataset, so the seven-dataset null belongs to the STATIC arm.
 
 ---
 
