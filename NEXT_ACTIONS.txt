@@ -242,11 +242,18 @@ headline family sits on the REPAIRED screening_lambda0 root. At the default, all
 trained with suppressed gates, measured a floor for a different model than the null describes, and
 tripped Amendment 3.4's own kill criterion (gate <= 1e-3 = UNDECIDABLE). Amendment 9.2 pins
 lambda_graph=0 and makes gate health a reported quantity.
-TWO PREREQUISITES BEFORE C1b LAUNCHES, both free and both required by the amendment:
-  1 export LAMBDA_GRAPH=0 (or the equivalent) in the C1b runner. Verify it reaches the lane.
-  2 ladder_report.py hardcodes UNTYPED_GNN and REFERENCE_ROOT=screening_untyped_n7. Make the arm and
-    the reference root PARAMETERS, with tests, BEFORE the lanes land -- 9.11 requires it so the
-    analysis cannot be shaped by the numbers it will produce.
+BOTH PREREQUISITES ARE DONE, commit 3b48889, and one of them was NOT what this file said:
+  1 *** AN ENVIRONMENT VARIABLE DOES NOTHING. *** config.LAMBDA_GRAPH is a plain module constant, so
+    `export LAMBDA_GRAPH=0` is silently ignored. The override is the CLI flag `--lambda-graph 0`, and
+    run_a2_ladder.sh does not pass it. That is why C1b is run_c1_ladder.sh and not
+    ARMS="..." ./run_a2_ladder.sh. run_screening's own --help states the consequence: at the default
+    0.01 "the unnormalised per-edge sum is ~103x the response term and annihilates the gates inside
+    epoch 0". Verified on the live command line after launch.
+  2 ladder_report.py now takes --arm and --reference-root, with three tests each written to FAIL if
+    the parameter is ignored. The DEFAULTS reproduce Amendment 6's landed floor.json exactly, checked
+    rung by rung. A regression the existing tests caught, worth knowing: binding REFERENCE_ROOT as a
+    default argument froze it at import and silently defeated their monkeypatch -- producing not an
+    error but a plausible number against the real root. It resolves at call time now.
 
 --- C2. Bookkeeping the paper work of 2026-08-20 -----------------------------------------------
 Done in-session and NOT reflected here until now: the devil's advocate pass
@@ -520,11 +527,23 @@ INTEGRATION + REPORTING
 ORDER OF WORK (rewritten 2026-08-21, after the D-series closed). NOTHING IS RUNNING.
 THE WHOLE D-SERIES AND C1a ARE CLOSED. The A- and B-series were already closed. What is left is:
 
-  1 C1b, the lanes. The ONLY GPU work left anywhere in this file and the only item that can still
-    change what the paper concludes. Rail 7 is now satisfied (Amendment 9 landed), so it is unblocked
-    -- but read C1a's two prerequisites first: LAMBDA_GRAPH=0 must reach the lane, and
-    ladder_report.py must take the arm and reference root as PARAMETERS before any lane lands.
-    180-380 GPU-h on a shared box. Re-measure per-epoch cost on the FIRST lane.
+  1 C1b IS RUNNING. Launched 2026-08-21 01:53 on cards 0/1/3 (card 2 held by a co-tenant, its CUDA
+    context could not even be created, so the preflight skipped it). 48 lanes queued into a FRESH
+    root data/results/c1_ladder: 24 expression_only and 24 condition_gated over the six existing
+    rungs at seeds 0-3, all at --lambda-graph 0.
+      watch:    data/logs/c1_ladder.nohup.log and data/logs/c1_ladder/*.log
+      order:    SEED-MAJOR on purpose. A stopped campaign then has a BALANCED ladder at whatever n
+                landed, not three rungs at n=4 and three at n=0 -- which the floor rule cannot read
+                at all, since the floor is the smallest rung that clears AND is cleared by every
+                LARGER one. Amendment 9.9 anticipates being stopped short; this makes that outcome
+                readable instead of wasted.
+      gate:     every condition_gated lane echoes gate_mean_min. Below 1e-3 it is UNDECIDABLE under
+                Amendment 3.4 and must SHRINK n, never be counted as evidence.
+      read it:  ladder_report --root data/results/c1_ladder --arm condition_gated
+                --reference-root data/results/screening_lambda0
+      RE-MEASURE per-epoch cost on the first condition_gated lane rather than trusting 7.5-16 GPU-h.
+      If the measured rate puts the campaign past 29 Aug, STOP and report at whatever n landed,
+      labelled preliminary with its n (rail 5 and Amendment 9.9). Do not quietly extend.
   2 The rail-4 finding at the top of this file. NOT autonomous. Whether the paper's
     "sign we cannot predict" argument should change is a scientific call on its central replication
     claim, eight days out. Flagged and left, which is what rail 4 says to do.

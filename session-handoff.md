@@ -42,8 +42,36 @@ for a different model and tripped Amendment 3.4's own kill criterion. **Two prer
 C1b lane:** `LAMBDA_GRAPH=0` must reach the lane, and `ladder_report.py` must take the arm and
 reference root as parameters, with tests, before the lanes land (Amendment 9.11).
 
-**C1b is the only GPU work left anywhere**, 180-380 GPU-h, and the only item that can still change
-what the paper concludes.
+### C1b IS RUNNING (launched 2026-08-21 01:53)
+
+`run_c1_ladder.sh`, 48 lanes into a FRESH root `data/results/c1_ladder` — 24 `expression_only` and 24
+`condition_gated` over the six existing rungs at seeds 0-3, on cards 0/1/3 (card 2 is a co-tenant
+whose CUDA context could not even be created). Watch `data/logs/c1_ladder.nohup.log`.
+
+**It is a separate script from `run_a2_ladder.sh` for one reason, and it is the reason Amendment 9.2
+exists.** `config.LAMBDA_GRAPH` is a plain module constant, so `export LAMBDA_GRAPH=0` does
+**nothing**; the override is the CLI flag `--lambda-graph 0`, and `run_a2_ladder.sh` does not pass it.
+`run_screening --help` states the consequence itself: at the default `0.01` "the unnormalised per-edge
+sum is ~103x the response term and annihilates the gates inside epoch 0". `condition_gated` is the
+only arm here with a live gate, so reusing the A2 runner would have spent 180-380 GPU-hours measuring
+a floor for a model the paper's null is not about, and tripped Amendment 3.4's own kill criterion.
+Verified on the live command line after launch.
+
+**Job order is seed-major, deliberately.** A stopped campaign then holds a *balanced* ladder at
+whatever n landed. Rung-major would leave three rungs at n=4 and three at n=0, which the floor rule
+cannot read at all — the floor is the smallest rung that clears AND is cleared by every larger one.
+Amendment 9.9 anticipates being stopped short; this makes that outcome readable rather than wasted.
+
+**If you pick this up mid-flight:** re-measure per-epoch cost on the first `condition_gated` lane
+rather than trusting 7.5-16 GPU-h, and if the measured rate puts it past 29 Aug, **stop and report at
+whatever n landed, labelled preliminary with its n** (rail 5, Amendment 9.9). Do not quietly extend.
+Every gated lane echoes `gate_mean_min`; below 1e-3 the lane is UNDECIDABLE under Amendment 3.4 and
+must shrink n rather than count as evidence. Read the result with:
+
+    PYTHONPATH=src .venv/bin/python -m tcell_pipeline.screening.ladder_report \
+      --root data/results/c1_ladder --arm condition_gated \
+      --reference-root data/results/screening_lambda0 \
+      --out data/results/c1_ladder/floor_condition_gated.json
 They came from auditing what the 2026-08-20 rewrite left ungated, and D1 is the one that matters most.
 **Nothing in the harness checks anonymity** — `check_paper.sh` gates the build, the page budget and
 abstract drift, and none of its checks looks for a name. The repo scrub is dated 2026-08-11; the whole
