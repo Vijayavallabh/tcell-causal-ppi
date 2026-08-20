@@ -24,6 +24,23 @@ preflight skipped it; the T400 is CUDA index 4, not 3, and nvidia-smi ordering i
   adding B1b-d: every earlier contrast is RE-corrected at the larger m, so a first-stage m=1 p-value is
   never carried forward.
 
+**A card is idle from 2026-08-20 12:55 and that is deliberate.** Wave 1 drained gpu=3 with seeds 3 and
+4 still running, and there are two tempting uses for it. Both are declined, with reasons, so nobody
+re-litigates this from scratch:
+
+1. *Extend typed_gcnnorm to seeds 5-6 for n=7*, pairing against `data/results/screening_untyped_n7`
+   (which does carry typed_static seeds 0-6). Tempting because n=7 matches the reference family and
+   would narrow the interval ~15%. **Declined: I have already seen seed 0's value.** Extending n after
+   glimpsing data is optional stopping however good the stated motive, and this project has already been
+   burned by exactly that shape - h2b SURVIVED at n=6 and did not at n=7. Amendment 7.1 fixed n=5 before
+   the first lane; the report comes out at n=5. If more seeds are warranted, that is a decision taken
+   AFTER the pre-registered analysis and declared as such.
+2. *Start B1b (signed messages) early.* Declined: the goal spec's stop rule says read B1a before
+   launching B1b-d, and its reason - keeping this from becoming an unbounded search - still holds. An
+   idle card is cheaper than an unbounded search.
+
+There is no queued GPU work by design: B3 was answered without running it and B4 is deprioritised.
+
 **Why this arm.** A1 eliminated both candidate routes for the +0.0176 systema gap between `typed_static`
 and `untyped_gnn` — the parameter count and the annotation's content — which leaves the message FORM.
 Degree normalisation is its one component that is a single keyword, and A4 un-refuted it. The arm costs
