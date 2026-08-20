@@ -137,3 +137,69 @@ def test_the_post_hoc_increment_subtracts_the_zero_point_seed_by_seed(tmp_path, 
     # increment exists to remove
     prim = lr.run(str(root), None)
     assert prim["contrasts"]["d020"]["mean"] == pytest.approx(np.mean(gap0), abs=1e-9)
+
+
+# --- Amendment 9: the arm and the reference root are parameters ------------------------------------
+def _multi_arm_rung(root, name, arms: dict, seeds=SEEDS):
+    """One rung carrying several graph arms at once, so a test can tell WHICH one was read."""
+    d = root / name
+    for arm, vals in arms.items():
+        (d / arm).mkdir(parents=True, exist_ok=True)
+        for s, v in zip(seeds, vals):
+            pd.DataFrame([{"name": arm, "seed": s, "status": "completed", "systema": v}]).to_parquet(
+                d / arm / f"{s}.parquet")
+    return d
+
+
+def test_the_arm_parameter_actually_selects_the_arm(tmp_path):
+    """Amendment 9 runs a SECOND ladder on `condition_gated`, and 9.11 requires this parameterisation
+    to land before its lanes do. The guard is only evidence if it can fail, so the fixture gives the
+    two graph arms DIFFERENT numbers on the same rung: if the arm were ignored, both calls would
+    return the same contrast and the assertion below would break."""
+    base = [0.080, 0.081, 0.079, 0.080]
+    _multi_arm_rung(tmp_path, "d020", {
+        "expression_only": base,
+        "untyped_gnn": _lift(base, 0.010),          # the good detector
+        "condition_gated": _lift(base, 0.001),      # the poorer one, an order of magnitude smaller
+    })
+    untyped = run(str(tmp_path), None, arm="untyped_gnn")
+    gated = run(str(tmp_path), None, arm="condition_gated")
+
+    assert untyped["arm"] == "untyped_gnn" and gated["arm"] == "condition_gated"
+    assert untyped["contrasts"]["d020"]["mean"] == pytest.approx(0.010, abs=5e-4)
+    assert gated["contrasts"]["d020"]["mean"] == pytest.approx(0.001, abs=5e-4)
+    # The whole point: the two ladders disagree, so an ignored --arm cannot pass this.
+    assert untyped["contrasts"]["d020"]["mean"] > gated["contrasts"]["d020"]["mean"] + 0.005
+
+
+def test_a_missing_arm_shrinks_n_rather_than_falling_back_to_another_arm(tmp_path):
+    """Asking for an arm that was never trained must produce n=0 for that rung, NOT the numbers of
+    whichever arm happens to be on disk. Silently reading a different arm is the manufactured-result
+    hazard: it returns a plausible number for an experiment that never ran."""
+    base = [0.080, 0.081, 0.079, 0.080]
+    _multi_arm_rung(tmp_path, "d020", {"expression_only": base, "untyped_gnn": _lift(base, 0.010)})
+    gated = run(str(tmp_path), None, arm="condition_gated")
+    assert gated["contrasts"]["d020"]["n"] == 0
+    assert gated["contrasts"]["d020"]["mean"] is None
+
+
+def test_the_reference_root_parameter_moves_the_zero_point(tmp_path):
+    """Amendment 9.5 reads its zero point from `screening_lambda0` rather than the module default,
+    because only there does `condition_gated`'s gate stay live. If --reference-root were ignored the
+    two increments below would be identical."""
+    from tcell_pipeline.screening import ladder_report as lr
+
+    base = [0.080, 0.081, 0.079, 0.080]
+    root = tmp_path / "ladder"
+    _multi_arm_rung(root, "d200", {"expression_only": base, "untyped_gnn": _lift(base, 0.020)})
+
+    flat = tmp_path / "ref_flat"
+    _multi_arm_rung(flat, ".", {"expression_only": base, "untyped_gnn": base})          # zero point 0
+    lifted = tmp_path / "ref_lifted"
+    _multi_arm_rung(lifted, ".", {"expression_only": base, "untyped_gnn": _lift(base, 0.005)})
+
+    rungs = lr.collect(str(root))
+    a = lr.increment_over_zero(rungs, reference_root=str(flat / "."))
+    b = lr.increment_over_zero(rungs, reference_root=str(lifted / "."))
+    assert a["d200"]["mean"] == pytest.approx(0.020, abs=1e-3)
+    assert b["d200"]["mean"] == pytest.approx(0.015, abs=1e-3)

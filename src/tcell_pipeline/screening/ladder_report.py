@@ -15,6 +15,23 @@ corrections, so it cannot serve as a null (Amendment 6.4).
 
     PYTHONPATH=src python -m tcell_pipeline.screening.ladder_report \
         --out data/results/a2_ladder/floor.json
+
+THE ARM AND THE REFERENCE ROOT ARE PARAMETERS, and the defaults reproduce Amendment 6's ladder
+exactly. Amendment 9 registers a SECOND ladder on `condition_gated`, the arm the paper's headline null
+is actually about, and 9.11 requires this parameterisation to land BEFORE its lanes do - so that the
+analysis code cannot be shaped by the numbers it will produce. That is the same discipline that makes
+``increment_over_zero`` below worth reading: it was committed while three rungs were still unrun.
+
+    PYTHONPATH=src python -m tcell_pipeline.screening.ladder_report \
+        --root data/results/c1_ladder --arm condition_gated \
+        --reference-root data/results/screening_lambda0 \
+        --out data/results/c1_ladder/floor_condition_gated.json
+
+THE REFERENCE ROOT MUST MATCH THE LANES' CONFIGURATION, and for Amendment 9 that is not the default.
+Its zero point is read from `screening_lambda0` because those lanes run at `lambda_graph=0`, which is
+the only setting under which `condition_gated`'s edge gate stays live (Amendment 9.2). Reading the
+zero point from a gate-suppressed root would compare an injected rung against a differently-configured
+baseline, which is a confound rather than a zero point.
 """
 from __future__ import annotations
 
@@ -57,19 +74,21 @@ def _delta_of(name: str) -> float | None:
     return int(m.group(1)) / 1000.0 if m else None
 
 
-def collect(ladder_root: str = LADDER_ROOT, seeds=SEEDS) -> dict:
+def collect(ladder_root: str = LADDER_ROOT, seeds=SEEDS, arm: str = UNTYPED_GNN) -> dict:
+    """``arm`` is the GRAPH arm under test; the comparison is always ``expression_only``."""
     rungs = {}
     for d in sorted(Path(ladder_root).glob("*d[0-9][0-9][0-9]")):
         if not d.is_dir():
             continue
         rungs[d.name] = {"path": str(d), "delta": _delta_of(d.name),
                          "permuted": d.name.startswith("permuted"),
-                         "better": _metric_by_seed(d, UNTYPED_GNN, seeds),
+                         "better": _metric_by_seed(d, arm, seeds),
                          "worse": _metric_by_seed(d, EXPRESSION_ONLY, seeds)}
     return rungs
 
 
-def increment_over_zero(rungs: dict, seeds=SEEDS, alpha: float = 0.05) -> dict:
+def increment_over_zero(rungs: dict, seeds=SEEDS, alpha: float = 0.05,
+                        reference_root: str | None = None, arm: str = UNTYPED_GNN) -> dict:
     """POST-HOC, and labelled so wherever it appears. Each rung's gap MINUS the same seed's gap on the
     UN-INJECTED reference lanes.
 
@@ -87,9 +106,9 @@ def increment_over_zero(rungs: dict, seeds=SEEDS, alpha: float = 0.05) -> dict:
     Paired on the SEED: the same seed means the same initialisation and data order, on the same frozen
     fold, so the difference of differences removes that nuisance exactly as the primary does."""
     zero = {}
-    root = Path(REFERENCE_ROOT)
+    root = Path(reference_root if reference_root is not None else REFERENCE_ROOT)
     if root.exists():
-        b = _metric_by_seed(root, UNTYPED_GNN, seeds)
+        b = _metric_by_seed(root, arm, seeds)
         w = _metric_by_seed(root, EXPRESSION_ONLY, seeds)
         zero = {s: b[s] - w[s] for s in sorted(set(b) & set(w))}
     if not zero:
@@ -109,8 +128,13 @@ def increment_over_zero(rungs: dict, seeds=SEEDS, alpha: float = 0.05) -> dict:
 
 
 def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
-        alpha: float = 0.05) -> dict:
-    rungs = collect(ladder_root, seeds)
+        alpha: float = 0.05, arm: str = UNTYPED_GNN,
+        reference_root: str | None = None) -> dict:
+    # NONE means "the module default, read NOW". A module global bound as a default argument is
+    # frozen at import, which silently defeats monkeypatching it - and the failure is not an error,
+    # it is a plausible number computed against the real reference root instead of the fixture.
+    reference_root = reference_root if reference_root is not None else REFERENCE_ROOT
+    rungs = collect(ladder_root, seeds, arm)
     if not rungs:
         print(f"[ladder] no rungs under {ladder_root} — nothing has landed yet")
         return {"rungs": {}, "floor": None, "status": "no lanes"}
@@ -119,9 +143,10 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
                  for name, r in rungs.items()}
     m = apply_family_wise(contrasts, alpha)
 
+    print(f"[ladder] ARM = {arm} vs {EXPRESSION_ONLY}; reference root {reference_root}")
     print(f"[ladder] {len(rungs)} conditions, family size {m} (Bonferroni AND Holm, both required)")
     print(f"{'rung':>16} {'delta':>6} {'n':>2} {'mean':>10} {'95% CI':>22} {'bonf':>7} {'holm':>7} {'survives':>9}")
-    zero = _zero_point(seeds, alpha)
+    zero = _zero_point(seeds, alpha, reference_root, arm)
     if zero:
         print(f"{'reference':>16} {0.0:>6.3f} {zero['n']:>2} {zero['mean']:>+10.4f} "
               f"[{zero['ci_low']:+.4f}, {zero['ci_high']:+.4f}]".rjust(0)
@@ -135,13 +160,13 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
         print(f"{name:>16} {r['delta']:>6.3f} {c['n']:>2} {mean:>10} {ci:>22} {bonf:>7} {holm:>7} "
               f"{str(c['survives_family_wise']):>9}")
 
-    verdict = _verdict(rungs, contrasts)
+    verdict = _verdict(rungs, contrasts, seeds)
     for line in verdict["notes"]:
         print(f"[ladder] {line}")
 
     # POST-HOC, never the rule (see increment_over_zero's docstring). Printed under its own heading so
     # it cannot be mistaken for the pre-registered primary above.
-    incr = increment_over_zero(rungs)
+    incr = increment_over_zero(rungs, seeds, alpha, reference_root, arm)
     if incr:
         print("\n[ladder] POST-HOC: each rung's gap MINUS the same seed's gap with NO injection.")
         print("[ladder] Not the pre-registered primary; committed before the last rungs ran.")
@@ -153,7 +178,9 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
             pv = "  -" if c["p_value"] is None else f"{c['p_value']:.4f}"
             print(f"{name:>16} {c['delta']:>6.3f} {c['n']:>2} {mean:>11} {ci:>24} {pv:>8}")
 
-    report = {"family_size": m, "alpha": alpha, "seeds": list(seeds), "zero_point": zero,
+    report = {"arm": arm, "comparison_arm": EXPRESSION_ONLY, "reference_root": reference_root,
+              "ladder_root": str(ladder_root),
+              "family_size": m, "alpha": alpha, "seeds": list(seeds), "zero_point": zero,
               "post_hoc_increment_over_zero": incr,
               "contrasts": contrasts, "rungs": {k: {kk: vv for kk, vv in v.items() if kk != "path"}
                                                 for k, v in rungs.items()}, **verdict}
@@ -164,24 +191,25 @@ def run(ladder_root: str = LADDER_ROOT, out: Path | None = None, seeds=SEEDS,
     return report
 
 
-def _zero_point(seeds, alpha: float) -> dict | None:
+def _zero_point(seeds, alpha: float, reference_root: str | None = None,
+                arm: str = UNTYPED_GNN) -> dict | None:
     """delta=0 from the LANDED reference lanes. Not re-run, and not a family member."""
-    root = Path(REFERENCE_ROOT)
+    root = Path(reference_root if reference_root is not None else REFERENCE_ROOT)
     if not root.exists():
         return None
-    s = paired_delta_summary(_metric_by_seed(root, UNTYPED_GNN, seeds),
+    s = paired_delta_summary(_metric_by_seed(root, arm, seeds),
                              _metric_by_seed(root, EXPRESSION_ONLY, seeds), alpha=alpha, seeds=seeds)
     return s if s["n"] else None
 
 
-def _verdict(rungs: dict, contrasts: dict) -> dict:
+def _verdict(rungs: dict, contrasts: dict, seeds=SEEDS) -> dict:
     notes, floor = [], None
     real = sorted((n for n in rungs if not rungs[n]["permuted"]), key=lambda k: rungs[k]["delta"])
     control = [n for n in rungs if rungs[n]["permuted"]]
 
-    incomplete = [n for n in rungs if contrasts[n]["n"] < len(SEEDS)]
+    incomplete = [n for n in rungs if contrasts[n]["n"] < len(seeds)]
     if incomplete:
-        notes.append(f"INCOMPLETE at n<{len(SEEDS)}: {incomplete} — read these as preliminary, with "
+        notes.append(f"INCOMPLETE at n<{len(seeds)}: {incomplete} — read these as preliminary, with "
                      f"their n (rail 5)")
 
     control_clears = any(contrasts[n].get("survives_family_wise") and (contrasts[n]["mean"] or 0) > 0
@@ -224,5 +252,14 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=LADDER_ROOT)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--arm", default=UNTYPED_GNN,
+                    help="the GRAPH arm under test; the comparison is always expression_only. "
+                         "Amendment 6's ladder is untyped_gnn, Amendment 9's is condition_gated")
+    ap.add_argument("--reference-root", default=REFERENCE_ROOT,
+                    help="where the delta=0 zero point is read from. It MUST match the lanes' "
+                         "configuration: Amendment 9's lanes run at lambda_graph=0, so its zero "
+                         "point comes from screening_lambda0, not from the default root")
+    ap.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS))
     a = ap.parse_args()
-    run(a.root, Path(a.out) if a.out else None)
+    run(a.root, Path(a.out) if a.out else None, tuple(a.seeds), arm=a.arm,
+        reference_root=a.reference_root)
