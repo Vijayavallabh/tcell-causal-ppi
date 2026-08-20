@@ -62,6 +62,25 @@ whatever n landed. Rung-major would leave three rungs at n=4 and three at n=0, w
 cannot read at all — the floor is the smallest rung that clears AND is cleared by every larger one.
 Amendment 9.9 anticipates being stopped short; this makes that outcome readable rather than wasted.
 
+**FIRST MEASUREMENTS, 2026-08-21 02:34.** Two things are already verified rather than assumed.
+`lambda_graph = 0.0` is recorded in the landed lane's own parquet, so the flag reached the artifact and
+not merely the command line. And the same rung/seed lane exists in the A2 ladder at `lambda_graph=0.01`:
+the two agree to `+0.000076` against a per-seed spread of `0.003`, i.e. forty times smaller than seed
+noise. That confirms both that lambda genuinely does not touch a graph-free arm and that this campaign
+reproduces the landed lanes correctly.
+
+Timing: `expression_only` took **25.8 min wall** (0.414 GPU-h) at load ~98, against 0.36 GPU-h when the
+box was quieter. The historical `condition_gated`:`expression_only` cost ratio on this fold is 21x-45x,
+which projects **9-19 h per gated lane** and, at 24 lanes over 3 cards, **3.2-6.5 days** — finishing
+somewhere between 24 and 28 Aug against a 29 Aug deadline. THAT IS THE PROJECTION, NOT A MEASUREMENT:
+re-do it from the first `condition_gated` lane, which is what Amendment 9.9 actually requires. The upper
+end leaves about a day of margin on a contended box, so the stop rule below is live, not theoretical.
+
+**If card 2 frees up**, adding a fourth worker takes 8 waves to 6 and cuts roughly a quarter off the
+wall clock. The runner is idempotent and reaps stale claims, so a second invocation with `CARDS=2` is
+safe. Treat it as best-effort only: `run_l4_card2.sh` preflighted card 2 at 78 GiB, started a lane, and
+lost it to a returning co-tenant 2h47m later.
+
 **If you pick this up mid-flight:** re-measure per-epoch cost on the first `condition_gated` lane
 rather than trusting 7.5-16 GPU-h, and if the measured rate puts it past 29 Aug, **stop and report at
 whatever n landed, labelled preliminary with its n** (rail 5, Amendment 9.9). Do not quietly extend.
