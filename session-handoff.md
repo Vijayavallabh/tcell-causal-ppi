@@ -1,73 +1,35 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-08-19 20:35): B1a IS RUNNING ON THREE CARDS. B2, B5 and B6 closed.
+## STOP — READ FIRST (2026-08-20 18:10): B1a is CLOSED. Nothing is running. The B-series is done.
 
-**What is in flight.** `typed_gcnnorm` — `typed_static` with symmetric degree normalisation — seeds 0-4
-on CUDA cards 0/1/3, launched 20:05, root `data/results/screening_b1`. Card 2 was at 22 GiB and the
-preflight skipped it; the T400 is CUDA index 4, not 3, and nvidia-smi ordering is not CUDA ordering.
+**B1a is the route, and it is not the typing.** `typed_gcnnorm` (degree normalisation, one keyword, no
+new parameters) recovers **+0.0139** systema [+0.0029,+0.0248], **5/5 seeds**, **79%** of the +0.0176
+gap to the untyped arm. A1 had eliminated the parameter count and the annotation's content; the deficit
+is the UNNORMALISED SUM, where `functional_assoc` (86% of edges, median score 0.228) dominates by degree.
 
-- Watch `data/logs/b1_gcnnorm.nohup.log` and `data/logs/b1/*.log`.
-- `run_b1_finalise.sh` is ALREADY waiting on the lanes and will merge the registry and run
-  `b1_report` by itself, writing `data/results/screening_b1/b1_message_form.json`. Do not launch a
-  second one.
-- **MEASURED, and the first measurement was already too optimistic.** Seed 0 ran 20 epochs in 10h37m
-  (31.9 min/epoch); seed 1 took **13h02m** (39.1 min/epoch) on the same box, 23% slower. Quoting the ETA
-  from the fastest lane gave 17:20 and was wrong within three hours - the goal spec's own instruction is
-  to quote RANGES, and this is why. Wave 2 (seeds 3 and 4) started 06:42 and 09:07, so the campaign
-  lands somewhere in **17:20-22:10 on 2026-08-20** and the report fires itself when it does. Lane logs print no per-epoch line; this came from the launch and exit
-  timestamps in `data/logs/b1_gcnnorm.nohup.log`. Both my earlier estimates (`~32` and `60-150` GPU-h)
-  were guesses; this one is not.
-- Seed 0 completed with systema 0.0850 against the same seed's typed_static 0.0786. **PRELIMINARY AT
-  n=1 and not to be read as a result** (rail 5 needs n>=4); it is recorded only as evidence the lane is
-  sane and the arm is not degenerate. The corrected verdict comes from `b1_report` at n=5.
-- Pre-registered as **Amendment 7** before the first lane started. 7.3 is the one to re-read before
-  adding B1b-d: every earlier contrast is RE-corrected at the larger m, so a first-stage m=1 p-value is
-  never carried forward.
+**Two caveats that must travel with that number.**
+1. Repairing the encoder buys NOTHING. `gcnnorm - expression_only` = +0.0008 (p=0.71, 3/5 seeds), and it
+   cannot be told apart from the plain untyped arm (-0.0037, p=0.22). Rail 4 does NOT fire; the null
+   stands, with one fewer artifact in front of it.
+2. **m=1, so both corrections are the IDENTITY.** Raw p=0.0245 clears at m=2 and FAILS at m=3 and m=4.
+   The robust parts are the 5/5 sign agreement and the share, not the p.
 
-**A card is idle from 2026-08-20 12:55 and that is deliberate.** Wave 1 drained gpu=3 with seeds 3 and
-4 still running, and there are two tempting uses for it. Both are declined, with reasons, so nobody
-re-litigates this from scratch:
+**B1b-d: decided NOT to run, on power.** Residual `untyped_gnn - typed_gcnnorm` = +0.0037 against an MDE
+of 0.0096 at n=5 (2.6x the whole residual, before each arm's share). 21 seeds for the residual, 77 for
+half. Three arms at n=5 would repeat the A4 mistake. Stopping also preserves D3's p and that is recorded
+in the paper rather than hidden. To overturn: run them, re-correct at m=4, where D3 does not clear.
 
-1. *Extend typed_gcnnorm to seeds 5-6 for n=7*, pairing against `data/results/screening_untyped_n7`
-   (which does carry typed_static seeds 0-6). Tempting because n=7 matches the reference family and
-   would narrow the interval ~15%. **Declined: I have already seen seed 0's value.** Extending n after
-   glimpsing data is optional stopping however good the stated motive, and this project has already been
-   burned by exactly that shape - h2b SURVIVED at n=6 and did not at n=7. Amendment 7.1 fixed n=5 before
-   the first lane; the report comes out at n=5. If more seeds are warranted, that is a decision taken
-   AFTER the pre-registered analysis and declared as such.
-2. *Start B1b (signed messages) early.* Declined: the goal spec's stop rule says read B1a before
-   launching B1b-d, and its reason - keeping this from becoming an unbounded search - still holds. An
-   idle card is cheaper than an unbounded search.
+**Lane timings, for anyone planning a campaign here:** 10h37m / 13h02m / 16h49m / 9h08m / 7h13m for the
+five seeds -- 32 to 50 min/epoch on the same box on the same day. Quote ranges, never a point estimate
+from one lane; I quoted 17:20 off the fastest and was wrong within three hours.
 
-There is no queued GPU work by design: B3 was answered without running it and B4 is deprioritised.
+**Where the paper stands.** 24 pages, body still exactly 8pp (References open page 9), five gates via
+`./check_paper.sh`, 631 tests green. Amendments 7 and 8 both pre-date the runs they govern. Every
+published B1a and B2 figure was re-derived from its artifact after the edit.
 
-**Why this arm.** A1 eliminated both candidate routes for the +0.0176 systema gap between `typed_static`
-and `untyped_gnn` — the parameter count and the annotation's content — which leaves the message FORM.
-Degree normalisation is its one component that is a single keyword, and A4 un-refuted it. The arm costs
-ZERO new encoder code and, deliberately, zero extra parameters.
-
-**B2 closed, and it is the most portable thing in the paper.** The graph's harm is confined to each
-perturbation's top-20 genes (-0.0424, 0/5 seeds positive, clears both corrections over 36 cells); every
-disjoint rank interval from 251 to 10,282 is positive and clears both. The cumulative crossover the
-paper used to quote at 250-500 is an artifact of accumulation — the per-interval effect is already
-positive in 5/5 seeds by rank 101. At DECILE resolution the harm vanishes entirely (+0.0064, clearing
-nothing), which is now checklist item 14. Artifact `data/results/b2_deciles/deciles.json`; all 32
-published values in `tab:bins` were re-derived from it and match.
-
-**B5 closed.** The measured floor is in the abstract. `abstract_plain.txt` now has a generator
-(`paper/icbinb/make_abstract_plain.py`) and `check_paper.sh` gates on `--check`, so the drift that left
-it a full campaign behind `main.tex` cannot recur. The staleness gate was watched to FAIL before trust.
-
-**B6 closed.** `docs/reproduction.md` section 6 documents all 15 previously-undocumented modules and
-scripts with the command that reproduces each; every flag was run with `--help` first. `./init.sh`: 630
-tests, 0 failures.
-
-**Where the paper stands.** 23 pages, body still exactly 8pp (References open page 9), five gates
-passing via `./check_paper.sh`. Amendments 7 and 8 both pre-date the runs they govern.
-
-**What is NOT running.** B3 (a second permuted rung at delta=0.10) needs a card and all three usable
-ones are busy until B1a's second wave drains — it is the right thing to launch the moment one frees.
-B4 is deprioritised on purpose; the reason is in NEXT_ACTIONS and is not worth rediscovering.
+**Everything autonomous in NEXT_ACTIONS is now closed.** B1a closed, B1b-d decided, B2/B5/B6 closed, B3
+answered without running it, B4 deprioritised. What remains is the NOT AUTONOMOUS section: the
+OpenReview submission and the sealed split, both needing a human.
 
 ---
 
