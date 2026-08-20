@@ -10,9 +10,11 @@ preflight skipped it; the T400 is CUDA index 4, not 3, and nvidia-smi ordering i
 - `run_b1_finalise.sh` is ALREADY waiting on the lanes and will merge the registry and run
   `b1_report` by itself, writing `data/results/screening_b1/b1_message_form.json`. Do not launch a
   second one.
-- **MEASURED 2026-08-20 06:42:** seed 0 ran 20 epochs in 10h37m = **31.9 min/epoch**, FASTER than the
-  38-90 min/epoch this box has previously delivered, so the campaign is ~53 GPU-h over two waves and
-  lands about 17:20 on 2026-08-20. Lane logs print no per-epoch line; this came from the launch and exit
+- **MEASURED, and the first measurement was already too optimistic.** Seed 0 ran 20 epochs in 10h37m
+  (31.9 min/epoch); seed 1 took **13h02m** (39.1 min/epoch) on the same box, 23% slower. Quoting the ETA
+  from the fastest lane gave 17:20 and was wrong within three hours - the goal spec's own instruction is
+  to quote RANGES, and this is why. Wave 2 (seeds 3 and 4) started 06:42 and 09:07, so the campaign
+  lands somewhere in **17:20-22:10 on 2026-08-20** and the report fires itself when it does. Lane logs print no per-epoch line; this came from the launch and exit
   timestamps in `data/logs/b1_gcnnorm.nohup.log`. Both my earlier estimates (`~32` and `60-150` GPU-h)
   were guesses; this one is not.
 - Seed 0 completed with systema 0.0850 against the same seed's typed_static 0.0786. **PRELIMINARY AT
