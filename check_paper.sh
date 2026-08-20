@@ -103,7 +103,10 @@ fi
 # deanonymising string); see check_anonymity.py's docstring, including why github.com is REJECTED
 # while anonymous.4open.science is ACCEPTED. Do not invert that.
 GATE6=0
-.venv/bin/python paper/icbinb/check_anonymity.py || GATE6=$?
+# --repo as well as the paper: the venue blinds LINKED material, and the linked material is an
+# anonymous.4open.science mirror that serves tracked file content unchanged. A clean PDF beside a repo
+# that names the author is still a blinding failure.
+.venv/bin/python paper/icbinb/check_anonymity.py --repo || GATE6=$?
 if [ $GATE6 -ne 0 ]; then
   echo "FAIL: anonymity gate — see above. Fix the source, never the gate."
   exit 1

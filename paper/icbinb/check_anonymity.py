@@ -7,8 +7,17 @@ scrub landed 2026-08-11 (commit d840824, six strings) and the ENTIRE paper was t
 by section on 2026-08-20 with no anonymity re-check afterwards. Every other gate in this repo guards
 something a reviewer would ask us to fix. This one guards a desk reject.
 
-    .venv/bin/python paper/icbinb/check_anonymity.py              scan and exit 1 on any hit
+    .venv/bin/python paper/icbinb/check_anonymity.py              scan the paper, exit 1 on any hit
+    .venv/bin/python paper/icbinb/check_anonymity.py --repo       also scan every TRACKED file
     .venv/bin/python paper/icbinb/check_anonymity.py --self-test  prove the scan can actually FAIL
+
+--repo EXISTS BECAUSE THE PAPER IS NOT THE ONLY BLINDED ARTIFACT. The venue's requirement is that
+linked material preserves anonymity too, and the linked material is an anonymous.4open.science mirror
+of this repository, which masks the org name while serving file CONTENT unchanged. A clean PDF beside
+a repo that names the author is still a blinding failure. It scans what `git ls-files` reports, so
+untracked artifacts are out of scope by construction - which is correct, because the mirror serves
+tracked content. (data/results/a3_external/rescored.json does record an absolute home path, and is
+untracked, so it never reaches the mirror. Checked 2026-08-21, not assumed.)
 
 THE DENY-LIST IS NOT WRITTEN DOWN, AND THAT IS DELIBERATE. This file is tracked, and
 anonymous.4open.science masks the org name while serving file CONTENT unchanged - which is the exact
@@ -44,9 +53,18 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent          # the checkout root, for --repo
 
-# Accepted anywhere. The anonymised mirror is the ONE external link the paper is supposed to carry.
-ALLOW = ("anonymous.4open.science",)
+# Accepted anywhere, each for a stated reason. An allow-list entry without one is how a gate rots.
+ALLOW = (
+    "anonymous.4open.science",           # the anonymised mirror: the ONE external link the paper carries
+    "github.com/ANONYMIZED",             # the placeholder the 2026-08-11 scrub (d840824) left behind
+    # A THIRD PARTY's public analysis repository, cited as data provenance for the genome-wide screen.
+    # Blinding protects OUR authorship; anonymising someone else's published citation would destroy
+    # provenance and is not what the venue asks for.
+    "github.com/emdann",
+    "api.github.com/repos/emdann",       # the same third party, in REST-endpoint form
+)
 
 # STRUCTURAL patterns. Each names a CLASS of leak rather than a person, so writing them here leaks
 # nothing. Ordered by how badly each one bites.
@@ -107,14 +125,19 @@ def derived_terms() -> tuple[list[tuple[str, str]], list[str]]:
 
 
 def scan(text: str, rules: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Every rule hit, as (what, the offending excerpt). Allow-listed hits are dropped BEFORE the
-    verdict, so `anonymous.4open.science` never trips the code-host rule."""
+    """Every rule hit, as (what, the offending excerpt).
+
+    A hit is dropped only when it lies INSIDE an allow-listed occurrence. Overlap, rather than "an
+    allowed string appears nearby", is what makes the exemption safe: a real leak sitting one line
+    below an allowed URL still fails, and it is also what lets one entry cover a URL the pattern
+    matches only part of (``api.github.com/repos/<third party>`` matches as ``github.com/repos``)."""
+    spans = [m.span() for a in ALLOW for m in re.finditer(re.escape(a), text, re.IGNORECASE)]
     hits = []
     for pattern, what in rules:
         for m in re.finditer(pattern, text, re.IGNORECASE):
-            frag = text[max(0, m.start() - 30):m.end() + 30].replace("\n", " ")
-            if any(a in frag for a in ALLOW) and any(a in m.group(0) for a in ALLOW):
+            if any(lo <= m.start() and m.end() <= hi for lo, hi in spans):
                 continue
+            frag = text[max(0, m.start() - 30):m.end() + 30].replace("\n", " ")
             hits.append((what, frag.strip()))
     return hits
 
@@ -129,6 +152,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--self-test", action="store_true",
                     help="prove the scan can fail; touches no real file")
+    ap.add_argument("--repo", action="store_true",
+                    help="also scan every git-tracked file (the mirror serves these unchanged)")
     a = ap.parse_args()
     if a.self_test:
         return self_test()
@@ -158,6 +183,27 @@ def main() -> int:
         for what, frag in scan(text, rules):
             fails.append(f"{name}: {what} — ...{frag}...")
 
+    n_tracked = 0
+    if a.repo:
+        listed = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+        files = [f for f in listed.stdout.split("\n") if f.strip()]
+        if not files:
+            print("REFUSING: --repo found no tracked files, so it checked nothing", file=sys.stderr)
+            return 2
+        for rel in files:
+            # This file is skipped from its own scan: --self-test's fixtures are DELIBERATELY leaky.
+            # They name Ada Lovelace, who is dead, is not an author here, and was chosen precisely so
+            # the fixture identifies nobody real.
+            if Path(rel).resolve() == Path(__file__).resolve():
+                continue
+            try:
+                text = (ROOT / rel).read_text(errors="ignore")
+            except (OSError, UnicodeDecodeError):
+                continue                       # binary or unreadable: nothing to read a name out of
+            n_tracked += 1
+            for what, frag in scan(text, rules):
+                fails.append(f"{rel}: {what} — ...{frag}...")
+
     meta = pdf_metadata(pdf)
     for field in ("Author", "Title", "Subject", "Keywords"):
         if meta.get(field):
@@ -168,7 +214,9 @@ def main() -> int:
           f"environment")
     if missing:
         print(f"rules UNAVAILABLE: {', '.join(missing)} — those identity terms were NOT searched for")
-    print(f"scanned          : {', '.join(sources)}")
+    print(f"scanned          : {', '.join(sources)}"
+          + (f", + {n_tracked} git-tracked files" if a.repo else
+             "   (paper only; --repo also scans the tracked tree the mirror serves)"))
     print(f"pdf /Author      : {meta.get('Author', '')!r}   /Title: {meta.get('Title', '')!r}   "
           f"(gate: both empty)")
     print(f"allow-listed     : {', '.join(ALLOW)}")
@@ -192,6 +240,8 @@ def self_test() -> int:
         "Data under /mnt/md0/somebody/tree",
         r"\author{Ada Lovelace}",
         "written by Ada Lovelace",
+        # The overlap rule's own trap: an allowed URL must not launder a leak beside it.
+        "Mirror at https://anonymous.4open.science/r/x, written by Ada Lovelace",
     ]
     for s in must_fail:
         if not scan(s, rules):
