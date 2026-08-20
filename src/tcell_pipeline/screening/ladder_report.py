@@ -333,6 +333,31 @@ def _verdict(rungs: dict, contrasts: dict, seeds=SEEDS) -> dict:
         notes.append(f"INCOMPLETE at n<{len(seeds)}: {incomplete} — read these as preliminary, with "
                      f"their n (rail 5)")
 
+    # A MISSING CONTROL IS NOT A PASSED CONTROL. `any()` over an empty list is False, so a ladder
+    # whose permuted rung never landed would sail past the veto below and name a floor. Amendment
+    # 6.7/9.6 make that veto absolute and prior to every other reading, and it cannot be applied to a
+    # rung that does not exist. This bites precisely when a campaign is stopped early - the case
+    # Amendment 9.9 plans for - so it is checked before anything else.
+    if not control:
+        notes.append("*** NO PERMUTED CONTROL RUNG IS PRESENT. No floor is reported: the control's "
+                     "veto is absolute (Amendment 6.7) and cannot be applied to a rung that has not "
+                     "landed. An absent control is not a passed control. ***")
+        return {"floor": None, "floor_status": "control_missing", "notes": notes,
+                "control_clears": None}
+
+    # A RUNG WITH n<2 IS UNTESTED, NOT CLEARED. The floor is the smallest rung that clears AND is
+    # cleared by every LARGER rung, so an untested larger rung leaves every smaller one unreadable.
+    # Without this, an EMPTY ladder reports "the floor is above the largest rung tested, which is
+    # itself a result" - a manufactured negative from zero data. Reporting at a reduced n is still
+    # allowed and expected (Amendment 9.9), but n>=2 is the floor of what forms a paired contrast.
+    untested = [n for n in real if contrasts[n]["n"] < 2]
+    if untested:
+        notes.append(f"*** LADDER INCOMPLETE: {untested} have n<2 and cannot form a paired contrast. "
+                     f"No floor is reported in either direction. An untested rung is UNKNOWN, not "
+                     f"cleared, and the floor rule reads every larger rung. ***")
+        return {"floor": None, "floor_status": "incomplete_ladder", "notes": notes,
+                "control_clears": None}
+
     control_clears = any(contrasts[n].get("survives_family_wise") and (contrasts[n]["mean"] or 0) > 0
                          for n in control)
     if control_clears:

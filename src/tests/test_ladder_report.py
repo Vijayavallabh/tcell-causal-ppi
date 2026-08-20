@@ -68,6 +68,7 @@ def test_a_non_monotone_ladder_is_a_red_flag_not_a_floor(tmp_path):
     _rung(tmp_path, "d050", _lift(base, 0.030), base)     # clears
     _rung(tmp_path, "d100", _lift(base, 0.0003), base)    # does not
     _rung(tmp_path, "d200", _lift(base, 0.0004), base)    # does not
+    _rung(tmp_path, "permuted_d400", base, base)          # control present and NOT clearing
     r = run(str(tmp_path), None)
     assert r["floor"] is None and r["floor_status"] == "non_monotone"
     assert any("NON-MONOTONE" in n for n in r["notes"])
@@ -77,6 +78,7 @@ def test_a_ladder_nothing_clears_reports_the_floor_as_above_the_largest_rung(tmp
     base = [0.080, 0.081, 0.079, 0.080]
     for name in ("d020", "d100", "d400"):
         _rung(tmp_path, name, _lift(base, 0.0002), base)
+    _rung(tmp_path, "permuted_d400", base, base)          # control present and NOT clearing
     r = run(str(tmp_path), None)
     assert r["floor"] is None and r["floor_status"] == "above_ladder"
     assert any("ABOVE the largest rung" in n for n in r["notes"])
@@ -104,9 +106,11 @@ def test_missing_and_uncompleted_lanes_shrink_n_rather_than_being_used(tmp_path)
 
 def test_verdict_needs_a_positive_not_merely_a_significant_rung():
     """A rung where the graph arm is significantly WORSE must not be read as detection."""
-    rungs = {"d100": {"delta": 0.10, "permuted": False}, "d200": {"delta": 0.20, "permuted": False}}
+    rungs = {"d100": {"delta": 0.10, "permuted": False}, "d200": {"delta": 0.20, "permuted": False},
+             "permuted_d400": {"delta": 0.40, "permuted": True}}
     contrasts = {"d100": {"n": 4, "mean": -0.05, "survives_family_wise": True},
-                 "d200": {"n": 4, "mean": -0.06, "survives_family_wise": True}}
+                 "d200": {"n": 4, "mean": -0.06, "survives_family_wise": True},
+                 "permuted_d400": {"n": 4, "mean": 0.0, "survives_family_wise": False}}
     v = _verdict(rungs, contrasts)
     assert v["floor"] is None and v["floor_status"] == "above_ladder"
 
@@ -287,3 +291,51 @@ def test_missing_gate_logs_are_a_named_gap_for_a_live_gate_arm_not_a_silent_pass
     r = lr.run(str(root), None, arm="condition_gated", log_dir=str(tmp_path / "absent"))
     assert r["gate_health"]["status"] == "unavailable"
     assert any("gate health UNCHECKED" in n for n in r["notes"])
+
+
+# --- the two refusals a stopped-early campaign depends on ------------------------------------------
+def test_a_missing_permuted_control_refuses_a_floor_rather_than_passing_the_veto(tmp_path):
+    """`any()` over an empty list is False, so a ladder whose control rung never landed would sail
+    past the veto and name a floor. Amendment 6.7 makes that veto absolute and prior to every other
+    reading, and it cannot be applied to a rung that does not exist. The guard can fail: adding the
+    control back to the SAME fixture must restore a normal verdict."""
+    base = [0.080, 0.081, 0.079, 0.080]
+    _rung(tmp_path, "d020", _lift(base, 0.010), base)
+    _rung(tmp_path, "d400", _lift(base, 0.030), base)
+    r = run(str(tmp_path), None)
+    assert r["floor"] is None and r["floor_status"] == "control_missing"
+    assert any("NO PERMUTED CONTROL" in n for n in r["notes"])
+
+    _rung(tmp_path, "permuted_d400", base, base)      # a control that does NOT clear
+    ok = run(str(tmp_path), None)
+    assert ok["floor_status"] != "control_missing", "the guard cannot fail, so it proves nothing"
+
+
+def test_an_empty_ladder_refuses_instead_of_manufacturing_a_negative(tmp_path):
+    """Before this, a ladder with NO landed lanes reported "the floor is ABOVE the largest rung
+    tested, which is itself a result: this pipeline cannot see an injected graph signal even at that
+    size" - an affirmative negative conjured from zero data. A reader skimming the verdict line would
+    conclude the arm is blind. An untested rung is UNKNOWN, not cleared."""
+    base = [0.080, 0.081, 0.079, 0.080]
+    _rung(tmp_path, "d020", _lift(base, 0.010), base)
+    _rung(tmp_path, "permuted_d400", base, base)
+    (tmp_path / "d400" / "expression_only").mkdir(parents=True)   # a rung dir with no lanes at all
+    (tmp_path / "d400" / "untyped_gnn").mkdir(parents=True)
+
+    r = run(str(tmp_path), None)
+    assert r["floor"] is None and r["floor_status"] == "incomplete_ladder"
+    assert any("LADDER INCOMPLETE" in n and "n<2" in n for n in r["notes"])
+    assert not any("above_ladder" in str(n) for n in r["notes"])
+
+
+def test_a_reduced_but_complete_ladder_still_gets_a_verdict(tmp_path):
+    """Amendment 9.9 expects a stopped campaign to be REPORTED at whatever n landed, labelled
+    preliminary. So the refusal above must not swallow a ladder that is merely underpowered: n=2 on
+    every rung is thin, but it is a paired contrast and it gets a verdict with its n."""
+    base = [0.080, 0.081]
+    _rung(tmp_path, "d020", _lift(base, 0.010), base, seeds=(0, 1))
+    _rung(tmp_path, "d400", _lift(base, 0.030), base, seeds=(0, 1))
+    _rung(tmp_path, "permuted_d400", base, base, seeds=(0, 1))
+    r = run(str(tmp_path), None, seeds=(0, 1))
+    assert r["floor_status"] not in ("incomplete_ladder", "control_missing")
+    assert any("INCOMPLETE at n<2" in n or "preliminary" in n for n in r["notes"]) or r["floor"]
