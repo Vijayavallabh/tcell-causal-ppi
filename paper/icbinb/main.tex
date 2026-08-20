@@ -644,24 +644,39 @@ Second, target count and condition count are anti-correlated across candidates. 
 
 \paragraph{Measured outcome.} We built the DE matrices and applied the rules. Table~\ref{tab:repl} is what survived.
 % AUTO 2026-08-10: the replication has now run; the old "measurement returned two" is superseded.
-Seven of nine candidates passed on-target quality control and were trained to completion: Frangieh melanoma, Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide, Norman K562, and Tian iPSC-neuron CRISPRi and CRISPRa. Two decisions were forced by measurement and pre-registered before the first lane ran. First, the program dimension is not portable: $K$ cannot exceed the training fold's row count, and a replication dataset has one row per (target, condition), so the reference $K{=}128$ does not hold everywhere: Tian runs at $K{=}32$ and is labelled a deviation, with the pooled estimate reported both over all datasets and over the $K{=}128$ subset. Second, the two screens that failed quality control, Datlinger and Shifrut, were the pool's only T-cell data, which is why the replication spans four cell types but does not include the reference's own. Because the adapter could in principle produce a matrix that is merely well shaped rather than correct, we validated the surviving multi-condition dataset against biology it cannot fake: knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.632$, $89\%$ negative, against $-0.014$ and $61\%$ for random genes), and IFNGR1 knockout blunts interferon-stimulated genes by $1.0$ to $3.0$ $\log_2$ units under IFN-$\gamma$ and co-culture but not under control (all within $\pm0.17$), which also confirms the condition axis is correctly assigned.
+Seven of nine candidates passed on-target quality control and were trained to completion: Frangieh melanoma, Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide, Norman K562, and Tian iPSC-neuron CRISPRi and CRISPRa. Two decisions were forced by measurement and pre-registered before the first lane ran. First, the program dimension is not portable: $K$ cannot exceed the training fold's row count, and a replication dataset has one row per (target, condition), so the reference $K{=}128$ does not hold everywhere: Tian CRISPRi runs at $K{=}32$, and Tian CRISPRa and Norman at $K{=}16$, each a labelled deviation (Table~\ref{tab:repl}).
+% AUTO 2026-08-21: this sentence previously asserted that the K=128 subset estimate was reported. It
+% was not: pool.py had no such option and no artifact contained it. The pre-registered analysis has now
+% been run (data/results/replication/pooled_k128_subset.json) and the two estimates disagree, which is
+% the case Amendment 3.1 legislated for. Reported here, and flagged rather than resolved: rail 4.
+Amendment 3.1 requires the pooled estimate over the $K{=}128$ subset alongside the one over all datasets, and fixes in advance that if the two disagree it is the subset that speaks to the reference architecture. They do disagree. Over all eight datasets the untyped margin is $+0.0091$ ($[-0.0024,+0.0207]$, $p{=}0.12$); over the five $K{=}128$ datasets it is $+0.0141$ ($[+0.0041,+0.0241]$, $p{=}0.0056$), with all five positive and no disagreement in sign. Heterogeneity stays high in the subset ($I^2{=}87.7\%$), and the only negative dataset anywhere, Norman, is one of the three that ran below $K{=}128$; so the sign disagreement we report above is not separable from an eight-fold reduction in program capacity. We report both estimates and do not resolve this here. Second, the two screens that failed quality control, Datlinger and Shifrut, were the pool's only T-cell data, which is why the replication spans four cell types but does not include the reference's own. Because the adapter could in principle produce a matrix that is merely well shaped rather than correct, we validated the surviving multi-condition dataset against biology it cannot fake: knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.632$, $89\%$ negative, against $-0.014$ and $61\%$ for random genes), and IFNGR1 knockout blunts interferon-stimulated genes by $1.0$ to $3.0$ $\log_2$ units under IFN-$\gamma$ and co-culture but not under control (all within $\pm0.17$), which also confirms the condition axis is correctly assigned.
 
 \begin{table}[h]
 \centering
-\caption{Replication candidates after applying the pre-registered rules. ``Targets kept'' is out of those present in the source file. Only Frangieh can test the graph contrast; only Frangieh and Norman clear the target-axis floor.}
+% AUTO 2026-08-21: this table reported the SUPERSEDED rule's counts. Its numerators were, digit for
+% digit, the pre-Amendment-2 pseudobulk provenance (Frangieh 216, Norman 102, Papalexi 24, Replogle 12,
+% Datlinger 6), so it marked Replogle "dropped" while the results section two paragraphs below trains
+% three Replogle datasets and pools them. Rebuilt from the DE_stats_v2 artifacts, and the K column
+% added because Amendment 3.1 requires every K deviation to be labelled wherever it appears.
+\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells per (target, condition) against pooled same-condition controls). Ten were built, eight passed on-target quality control, and seven were trained. Papalexi passes QC but falls below the $50$-group target-axis floor, so it is barred from any headline or pooled estimate. Only Frangieh carries more than one condition, so it is the only dataset that can test h1. $K$ is the program-basis dimension fixed by Amendment 3.1; any $K{\ne}128$ is a labelled deviation from the reference architecture. Replicate units are pinned per dataset in the pre-registration.}
 \label{tab:repl}
 \vspace{2pt}
-{\small
-\begin{tabular}{@{}lccll@{}}
+{\footnotesize
+\begin{tabular}{@{}lrccll@{}}
 \toprule
-Dataset & Targets kept & Conditions & Replicate unit & Verdict \\
+Dataset & Targets & Cond. & $K$ & On-target QC & Verdict \\
 \midrule
-FrangiehIzar2021   & $216/248$   & $3$ & sgRNA   & usable, tests h1 \\
-NormanWeissman2019 & $102/105$   & $1$ & gemgroup& usable, h2a only \\
-PapalexiSatija2021 & $24/25$     & $1$ & hto     & preliminary \\
-ShifrutMarson2018  & $20/21$     & $1$ & donor   & preliminary, lost a condition \\
-ReplogleWeissman2022 & $12/2{,}393$ & $1$ & batch & \textbf{dropped} \\
-DatlingerBock2017  & $6/32$      & $2$ & replicate & unusable \\
+ReplogleWeissman2022\_K562\_gwps & $9{,}730$ & $1$ & $128$ & pass & trained, h2a only \\
+ReplogleWeissman2022\_rpe1 & $2{,}122$ & $1$ & $128$ & pass & trained, h2a only \\
+ReplogleWeissman2022\_K562\_essential & $2{,}003$ & $1$ & $128$ & pass & trained, h2a only \\
+FrangiehIzar2021   & $238$ & $3$ & $128$ & pass & trained, \textbf{the only h1 test} \\
+TianKampmann2021\_CRISPRi & $184$ & $1$ & $32$ & pass & trained, \textbf{deviation} \\
+NormanWeissman2019 & $105$ & $1$ & $16$ & pass & trained, \textbf{deviation} \\
+TianKampmann2021\_CRISPRa & $100$ & $1$ & $16$ & pass & trained, \textbf{deviation} \\
+\midrule
+DatlingerBock2017  & $30$ & $2$ & --- & \textbf{fail} & not trained \\
+PapalexiSatija2021 & $25$ & $1$ & --- & pass & below the target-axis floor \\
+ShifrutMarson2018  & $20$ & $1$ & --- & \textbf{fail} & not trained, lost a condition \\
 \bottomrule
 \end{tabular}}
 \end{table}

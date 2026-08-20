@@ -260,78 +260,86 @@ def _mechanism(tex):
     return fails, f"full: {n} rows x (mean, CI) vs data/results/screening_a1/a1_mechanism.json"
 
 
-_REPL_PROV = {"FrangiehIzar2021": "FrangiehIzar2021", "NormanWeissman2019": "NormanWeissman2019",
-              "PapalexiSatija2021": "PapalexiSatija2021", "ShifrutMarson2018": "ShifrutMarson2018",
-              "DatlingerBock2017": "DatlingerBock2017"}
+def _v2_provenance(paper_name: str):
+    """The POST-Amendment-2 build for a dataset named as the paper names it.
+
+    Amendment 2 replaced the DE unit, and the rebuilt matrices are the `*.DE_stats_v2.*` artifacts.
+    The pre-amendment `<name>.provenance.json` files still sit beside them with the SUPERSEDED counts,
+    and reading those is how tab:repl came to report Replogle as "dropped" at 12 targets when the
+    corrected rule gives 2,122. Match on prefix because the paper writes FrangiehIzar2021 where the
+    build is FrangiehIzar2021_RNA."""
+    want = re.sub(r"[^A-Za-z0-9]", "", paper_name)
+    if not want:
+        return None, None, None
+    base = ROOT / "data/intermediate/replication"
+    for f in sorted(base.glob("*.DE_stats_v2.provenance.json")):
+        name = f.name.replace(".DE_stats_v2.provenance.json", "")
+        if re.sub(r"[^A-Za-z0-9]", "", name).startswith(want):
+            qc = f.with_name(f.name.replace("provenance", "qc"))
+            verdict = json.loads(qc.read_text())["verdict"] if qc.exists() else None
+            return name, json.loads(f.read_text()), verdict
+    return None, None, None
 
 
-def _prereg_replicate_units() -> dict:
-    """{dataset: (replicate unit, column)} from the FROZEN pre-registration's own table.
+def _program_k(dataset: str):
+    """K actually used, measured from the built basis rather than from any declared value.
 
-    DO NOT USE THE PROVENANCE'S `replicate_unit` FIELD FOR THIS. It is misnamed: adapter.py emits
-    `spec.replicate_col` under that key, so it holds a COLUMN NAME, not a unit. The two differ for
-    exactly the datasets that matter - Shifrut's unit is the donor and its column is `replicate`,
-    while Datlinger's column is ALSO `replicate` for a completely different unit - so checking the
-    paper against that field reports the correct table as wrong. It did, on this check's first run.
-
-    The paper writes whichever of the two reads better per row (the unit for Shifrut, the column
-    for Norman, where they coincide for Frangieh and Replogle). Both are pre-registered and neither
-    is wrong, so a cell is accepted if it matches EITHER. That still catches a value that is
-    neither, which is the failure worth catching."""
-    txt = (ROOT / "docs/replication-prereg.md").read_text()
-    out = {}
-    for line in txt.splitlines():
-        cs = [c.strip() for c in line.split("|")]
-        if len(cs) > 4 and cs[3].startswith("`") and cs[3].endswith("`"):
-            key = re.sub(r"[^A-Za-z0-9]", "", cs[1].split("(")[0])
-            out[key] = (cs[2], cs[3].strip("`"))
-    return out
+    Amendment 3.1 requires every K != 128 to be labelled wherever it appears, and the paper labelled
+    only one of three. Measuring it from program_response.parquet's width means the label is checked
+    against what the lane really ran, not against a runner argument nobody recorded."""
+    import pandas as pd
+    p = ROOT / f"data/intermediate/replication/{dataset}/program_response.parquet"
+    if not p.exists():
+        return None
+    return pd.read_parquet(p).shape[1] - 1
 
 
 @table("tab:repl")
 def _repl(tex):
-    """Three of five columns are re-derivable per dataset: targets kept (numerator) and condition
-    count from the build's own provenance JSON, replicate unit from the frozen pre-registration.
+    """Four of six columns re-derived per dataset, against the POST-Amendment-2 artifacts: targets and
+    condition count from the DE_stats_v2 provenance, the on-target QC verdict from its qc.json, and K
+    measured from the built program basis.
 
-    NOT CHECKED, and why: the "targets kept" DENOMINATOR is the count present in the source h5ad
-    before any rule was applied, which the provenance does not record; and "Verdict" is a
-    pre-registered judgement, not a measurement. ReplogleWeissman2022's dropped row has no
-    top-level provenance file at all - only the three per-subset builds that replaced it - so that
-    row is reported here rather than skipped in silence."""
-    fails, rows_seen, missing, unchecked_unit = [], 0, [], []
+    NOT CHECKED, and why: "Verdict" is a pre-registered judgement rather than a measurement, and the
+    dataset name is the key rather than a value."""
+    fails, seen, unknown = [], 0, []
     for cs in cells_of(tex, "tab:repl"):
-        name = re.sub(r"[^A-Za-z0-9]", "", cs[0])
-        if name not in _REPL_PROV:
-            if name and name[0].isupper() and "Dataset" not in name:
-                missing.append(name)
+        name = cs[0].replace("\\_", "_").strip()
+        if not name or not name[0].isupper() or name.startswith("Dataset"):
             continue
-        try:
-            prov = load(f"data/intermediate/replication/{_REPL_PROV[name]}.provenance.json")
-        except Missing as e:
-            missing.append(f"{name} ({e})")
+        ds, prov, qc = _v2_provenance(name)
+        if prov is None:
+            unknown.append(name)
             continue
-        rows_seen += 1
-        kept = re.search(r"\$(\d[\d,{}]*)\s*/", cs[1].replace("{,}", ""))
-        if kept and int(kept.group(1).replace(",", "")) != prov["n_targets"]:
-            fails.append(f"tab:repl {name} targets kept: paper {kept.group(1)} artifact "
-                         f"{prov['n_targets']}")
-        nc = re.search(r"\$(\d+)\$", cs[2])
+        seen += 1
+        tgt = re.search(r"(\d[\d,]*)", cs[1].replace("{,}", ","))
+        if tgt and int(tgt.group(1).replace(",", "")) != prov["n_targets"]:
+            fails.append(f"tab:repl {name} targets: paper {tgt.group(1)} artifact {prov['n_targets']}")
+        nc = re.search(r"(\d+)", cs[2])
         if nc and int(nc.group(1)) != len(prov["conditions"]):
             fails.append(f"tab:repl {name} conditions: paper {nc.group(1)} artifact "
                          f"{len(prov['conditions'])}")
-        unit, col = _prereg_replicate_units().get(name, (None, None))
-        if unit is None:
-            unchecked_unit.append(name)
-        elif not (unit.lower() in cs[3].lower() or cs[3].lower() in unit.lower()
-                  or col.lower() in cs[3].lower()):
-            fails.append(f"tab:repl {name} replicate unit: paper {cs[3]!r}, pre-registration "
-                         f"{unit!r} (column {col!r})")
-    note = (f"partial: {rows_seen} rows x (targets kept, conditions) vs the build provenance and "
-            f"replicate unit vs the frozen prereg; denominator and Verdict are not measurements")
-    if unchecked_unit:
-        note += f"; replicate unit UNCHECKED for {unchecked_unit} (absent from the prereg table)"
-    if missing:
-        note += f"; NO PROVENANCE FILE for {missing}, so those rows are unchecked"
+        k_art = _program_k(ds)
+        k_pap = re.search(r"(\d+)", cs[3])
+        if k_pap and k_art is not None and int(k_pap.group(1)) != k_art:
+            fails.append(f"tab:repl {name} K: paper {k_pap.group(1)} basis width says {k_art} "
+                         f"(Amendment 3.1: every K!=128 must be labelled wherever it appears)")
+        elif k_pap and k_art is None:
+            fails.append(f"tab:repl {name} K: paper claims {k_pap.group(1)} but no basis was built")
+        elif not k_pap and k_art is not None and (ROOT / f"data/results/replication/{ds}").is_dir():
+            fails.append(f"tab:repl {name} K: paper shows none but the lane ran at K={k_art}")
+        # A basis with NO trained lane is not a K deviation to label. Papalexi has one at K=8 from what
+        # Amendment 3.1 itself calls a "chain smoke only, never headlined"; the K column reports what a
+        # LANE ran at, so a dash is correct there. The results directory is what distinguishes the two.
+        if qc:
+            said_pass = "pass" in cs[4].lower()
+            if said_pass != qc.startswith("PASS"):
+                fails.append(f"tab:repl {name} QC: paper {cs[4]!r} artifact {qc!r}")
+    note = (f"full on 4 of 6 columns: {seen} datasets x (targets, conditions, K measured from the "
+            f"built basis, on-target QC) vs the POST-Amendment-2 DE_stats_v2 artifacts; Verdict is a "
+            f"pre-registered judgement, not a measurement")
+    if unknown:
+        note += f"; NO DE_stats_v2 BUILD for {unknown}, so those rows are unchecked"
     return fails, note
 
 

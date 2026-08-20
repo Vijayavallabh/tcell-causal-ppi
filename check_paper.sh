@@ -33,7 +33,13 @@ command -v pdflatex >/dev/null || {
   [ "${1:-}" = "--full" ] && bibtex main >/dev/null 2>&1 && pdflatex -interaction=nonstopmode main >/dev/null 2>&1
   pdflatex -interaction=nonstopmode main >/dev/null 2>&1 ) || { echo "BUILD FAILED"; exit 1; }
 
-.venv/bin/python - <<'PY'
+# GATES 1-4 (build errors, undefined control sequences, overfull boxes, body page budget). Its
+# exit code is CAPTURED, not discarded. Until 2026-08-21 this heredoc ran bare: with no `set -e`,
+# a FAILING page gate printed "FAIL" and the script carried straight on to the later gates and
+# exited 0 if those passed. The most important gate in the file was advisory without anyone
+# noticing - the same failure mode as a silently skipped check: it prints something, gates nothing.
+GATE1=0
+.venv/bin/python - <<'PY' || GATE1=$?
 import re, subprocess, sys
 log = open("paper/icbinb/main.log", errors="ignore").read()
 pages = re.search(r"Output written on \S+ \((\d+) pages", log)
@@ -85,6 +91,10 @@ print(f"LaTeX errors     : {errors}")
 print("PASS" if not fails else "FAIL:\n  " + "\n  ".join(fails))
 sys.exit(1 if fails else 0)
 PY
+if [ $GATE1 -ne 0 ]; then
+  echo "FAIL: build / undefined / overfull / body page gate - see above."
+  exit 1
+fi
 
 # Gate 5: abstract_plain.txt is DERIVED from main.tex and is what SUBMISSION.md tells a human to paste
 # into the portal. It had no generator and drifted a full campaign behind the paper, still carrying a

@@ -1,3 +1,56 @@
+# *** CONTRADICTION STOP FIRED (2026-08-21). Rail 4. Read this before anything else. ***
+
+**The graph HELPS and clears both corrections in a pre-registered analysis that had never been run.**
+Snapshotted, flagged here, not written into the paper's null. Artifact
+`data/results/replication/pooled_k128_subset.json`.
+
+Amendment 3.1 pinned a rule and a safeguard: any dataset trained at `K != 128` is a deviation from the
+reference architecture and "must be labelled as such wherever it appears", and **"the pooled estimate is
+reported TWICE - over all datasets, and over the K=128 subset alone - and if those two disagree, the
+K=128 subset is the one that speaks to the reference architecture."**
+
+That second estimate was never computed. `pool.py` has no such option, no artifact contained it, and no
+number for it appears in the paper -- while the paper states at App.~D that it *is* reported. Running it
+(pure re-pooling of landed per-dataset numbers, no training):
+
+| pool | k | random effects | 95% CI | p | I2 |
+|---|---|---|---|---|---|
+| all datasets (what the paper reports) | 8 | +0.0091 | [-0.0024, +0.0207] | 0.121 | 87.5% |
+| **K=128 subset (the pre-registered second estimate)** | **5** | **+0.0141** | **[+0.0041, +0.0241]** | **0.0056** | 87.7% |
+
+Under the project's own family of four, raw p 0.0056 gives Bonferroni 0.0224 and Holm 0.0224: **it
+clears both.** All five K=128 datasets are positive and none disagrees in sign: reference $+0.0043$,
+Frangieh $+0.0194$, Replogle RPE1 $+0.0675$, K562-essential $+0.0081$, K562-gwps $+0.0069$.
+
+**WHAT THIS DOES AND DOES NOT TOUCH.** It does NOT touch the headline null. That null is h1,
+`condition_gated - expression_only`, which in this subset is unchanged at k=1, $+0.0033$, $p=0.90$
+(only Frangieh can test it). This is the UNTYPED arm, already the paper's one corrected-significant
+positive. What changes is its consistency.
+
+**WHERE IT BITES.** The paper's sharpest replication claim is that raw topology has a real effect
+"whose sign we cannot predict", and the only negative carrying that claim is Norman at $-0.0790$.
+Norman ran at **K=16**, an eight-fold reduction in program capacity, and is nowhere labelled a
+deviation -- the paper labels only "Tian at $K{=}32$", while measured from the built bases the actual
+values are Frangieh 128, Replogle rpe1/essential/gwps 128, **Tian CRISPRi 32, Tian CRISPRa 16, Norman
+16**. So the sign disagreement is confounded with an undeclared capacity deviation, which is precisely
+the confound Amendment 3.1's second estimate existed to expose.
+
+**BE FAIR ABOUT WHAT THIS IS NOT.** Low K does not by itself explain Norman: the other two low-K
+datasets, Tian CRISPRa (K=16) and CRISPRi (K=32), are both POSITIVE ($+0.0226$, $+0.0281$). So
+"low K goes negative" is not a rule the data supports. And I2 is 87.7% in the subset too, so the
+random-effects reading is over datasets that still disagree in magnitude. Two further caveats, stated
+rather than buried: the pre-registration fixes Bonferroni-and-Holm at m=4 for the per-seed contrasts
+and says nothing explicit about correcting POOLED estimates, so "clears both" above is applied under
+this project's own convention rather than under a rule the amendment spells out for pooled numbers;
+and the paper already labels its all-datasets pooled number post-hoc.
+
+**WHAT WAS DONE, per rail 4:** snapshotted, flagged here, and recorded with a verdict in
+`docs/prereg-audit-2026-08-21.md`. The null was NOT rewritten around it. Two things in the paper that
+are false rather than arguable were fixed: the claim that the K=128 subset estimate is reported, and a
+stale appendix table. Whether to carry this finding further is a call for a human, not an agent.
+
+---
+
 # B1a CLOSED (2026-08-20): the typed encoder's deficit is mostly the UNNORMALISED SUM, not the typing
 
 Pre-registered as Amendment 7 before the arm was trained. Artifact
