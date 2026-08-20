@@ -717,3 +717,159 @@ only the bound.
 
 **8.5 Isolation.** Read-only. The stored predictions under `data/results/predictions/` and the frozen
 val fold are read; nothing is trained, and no sealed-split artifact is touched.
+
+---
+
+## Amendment 9 — 2026-08-21 (BEFORE any `condition_gated` injected-signal lane is trained)
+
+Registers C1: the detection floor of the arm the paper's headline null is actually about. Extends
+Amendment 6 and changes nothing in it. Written before any lane of this campaign exists.
+
+**Why this is owed.** Amendment 6.5 registered the ladder on `untyped_gnn` against `expression_only`
+and gave two honest reasons — cost (2.3-2.5 GPU-hours per lane against 7.5-16) and sensitivity
+(`untyped_gnn` is this pipeline's best graph detector) — and closed with: "This is a bound on the
+pipeline's sensitivity, not on the typed encoder's specifically, and it will be labelled that way." It
+is now labelled that way, in the abstract, in Limitations and in App. `app:floor`, each saying the
+typed arm's own floor is unmeasured.
+
+That labelling is honest and it is also a gap. The a-fortiori argument runs one way only: the untyped
+arm detects an injected signal at 0.02 response SDs, so a weaker detector needs AT LEAST that much. It
+gives no upper bound. The typed, gated arm could need far more, and this paper's own evidence says it
+is the poorer detector (h2a $-0.0120$ at n=7; Amendment 7 puts most of that on the unnormalised sum).
+The headline null is stated about `condition_gated`. Its floor is the number that says whether that
+null describes an instrument that could see what it was pointed at.
+
+### 9.1 The design, fixed now
+
+The existing ladder re-run with `ARMS="expression_only condition_gated"` over the SIX rungs already
+built under `data/intermediate/inject` — `delta` in {0.02, 0.05, 0.10, 0.20, 0.40} plus the one
+permuted control at 0.40. No new rungs, no new injection code, no re-derivation: the injected matrices
+are the same bytes Amendment 6 governed, and their leakage and rail-1 guards are already asserted
+against them. Seeds 0-3, n=4 per arm per rung (rail 5). Everything in Amendment 6.6 is held fixed —
+same frozen `blocked_target_ood` split, 20 epochs, batch 8, `SUBGRAPH_CACHE_SIZE=9000`, the program
+basis NOT re-fitted per rung — with the single exception fixed in 9.2.
+
+### 9.2 `lambda_graph = 0`, and why this one deviation from 6.6 is mandatory
+
+Amendment 6.6 held `lambda_graph` at the config default, which is `0.01`. That was harmless for
+Amendment 6 because `untyped_gnn` and `expression_only` have no live edge gate to suppress. **It would
+be fatal here.** `condition_gated` is the only arm in this project whose gate is live, and the
+gate-magnitude sweep in `app:power` measures that gate collapsing toward $10^{-7}$ as `lambda_graph`
+rises, with `lambda_graph = 0` the setting that reproduces live gates at a mean of 0.76. The paper's
+headline family, and the $-0.0009$ h1 null itself, are stated on the REPAIRED root
+`data/results/screening_lambda0`, which is `lambda_graph = 0`.
+
+So these lanes run at `lambda_graph = 0`. Two reasons, both stated before any number exists. First,
+commensurability: a floor measured on a gate-suppressed arm would not be the floor of the arm the null
+describes, and the paper would be answering a question about a different model. Second, Amendment 3.4:
+a lane whose mean edge gate falls to $\le 10^{-3}$ is an UNDECIDABLE experiment, reported as such and
+never as evidence the graph does not help. At the config default that criterion is not a remote risk,
+it is the expected outcome, and a campaign designed to trip its own kill criterion is not a campaign.
+
+This is a deviation from 6.6 and is labelled one wherever the result appears. The zero point in 9.5 is
+read from the same `lambda_graph = 0` root so that the ladder and its zero point are one configuration.
+
+**Gate health is a reported quantity here, not an assumption.** Mean edge gate is logged every epoch on
+every `condition_gated` lane, and the report states the minimum observed across all lanes. Any lane
+below $10^{-3}$ is dropped by name and reason under Amendment 3.4 and shrinks n rather than being
+replaced.
+
+### 9.3 The primary, fixed before running
+
+Per rung: `h1_ladder` = `condition_gated` $-$ `expression_only` on `systema_pert_specific_delta`,
+paired per seed, n=4. Positive favours the graph arm, the convention used throughout this project.
+
+### 9.4 Multiplicity
+
+The six injected conditions form ONE family, m=6. Bonferroni AND Holm are both computed and survival
+requires BOTH, as everywhere else here. Per-rung uncorrected intervals are also reported.
+
+**This family is NOT pooled with Amendment 6's.** The two ladders run the same six rungs, so pooling
+them would correct over twelve tests while double-counting the same injected data rather than widening
+the search. They are reported side by side, each at m=6, and any comparison between the two floors is
+descriptive.
+
+### 9.5 The zero point, and that it is not a family member
+
+`delta = 0` is read off the landed `lambda_graph = 0` lanes in `data/results/screening_lambda0` at
+seeds 0-3, not re-run. It is the ladder's ZERO POINT and NOT a member of the family, for the reason
+Amendment 6.4 gives: at `delta = 0` the data is the untouched screen, and a control the data cannot
+pass is not a control. Note the asymmetry with Amendment 6, recorded rather than smoothed over: there
+the zero point sits at $+0.0048$ because the untyped arm already wins with no injection, whereas h1's
+zero point is a null ($-0.0009$ at n=5). That makes this ladder's primary easier to read, not harder:
+a rung that clears is not clearing on a pre-existing benefit.
+
+The post-hoc increment-over-zero of Amendment 6's report is computed here too, on the same
+paired-on-seed basis, and carries the same label: POST-HOC, never the rule.
+
+### 9.6 The decision rule, copied from 6.7 so the two ladders are read identically
+
+- **The measured floor is the smallest `delta` that clears both corrections AND is cleared by every
+  larger rung.**
+- **A rung that clears while a larger one does not is a RED FLAG and is reported as one, not as a
+  floor.** A monotone dose-response is part of what makes a ladder interpretable.
+- **If the permuted control clears correction, no floor is reported at all.** It would mean the arms
+  respond to an injected component of that size regardless of whether it follows the graph, and the
+  number would measure injection magnitude rather than graph readability. This veto is absolute and
+  applies before any other reading.
+- **A lane that fails shrinks n**, reported by name and reason, never silently replaced.
+
+### 9.7 What each outcome means, fixed before the numbers exist
+
+- **The floor lands at or below 0.02, like the untyped arm's.** The strongest form of the paper's
+  central claim: the null is bounded by an instrument demonstrably able to see a graph signal of that
+  size, and the "unmeasured" hedge in the abstract, Limitations and `app:floor` is discharged and
+  removed.
+- **The floor lands between 0.02 and 0.20.** The typed gated arm is a measurably worse detector than
+  the untyped one, quantified. The null stands but is restated against that number, and the gap
+  between the two floors becomes a second measurement of what the typed encoder costs — independent of
+  Amendment 7's, and on a different axis.
+- **The floor is above the largest rung tested (0.40).** This pipeline's gated arm cannot see an
+  injected graph signal even at 0.40 response SDs. See 9.8.
+- **The permuted control clears.** No floor. The ladder is reported as uninterpretable for this arm and
+  the reason is stated; it does not become a floor by another name.
+- **Non-monotone.** Red flag, reported with every rung's interval, and no floor is named.
+
+### 9.8 THE UNCOMFORTABLE OUTCOME, STATED IN ADVANCE AND IN WRITING
+
+**If the typed arm's floor lands far above 0.02 — and most of all if it is above the whole ladder —
+then the paper's headline null is a statement about an instrument that could not see what it was
+pointed at, and the paper carries that.** It would mean the central negative result is not "a PPI prior
+does not help" but "our gated encoder is too insensitive for this experiment to answer the question",
+and every sentence resting on the null would have to be re-read in that light: the abstract, the
+Limitations section, and cause C in the causes table.
+
+Committing to this before the numbers exist is the only thing that makes the answer worth anything. An
+outcome that is a result when it is convenient and an artifact when it is not is not a measurement. If
+this fires, it is reported at the top of `RESULTS_SUMMARY.md` on the same day, the paper is corrected
+rather than hedged, and the correction joins the four already on this project's record.
+
+**And the reverse commitment, which costs just as much:** a floor at or below 0.02 does NOT license
+strengthening any claim beyond the removal of the "unmeasured" hedge. It bounds the instrument. It says
+nothing about whether a better prior or a better encoder would help, and no sentence may use it to
+suggest otherwise.
+
+### 9.9 Cost, and the stop rule
+
+24 `condition_gated` lanes at the 7.5-16 GPU-hours those lanes measured on this fold is 180-380
+GPU-hours, plus 24 cheap `expression_only` lanes. That is the largest single spend left in this
+project, on a shared box whose per-epoch time has measured 38 to 90 minutes depending on other users.
+Per-epoch cost is RE-MEASURED on the first lane rather than extrapolated, and if the measured rate puts
+the campaign beyond the deadline it is stopped and reported at whatever n landed, labelled preliminary
+with its n under rail 5 — not quietly extended, and not headlined at n<4.
+
+### 9.10 Isolation
+
+Rail 1: the sealed challenge split is not read, opened or scored; the injected matrices already leave
+challenge and calibration rows bit-identical, asserted on the real matrix. Rail 2: every landed results
+root is read-only. These lanes write a FRESH root, separate from `data/results/a2_ladder`, so
+Amendment 6's landed ladder is not touched. `data/splits` is read, never written.
+
+### 9.11 The analysis is the same code
+
+The floor is read by `screening/ladder_report.py`, whose rule is Amendment 6.7 implemented without
+discretion. It currently hardcodes `untyped_gnn` as the better arm and `screening_untyped_n7` as the
+reference root, so it needs the arm and the reference root to become parameters before this ladder can
+be read. That change must be made and tested BEFORE the lanes land, so that the analysis code cannot be
+shaped by the numbers it will produce — the same discipline that made Amendment 6's post-hoc increment
+worth reading, since it was committed while three rungs were still unrun.
