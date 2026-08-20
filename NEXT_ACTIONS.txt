@@ -177,6 +177,36 @@ rescore_external, arch_search_power, rationale_audit_bound, inject_signal, ladde
 check_paper.sh, run_a1_mechanism.sh, run_a2_ladder.sh or run_ladder_finalise.sh. Add them with the
 command that reproduces each artifact. Then run ./init.sh and fix whatever it reports.
 
+--- C1. The typed arm's OWN detection floor.  ~200 GPU-h.  THE ONE REAL EXPERIMENT LEFT --------
+CREATED BY THE DEVIL'S ADVOCATE PASS, 2026-08-20. The paper's headline null is about the typed, GATED
+arm. The measured floor is not: Amendment 6.5 registered the ladder on untyped_gnn against
+expression_only, on cost (2.3-2.5 GPU-h per lane against 7.5-16) and on sensitivity, and closed with
+"this is a bound on the pipeline's sensitivity, not on the typed encoder's specifically, and it will be
+labelled that way". It is now labelled that way in the abstract, Limitations and app:floor, twice
+saying the typed arm's own floor is UNMEASURED.
+
+That is a real gap and it is measurable. The a-fortiori argument only runs one way: the untyped arm
+detects at 0.02 response SDs, so weaker arms need AT LEAST that, but the typed arm's actual floor could
+be much higher, and this paper's own evidence says it is the poorer detector (h2a -0.0120; B1a puts
+most of that on the unnormalised sum). If the typed arm's floor turned out to be, say, 0.20, the
+headline null would be a statement about an instrument that cannot see what it was pointed at.
+
+CLOSE WITH: re-run the existing ladder with ARMS="expression_only condition_gated" over the six built
+rungs under data/intermediate/inject, 4 seeds, through run_a2_ladder.sh. The rungs already exist, so
+this is lanes only. 24 condition_gated lanes at 7.5-16 GPU-h is 180-380 GPU-h; three A100s are free.
+PRE-REGISTER FIRST as an extension of Amendment 6, stating the primary (condition_gated minus
+expression_only per rung), the family, and what each outcome means, BEFORE any lane starts.
+WHAT IT BUYS: either the null is bounded by an instrument demonstrably able to see a signal of that
+size, which is the strongest form of the paper's central claim; or it is not, which is a bigger finding
+than anything else left on this list and one the paper would have to carry.
+
+--- C2. Bookkeeping the paper work of 2026-08-20 -----------------------------------------------
+Done in-session and NOT reflected here until now: the devil's advocate pass
+(docs/devils-advocate-2026-08-20.md), the full section-by-section rewrite, the number-drift verifier
+(paper/icbinb/verify_numbers.py plus numbers.snapshot.json, run --check after ANY paper edit), the
+ICBINB content-spec compliance pass, and the section restructure to Problem / Proposed approach /
+Observed outcome / Reason for failure.
+
 =======================================================================
 NOT AUTONOMOUS — do not attempt these
 =======================================================================
