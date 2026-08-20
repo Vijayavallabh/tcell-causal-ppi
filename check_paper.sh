@@ -95,3 +95,16 @@ if [ $GATE5 -ne 0 ]; then
   echo "FAIL: abstract_plain.txt is stale — run .venv/bin/python paper/icbinb/make_abstract_plain.py"
   exit 1
 fi
+
+# Gate 6: DOUBLE-BLIND. Added 2026-08-21. This is the only gate in this file whose failure cannot be
+# repaired after the deadline — every other one makes the paper worse, this one is a desk reject. The
+# repo scrub is dated 2026-08-11 and the whole paper was rewritten on 2026-08-20 with no re-check.
+# The deny-list deliberately lives OUTSIDE this tracked file (it would otherwise become the seventh
+# deanonymising string); see check_anonymity.py's docstring, including why github.com is REJECTED
+# while anonymous.4open.science is ACCEPTED. Do not invert that.
+GATE6=0
+.venv/bin/python paper/icbinb/check_anonymity.py || GATE6=$?
+if [ $GATE6 -ne 0 ]; then
+  echo "FAIL: anonymity gate — see above. Fix the source, never the gate."
+  exit 1
+fi

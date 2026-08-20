@@ -28,6 +28,20 @@ verified; nothing below has to be re-derived.
 - **Anonymous**: author block is `Anonymous Author(s)`. The repository content has also been scrubbed —
   six identifying strings removed (GitHub username in clone URLs, absolute home paths, and one that
   exposed a third party's directory on the shared machine). A rescan returns zero.
+  **This is now a GATE, not a one-off scan** (added 2026-08-21). `./check_paper.sh` gate 6 runs
+  `check_anonymity.py` over `main.tex`, `main.bbl` and the RENDERED `pdftotext main.pdf`, and fails the
+  build on an email address, a code-host URL, an ORCID, an absolute home path, a non-anonymous
+  `\author` block, or a non-empty PDF `/Author` `/Title` `/Subject` `/Keywords`. It ACCEPTS
+  `anonymous.4open.science` and REJECTS `github.com`, which is the distinction step 1 below turns on.
+  The identity terms are derived at runtime from git config and the checkout path rather than written
+  into the tracked script, because a deny-list containing the author's name would itself be the
+  seventh deanonymising string. `--self-test` proves the gate can fail before you trust it passing.
+  The scrub was dated 2026-08-11 and the paper was rewritten section by section on 2026-08-20 with no
+  re-check in between; verified clean on 2026-08-21, so the gate keeps a clean thing clean.
+- **PDF timestamps: examined, deliberately left as they are.** `CreationDate`/`ModDate` carry IST, a
+  weak locality signal present in essentially every LaTeX submission. The venue asks for anonymity of
+  authorship, not of geography, and `\pdfinfoomitdate` would make this build differ from the
+  workshop template's for no compliance gain. Recorded so it reads as decided rather than missed.
 - **LLM disclosure paragraph is present** and is honest that the code was largely agent-built.
 - **Ethics and reproducibility statements** are present and are free at this venue.
 - Build is clean: 0 errors, 0 overfull boxes, 0 undefined references, no multiply-defined labels,
