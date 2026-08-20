@@ -10,9 +10,14 @@ preflight skipped it; the T400 is CUDA index 4, not 3, and nvidia-smi ordering i
 - `run_b1_finalise.sh` is ALREADY waiting on the lanes and will merge the registry and run
   `b1_report` by itself, writing `data/results/screening_b1/b1_message_form.json`. Do not launch a
   second one.
-- Lane logs print NO per-epoch line, so per-epoch cost is only measurable when the first parquet lands.
-  The `~32 GPU-h` estimate in NEXT_ACTIONS was optimistic: 5 lanes x 20 epochs at this box's measured
-  38-90 min/epoch is 60-150 GPU-h, two waves on three cards.
+- **MEASURED 2026-08-20 06:42:** seed 0 ran 20 epochs in 10h37m = **31.9 min/epoch**, FASTER than the
+  38-90 min/epoch this box has previously delivered, so the campaign is ~53 GPU-h over two waves and
+  lands about 17:20 on 2026-08-20. Lane logs print no per-epoch line; this came from the launch and exit
+  timestamps in `data/logs/b1_gcnnorm.nohup.log`. Both my earlier estimates (`~32` and `60-150` GPU-h)
+  were guesses; this one is not.
+- Seed 0 completed with systema 0.0850 against the same seed's typed_static 0.0786. **PRELIMINARY AT
+  n=1 and not to be read as a result** (rail 5 needs n>=4); it is recorded only as evidence the lane is
+  sane and the arm is not degenerate. The corrected verdict comes from `b1_report` at n=5.
 - Pre-registered as **Amendment 7** before the first lane started. 7.3 is the one to re-read before
   adding B1b-d: every earlier contrast is RE-corrected at the larger m, so a first-stage m=1 p-value is
   never carried forward.
