@@ -1,3 +1,53 @@
+# B1a CLOSED (2026-08-20): the typed encoder's deficit is mostly the UNNORMALISED SUM, not the typing
+
+Pre-registered as Amendment 7 before the arm was trained. Artifact
+`data/results/screening_b1/b1_message_form.json`. 5 lanes, 0 failures, source root verified
+byte-identical. `typed_gcnnorm` = `StaticTypedGraphEncoder(norm="gcn")`: each relation's messages
+weighted by 1/sqrt(d_i d_j) instead of summed, changing nothing else and NOT ONE PARAMETER.
+
+| contrast | mean | 95% CI | raw p | seeds | reading |
+|---|---|---|---|---|---|
+| **D3 = gcnnorm - typed_static** | **+0.0139** | [+0.0029, +0.0248] | 0.0245 | **5/5 positive** | recovers **79%** of the +0.0176 gap |
+| gcnnorm - expression_only | +0.0008 | [-0.0047, +0.0062] | 0.71 | 3/5 | a TIE with no graph |
+| gcnnorm - untyped_gnn | -0.0037 | [-0.0109, +0.0034] | 0.22 | 2/5 | indistinguishable from plain topology |
+
+A1 eliminated the parameter count (+0.0004) and the annotation's content (+0.0065). B1a finds the route:
+the aggregation scale. Under `norm="add"` a relation's contribution scales with its degree, so
+`functional_assoc` -- 86% of all edges at a median score of 0.228 -- dominates the node update by sheer
+count. Normalising is one keyword and no new parameters.
+
+## THE CONTRADICTION STOP DOES NOT FIRE
+
+Rail 4 asks whether the graph HELPS and survives both corrections. `typed_gcnnorm - expression_only` is
++0.0008 at p=0.71, three seeds of five. It does not. **Repairing the encoder removes the damage and
+reveals nothing underneath**, so the paper's null is not weakened by this -- it is the same null with one
+fewer artifact in front of it.
+
+## THE HONEST CAVEAT: this is a family of ONE
+
+m=1, so Bonferroni and Holm are both the IDENTITY. "Clears both corrections" here means only the
+uncorrected p=0.0245. Under Amendment 7.3's re-correction rule:
+
+| m | Bonferroni p | |
+|---|---|---|
+| 1 (as run) | 0.0245 | clears |
+| 2 | 0.0491 | clears, barely |
+| 3 | 0.0736 | **fails** |
+| 4 (all of B1) | 0.0981 | **fails** |
+
+What does NOT depend on the multiplicity: five seeds of five positive, and the 79% share.
+
+## WHY B1b-d WERE NOT RUN, on power and not on the p-value
+
+The residual they would partition is `untyped_gnn - typed_gcnnorm` = +0.0037, sd 0.00576 at n=5. MDE at
+n=5 is **0.0096 -- 2.6x the entire residual**, before each arm's share of it is taken. Detecting the
+whole residual needs 21 seeds; half of it needs 77. Three more arms at five seeds would be underpowered
+by construction, which is exactly the A4 mistake.
+
+**Stopping also happens to preserve D3's p-value, and that is stated rather than hidden.** The reason
+for stopping is the power calculation; a reader who distrusts that can run B1b-d and re-correct at m=4,
+where D3 does not clear.
+
 # B3 ANSWERED WITHOUT RUNNING IT (2026-08-19): the delta=0.10 control rung cannot settle the question
 
 Artifact `data/results/a2_ladder/b3_power.json`, module `screening/b3_power.py`. A sensitivity analysis

@@ -166,7 +166,7 @@ Table~\ref{tab:causes} gives every cause its evidence and verdict. Causes A, B a
 
 \paragraph{C. The architecture is wrong, and this is the cause that survives.} We first recorded this cause as refuted. A $14$-cell search over per-relation normalization, edge-confidence pruning, STRING-weighted convolution and GATv2 attention \citep{velickovic2018gat,brody2022gatv2} left the default gated encoder on top, every lever neutral or worse (Appendix~\ref{app:archsearch}). Two results there are still instructive: per-relation normalization depresses the mean gate by an order of magnitude ($0.03$ and $0.12$ against $0.73$), the \S\ref{sec:confound} failure arriving through another door, and pruning low-confidence functional edges lowers the score, which is evidence for E against the intuition that motivated it.
 
-That search was the wrong shape. Every one of its $14$ cells varied \emph{how} the typed, gated encoder does its message passing; not one removed the typing and gating themselves. The lever it never pulled is the one that moves -- in both directions, depending on the dataset -- and running the whole family at $n{=}7$ on the frozen fold localises the damage to a single component. Ordered by \textsc{systema}: untyped $0.0904$, expression-only $0.0861$, condition-gated $0.0829$, typed-static $0.0740$. Plain topology beats no graph; adding per-relation edge typing does not merely fail to help but is \emph{actively harmful} ($-0.0120$, $95\%$ CI $[-0.0160,-0.0080]$, seven of seven seeds negative, Bonferroni and Holm both $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0077$ against typing's $-0.0120$; the raw interval excludes zero but it does \emph{not} survive correction, Bonferroni $0.131$). The gate is not adding signal. It is partly repairing a wound the typing inflicts, and the repair is not even reliable: the gated arm ends up $-0.0043$ against no graph at all. On this same reference screen and frozen fold, an untyped arm -- identical topology, no edge typing, no condition gating -- beats the expression-only baseline by $+0.0043$ \textsc{systema} at $n{=}7$ ($95\%$ CI $[+0.0017,+0.0069]$, all seven seeds positive, $p=0.0068$, Bonferroni $0.027$ and Holm $0.021$), surviving both corrections over the full pre-registered family of four. A search can only refute a cause inside the space it searches, and ours excluded its own premise. \textbf{Survives}, and it is the cause that best explains the null. Which \emph{part} of the typing costs this is a further question, and the answer is neither of the obvious two: tying the relation weights together and randomising the relation labels both leave the deficit intact (Appendix~\ref{app:mechanism}).
+That search was the wrong shape. Every one of its $14$ cells varied \emph{how} the typed, gated encoder does its message passing; not one removed the typing and gating themselves. The lever it never pulled is the one that moves -- in both directions, depending on the dataset -- and running the whole family at $n{=}7$ on the frozen fold localises the damage to a single component. Ordered by \textsc{systema}: untyped $0.0904$, expression-only $0.0861$, condition-gated $0.0829$, typed-static $0.0740$. Plain topology beats no graph; adding per-relation edge typing does not merely fail to help but is \emph{actively harmful} ($-0.0120$, $95\%$ CI $[-0.0160,-0.0080]$, seven of seven seeds negative, Bonferroni and Holm both $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0077$ against typing's $-0.0120$; the raw interval excludes zero but it does \emph{not} survive correction, Bonferroni $0.131$). The gate is not adding signal. It is partly repairing a wound the typing inflicts, and the repair is not even reliable: the gated arm ends up $-0.0043$ against no graph at all. On this same reference screen and frozen fold, an untyped arm -- identical topology, no edge typing, no condition gating -- beats the expression-only baseline by $+0.0043$ \textsc{systema} at $n{=}7$ ($95\%$ CI $[+0.0017,+0.0069]$, all seven seeds positive, $p=0.0068$, Bonferroni $0.027$ and Holm $0.021$), surviving both corrections over the full pre-registered family of four. A search can only refute a cause inside the space it searches, and ours excluded its own premise. \textbf{Survives}, and it is the cause that best explains the null. Which \emph{part} of the typing costs this is a further question, and the answer is that it is barely the typing: tying the relation weights and randomising the relation labels both leave the deficit intact, while merely normalising each relation's messages by degree recovers $79\%$ of it at five seeds of five -- and still beats no graph by nothing (Appendix~\ref{app:mechanism}).
 
 \paragraph{D. The baseline was never graph-free.} Our \textsc{expression\_only} arm turns the message-passing pathway off, and it is what the field would call the no-graph baseline. But the target is described by a frozen feature vector that already carries graph-derived information: three PPI degree scalars, of which the physical and functional degrees are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), plus a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-contextualized interaction network. So the contrast we and others label ``graph versus no graph'' actually measures \emph{the marginal value of message passing over a node-level graph summary}, and the ablation is blind to that summary by construction.
 
@@ -353,8 +353,38 @@ That last one deserves a note, because we previously reported it as refuted. The
 that refuted it spans $0.0089$ across all $14$ of its cells, while the untyped-minus-typed gap we measure
 at $n{=}5$ on the same fold is $0.0176$. A search whose whole range is half the size of the difference
 under study was not resolving these arms at all, so ``refuted within the searched space'' was never
-established for normalisation either. We did not re-run it; we are recording that the earlier refutation
-does not hold, which is the same lesson as \S\ref{sec:causes}, arriving one level further down.
+established for normalisation either, which is the same lesson as \S\ref{sec:causes} arriving one level
+further down.
+
+% AUTO 2026-08-20: B1a. Pre-registered as Amendment 7 before the arm was trained.
+\paragraph{So we ran it, and it is most of the deficit.} \textsc{typed\_gcnnorm} is the static typed
+encoder with each relation's messages weighted by $1/\sqrt{d_i d_j}$ instead of summed, changing nothing
+else and --- deliberately --- not one parameter, since A1 had already excluded capacity. Against the
+landed \textsc{typed\_static} lanes at the same five seeds it recovers $+0.0139$ \textsc{systema}
+($95\%$ CI $[+0.0029,+0.0248]$, five of five seeds positive), which is $79\%$ of the $+0.0176$ gap to
+the untyped arm. The typed encoder's deficit is therefore mostly not the typing at all: it is the
+unnormalised sum, in which a relation's contribution scales with its degree, so
+\textsc{functional\_assoc} --- $86\%$ of all edges at a median score of $0.228$ --- dominates the node
+update by sheer count. Normalising is one keyword and no new parameters.
+
+\textbf{Two things keep this from being a graph result.} First, repairing the encoder buys no benefit:
+\textsc{typed\_gcnnorm} against the expression-only baseline is $+0.0008$ ($[-0.0047,+0.0062]$,
+$p=0.71$, three of five seeds), a tie. It also cannot be distinguished from the plain untyped arm
+($-0.0037$, $p=0.22$). Fixing the aggregation removes the damage and reveals nothing underneath, so the
+null of \S\ref{sec:null} is not weakened by it --- it is the same null with one fewer artifact in front
+of it. Second, this is a family of \emph{one}. Bonferroni and Holm at $m{=}1$ are the identity, so
+``clears both corrections'' here means only the uncorrected $p=0.0245$; running the remaining three
+message-form arms would put $m{=}4$ and it would not clear. We state that rather than let a
+single-arm family read as a corrected result. What does not depend on the multiplicity is the sign
+agreement, five seeds of five, and the size of the share.
+
+\textbf{Why we stopped at one arm.} The residual the other three would partition is
+$\textsc{untyped\_gnn}-\textsc{typed\_gcnnorm}=+0.0037$, with a minimum detectable effect of $0.0096$ at
+five seeds --- $2.6\times$ the entire residual, before each arm's share of it is taken. Detecting the
+whole residual needs about $21$ seeds and half of it about $77$. Three more arms at five seeds would
+have been underpowered by construction, which is the mistake this appendix exists to document. We note
+that stopping also happens to preserve the $p$ above, and that the reason for stopping is the power
+calculation rather than the $p$.
 
 \section{Replication protocol and dataset survey}
 \label{app:repl}
