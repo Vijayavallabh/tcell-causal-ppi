@@ -16,8 +16,11 @@ verified; nothing below has to be re-derived.
 
 ## Compliance, checked rather than assumed
 
-- **Body is exactly 8 pages.** References begin on page 9. Total 17 pages with appendices, which is
-  allowed since references and appendices do not count.
+- **Body is exactly 8 pages.** References begin on page 9 and are the FIRST thing on it. Total 24
+  pages with appendices, which is allowed since references and appendices do not count.
+  Verified by `./check_paper.sh`, which counts the body lines sitting above the References heading and
+  requires zero. Until 2026-08-20 that gate only asked whether the word "References" appeared somewhere
+  on page 9, and the body had in fact been running ~0.9 page past its limit for weeks.
 - **Style file is byte-identical** to the workshop's own template. I downloaded their zip and diffed
   it against `neurips_2026.sty` in this directory.
 - **Preamble matches their template**: `\usepackage[dblblindworkshop]{neurips_2026}` plus

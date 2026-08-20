@@ -57,7 +57,10 @@ for line in txt.split("\n"):
     if line.strip() == "References":
         refs_page = page
         break
-    if line.strip():
+    # Skip the lineno package's number column: a line that is nothing but digits is the margin
+    # number for a line of the BIBLIOGRAPHY that has not been reached yet, not body text. Counting
+    # those made a body that genuinely ended on page 8 report 47 lines of overflow.
+    if line.strip() and not line.strip().isdigit():
         body_lines_above += 1
 
 fails = []
