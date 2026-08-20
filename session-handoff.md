@@ -1,25 +1,49 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-08-21): nothing is running. B-series closed. Do the D-series, then decide on C1.
+## STOP — READ FIRST (2026-08-21): D-series and C1a CLOSED. Rail 4 fired. Only C1b's lanes remain.
 
 **Nothing is running and no card is held by us.** Verified 2026-08-21 00:54, not assumed: no
-`run_screening`, no runner, no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) are free at
-78/78/75 GiB; card 2 is a co-tenant holding 63 GiB and card 4 is the T400.
-**Load average is 102** on 64 cores, from other users' CPU jobs. These lanes are CPU-bound on
-row-by-row subgraph sampling, so that is the number that sets per-epoch time, not the free VRAM. Price
-any C1b estimate at the slow end of the measured 38-90 min/epoch until it is re-measured on a real lane.
+`run_screening`, no runner, no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) were free at
+78/78/75 GiB; card 2 was a co-tenant holding 63 GiB and card 4 is the T400. **Load average was 102**
+on 64 cores from other users' CPU jobs. These lanes are CPU-bound on row-by-row subgraph sampling, so
+that is what sets per-epoch time, not the free VRAM. Price any C1b estimate at the slow end of the
+measured 38-90 min/epoch, and RE-CHECK the cards before launching: a free card does not stay free.
 
-**The B-series is fully closed.** B1a found the route (degree normalisation recovers $+0.0139$, 5/5
-seeds, 79% of the gap, and still beats no graph by nothing). B1b-d were declined on power, B3 was
-answered without running it, B2/B5/B6 closed, B4 deprioritised. All reasons are in `NEXT_ACTIONS.txt`.
+### *** RAIL 4 FIRED. Read the top block of `RESULTS_SUMMARY.md` before touching the paper. ***
 
-**C1 is the one real experiment left, and yesterday's devil's advocate created it.** The headline null
-is about the typed, gated arm; the measured floor is the untyped arm's, because Amendment 6.5 chose
-that arm on cost. The paper now says twice that the typed arm's own floor is unmeasured. Closing it is
-lanes only, since the rungs already exist: `ARMS="expression_only condition_gated" ./run_a2_ladder.sh`,
-180-380 GPU-h. Pre-register as an extension of Amendment 6 BEFORE any lane starts.
+D4's amendment audit found that Amendment 3.1 had pre-registered a pooled estimate over the K=128
+subset alongside the all-datasets one, that it was **never computed**, and that the paper nonetheless
+claimed it *was* reported. Running it is free — it re-pools landed numbers. The two disagree:
 
-**A D-series was added to `NEXT_ACTIONS.txt` on 2026-08-21: four zero-GPU items, do them first.**
+| pool | k | random effects | 95% CI | p |
+|---|---|---|---|---|
+| all datasets (what the paper reports) | 8 | +0.0091 | [-0.0024, +0.0207] | 0.121 |
+| **K=128 subset (the pre-registered second estimate)** | **5** | **+0.0141** | **[+0.0041, +0.0241]** | **0.0056** |
+
+All five K=128 datasets are positive, and at m=4 both Bonferroni and Holm give 0.0224. **The graph
+helps in a pre-registered analysis nobody had run.** Snapshotted, flagged, null NOT rewritten around
+it. It does **not** touch the headline null — h1 is unchanged at k=1, +0.0033, p=0.90. It **does**
+undercut the body's "sign we cannot predict" sentence: the only negative anywhere is Norman, and
+Norman ran at K=16, an eight-fold capacity reduction the paper never labelled. Whether the body
+argument changes is a **human** call, not an agent's. Full reasoning: `docs/prereg-audit-2026-08-21.md`.
+
+**The whole D-series is closed** (commits c4c8eb6, 23330d6, 55d3325, 51b4c69, 9a55284). The paper now
+has seven gates instead of five: anonymity over the paper *and* all 245 tracked files (the venue
+blinds linked material), and artifact agreement over all eleven tables instead of three. Two real
+errors were found and fixed — a Bonferroni p that rounded the wrong way, and an appendix table still
+reporting a superseded rule's counts — plus a harness bug in which `check_paper.sh` reported FAIL on
+its most important gate and exited 0 anyway.
+
+**C1a is closed: Amendment 9 has landed**, so rail 7 no longer blocks C1b. Writing it caught a setting
+that would have voided the campaign: `run_a2_ladder.sh` uses the config-default `LAMBDA_GRAPH=0.01`,
+which is harmless for Amendment 6's arms but suppresses the gate of `condition_gated` — the only arm
+whose gate is live, and the arm the headline null is about. All 24 lanes would have measured a floor
+for a different model and tripped Amendment 3.4's own kill criterion. **Two prerequisites before any
+C1b lane:** `LAMBDA_GRAPH=0` must reach the lane, and `ladder_report.py` must take the arm and
+reference root as parameters, with tests, before the lanes land (Amendment 9.11).
+
+**C1b is the only GPU work left anywhere**, 180-380 GPU-h, and the only item that can still change
+what the paper concludes.
 They came from auditing what the 2026-08-20 rewrite left ungated, and D1 is the one that matters most.
 **Nothing in the harness checks anonymity** — `check_paper.sh` gates the build, the page budget and
 abstract drift, and none of its checks looks for a name. The repo scrub is dated 2026-08-11; the whole

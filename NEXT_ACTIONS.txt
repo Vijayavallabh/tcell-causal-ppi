@@ -1,8 +1,19 @@
 =======================================================================
 AUTONOMOUS GOAL SPEC — the A- and B-series are closed; this is what their answers opened.
-Rewritten 2026-08-19, D-series appended 2026-08-21. Branch icbinb-multidataset-2026-08-03.
-4x A100 80GB, SHARED.
-ICBINB-BIO deadline 29 Aug 2026 AoE (re-check; the site marks it tentative).
+Rewritten 2026-08-19. D-series appended AND CLOSED 2026-08-21, with C1a.
+Branch icbinb-multidataset-2026-08-03. 4x A100 80GB, SHARED.
+ICBINB-BIO deadline 29 Aug 2026 AoE. RE-VERIFIED 2026-08-21: unchanged and STILL marked tentative.
+
+*** RAIL 4 FIRED 2026-08-21. READ RESULTS_SUMMARY.md's TOP BLOCK BEFORE TOUCHING THE PAPER. ***
+D4's audit found Amendment 3.1 had promised a pooled estimate over the K=128 subset alongside the
+all-datasets one, and that it was never computed while the paper claimed it WAS reported. Running it
+is free. The two disagree: all eight give the untyped margin +0.0091 [-0.0024,+0.0207] p=0.12; the
+five K=128 datasets give +0.0141 [+0.0041,+0.0241] p=0.0056, all five positive, clearing Bonferroni
+AND Holm at m=4. The graph HELPS in a pre-registered analysis nobody had run. Snapshotted to
+data/results/replication/pooled_k128_subset.json, flagged, and the null was NOT rewritten around it.
+It does NOT touch the headline null (h1 is unchanged at k=1, +0.0033, p=0.90). It DOES undercut the
+body's "sign we cannot predict" sentence: the only negative anywhere is Norman, and Norman ran at
+K=16. Whether the body argument changes is a HUMAN call, not an agent's.
 =======================================================================
 
 This file is your standing authority. Work for hours or days unattended. Never ask, wait, or present
@@ -202,7 +213,7 @@ WHAT IT BUYS: either the null is bounded by an instrument demonstrably able to s
 size, which is the strongest form of the paper's central claim; or it is not, which is a bigger finding
 than anything else left on this list and one the paper would have to carry.
 
---- C1a. WRITE C1's PRE-REGISTRATION NOW. Free, and rail 7 requires it before any lane ----------
+--- C1a. WRITE C1's PRE-REGISTRATION NOW.  *** CLOSED 2026-08-21. Amendment 9 has landed. *** ---
 Split out 2026-08-21. Rail 7 forbids starting C1's lanes before the amendment lands, so the amendment
 is the part that can be done unattended and the lanes are the part that spends 180-380 GPU-h. Writing
 it costs nothing, commits nothing, and turns launching C1 into a one-command decision instead of a
@@ -218,6 +229,25 @@ lands far above 0.02, the paper's headline null is a statement about an instrume
 what it was pointed at, and the paper carries that. Committing to it before the numbers exist is the
 only thing that makes the answer worth anything.
 
+*** CLOSED 2026-08-21, commit 5f3d1e9. Amendment 9 is in docs/replication-prereg.md, dated append,
+before any lane exists, so rail 7 is satisfied and C1b is unblocked. It fixes the primary, the family
+at m=6 with both corrections, the floor rule and monotonicity red flag copied from 6.7, the permuted
+control's absolute veto, the zero point excluded from the family per 6.4, and 9.8 states the
+uncomfortable outcome in writing along with the reverse commitment.
+IT ALSO CAUGHT A SETTING THAT WOULD HAVE VOIDED THE WHOLE CAMPAIGN. run_a2_ladder.sh does not set
+LAMBDA_GRAPH, so it uses the config default 0.01. That is harmless for Amendment 6's arms, which have
+no live gate. condition_gated is the ONLY arm whose gate is live, the gate collapses toward 1e-7 as
+lambda rises, and lambda_graph=0 is what reproduces live gates at 0.76 -- which is why the paper's
+headline family sits on the REPAIRED screening_lambda0 root. At the default, all 24 lanes would have
+trained with suppressed gates, measured a floor for a different model than the null describes, and
+tripped Amendment 3.4's own kill criterion (gate <= 1e-3 = UNDECIDABLE). Amendment 9.2 pins
+lambda_graph=0 and makes gate health a reported quantity.
+TWO PREREQUISITES BEFORE C1b LAUNCHES, both free and both required by the amendment:
+  1 export LAMBDA_GRAPH=0 (or the equivalent) in the C1b runner. Verify it reaches the lane.
+  2 ladder_report.py hardcodes UNTYPED_GNN and REFERENCE_ROOT=screening_untyped_n7. Make the arm and
+    the reference root PARAMETERS, with tests, BEFORE the lanes land -- 9.11 requires it so the
+    analysis cannot be shaped by the numbers it will produce.
+
 --- C2. Bookkeeping the paper work of 2026-08-20 -----------------------------------------------
 Done in-session and NOT reflected here until now: the devil's advocate pass
 (docs/devils-advocate-2026-08-20.md), the full section-by-section rewrite, the number-drift verifier
@@ -232,7 +262,19 @@ Written 2026-08-21 after auditing what the 2026-08-20 rewrite left ungated. The 
 ready and none of this changes a result. These are the failure modes still live on filing day, ordered
 by how badly each one bites if it fires.
 
---- D1. GATE THE DOUBLE-BLIND COMPLIANCE. Do this one first ------------------------------------
+--- D1. GATE THE DOUBLE-BLIND COMPLIANCE.  *** CLOSED 2026-08-21, c4c8eb6 + 23330d6. *** --------
+GATE6 in check_paper.sh runs paper/icbinb/check_anonymity.py over main.tex, main.bbl, the RENDERED
+pdftotext, the PDF metadata, and (--repo) all 245 tracked files, because the venue blinds LINKED
+material and 4open serves tracked content unchanged. Verified clean everywhere first, so it keeps a
+clean thing clean. THE DENY-LIST IS DELIBERATELY NOT IN THE TRACKED SCRIPT -- writing the author's
+name into check_paper.sh to search for it would have made that file the SEVENTH deanonymising string
+-- so identity terms are derived at runtime from git config and the checkout path, and only
+structural patterns (any email, any code-host URL, an ORCID, an absolute home path, a non-anonymous
+\author, non-empty PDF /Author /Title) are written down. github.com REJECTED,
+anonymous.4open.science ACCEPTED, commented in both files so nobody inverts it. --self-test catches 8
+planted leaks; a leak planted in the real main.tex was caught end to end and reverted with sha256
+confirmed identical. Missing pdftotext/pdfinfo is a REFUSAL, not a pass. PDF timestamps carry IST:
+examined, left alone, reason recorded in SUBMISSION.md.
 NOTHING in the harness checks anonymity. check_paper.sh gates the build, the page budget and abstract
 drift, and not one of its checks looks for a NAME; verify_numbers.py checks numbers only. The repo
 scrub is dated 2026-08-11 and the ENTIRE paper was rewritten section by section on 2026-08-20 with no
@@ -255,7 +297,18 @@ MINOR, decide it either way and record which: the PDF timestamps carry IST, a we
 standard in every LaTeX submission, removable with \pdfinfoomitdate. Not a compliance failure. Say
 what you decided rather than leaving it unexamined.
 
---- D2. EXTEND ARTIFACT AGREEMENT FROM 3 TABLES TO 11 -------------------------------------------
+--- D2. EXTEND ARTIFACT AGREEMENT FROM 3 TABLES TO 11.  *** CLOSED 2026-08-21, 55d3325. *** ------
+All eleven tables are now in a registry with per-table coverage (--coverage). Nine are fully
+re-derived; tab:causes and tab:repl are PARTIAL and say so with the reason, as named no-ops. A
+missing artifact now FAILS as SKIPPED instead of passing through `if path.exists():`. Wired as GATE7,
+bare rather than --check, so it can only fail on a real disagreement.
+IT FOUND A REAL ERROR: tab:floor2's Bonferroni p for the delta=0.40 rung read 0.023 where floor.json
+gives 0.022487, which rounds DOWN. Every other rung already rounded correctly. Invisible to the
+inventory by construction and missed by two rounds of hand-checking.
+CORRECTION TO THIS FILE'S OWN MAPPING: D2 said tab:family was "the n=7 reference family". It is NOT.
+It is n=5 on the REPAIRED screening_lambda0 root. That root and data/results/screening/ agree on
+three arms of four and differ exactly where the gate repair moved things (cg 0.0848 vs 0.0838, h1
+-0.0009 vs -0.0019), so checking against the wrong one reports a correct number as an error.
 verify_numbers.py has two checks and they are not equally strong. The literal INVENTORY covers every
 number in the body and catches one that changes or vanishes during an edit. The ARTIFACT AGREEMENT
 check re-derives numbers from JSON and catches one that was WRONG ALL ALONG. It covers three tables:
@@ -276,7 +329,16 @@ CLOSE WITH: one table per commit, each against its named artifact:
 WHERE A TABLE HAS NO ARTIFACT, say so IN THE MODULE, with the reason, as a NAMED no-op. A silent skip
 reads as coverage and is worse than no check at all.
 
---- D3. RE-VERIFY THE VENUE FACTS. Eight days out -----------------------------------------------
+--- D3. RE-VERIFY THE VENUE FACTS.  *** CLOSED 2026-08-21, 51b4c69. *** --------------------------
+Every fact UNCHANGED and now recorded with the site's verbatim wording, re-dated in SUBMISSION.md.
+The deadline is STILL tentative ("remain subject to final confirmation", every date marked
+"Tentative"), so do not read ten days of silence as confirmation. Two facts added that were never
+recorded: there are TWO tracks (full 8pp, tiny 4pp) and we are in the full one; and the rest of the
+timeline is review 29 Aug-21 Sep, notification 29 Sep, camera-ready 20 Oct, workshop 11 or 12 Dec.
+ONE FACT COULD NOT BE RE-VERIFIED and is recorded as unverified rather than left looking checked: the
+submit page no longer names a .sty, it links a Google Drive zip that cannot be fetched from here. Our
+neurips_2026.sty has not drifted locally (sha256 cedbda3f..., mtime 3 Aug). Re-diffing it against the
+workshop zip is a 2-minute HUMAN step, now written down with why it matters.
 SUBMISSION.md's venue table is dated 2026-08-11 and its own deadline row says the site marks 29 Aug
 "subject to final confirmation, so re-check". Ten days have passed and nobody re-checked.
 CLOSE WITH: re-fetch https://icbinb-bio.github.io/submit/ and re-confirm the deadline, the page limit,
@@ -285,7 +347,22 @@ Update the table WITH A NEW DATE whatever the answer is. If a fact moved, fix th
 flag it at the top of RESULTS_SUMMARY.md. If the site is unreachable, record the attempt and its date.
 An unchecked table that LOOKS checked is the thing to avoid.
 
---- D4. AUDIT ALL EIGHT AMENDMENTS AGAINST WHAT WAS ACTUALLY DONE --------------------------------
+--- D4. AUDIT ALL AMENDMENTS.  *** CLOSED 2026-08-21, 9a55284. FIRED RAIL 4. *** -----------------
+docs/prereg-audit-2026-08-21.md, one verdict per amendment with the artifact that settles each, kept
+ones included. COUNT CORRECTION: this file said "eight amendments" and "Amendments 1 to 8". There is
+no Amendment 1 and there are TEN sections -- 4a, 4b and an unnumbered 2026-08-03 one are separate
+registrations. Seven of ten clean, including the ones hardest to keep against interest.
+FINDING 1: tab:repl was the SUPERSEDED table. Its numerators were digit-for-digit the
+pre-Amendment-2 provenance (Frangieh 216, Norman 102, Replogle 12, Datlinger 6), so it marked
+Replogle "dropped" while the results section two paragraphs below trains three Replogle sets and
+pools them. Rebuilt from the DE_stats_v2 artifacts; appendix-only, body gate untouched.
+FINDING 2: see the rail-4 block at the top of this file. Amendment 3.1's promised K=128-subset pooled
+estimate was never computed while the paper claimed it was reported. Also, the K labels were wrong:
+measured from the built bases, Tian CRISPRi is 32, Tian CRISPRa is 16 and NORMAN IS 16, where the
+paper labelled only "Tian at K=32". Norman is the only negative dataset anywhere.
+A HARNESS BUG THIS EXPOSED: check_paper.sh ran its build/undefined/overfull/page-gate heredoc BARE.
+With no set -e, a failing page gate printed FAIL and the script exited 0 if the later gates passed.
+The most important gate in the file was advisory. Its exit code is now captured.
 The devil's advocate pass found a pre-registration promise that was never kept: Amendment 6.5 said the
 floor would be labelled as the pipeline's rather than the typed encoder's, and until 2026-08-20 it was
 not. That was found BY HAND, by reading one amendment. There are eight.
@@ -440,21 +517,27 @@ INTEGRATION + REPORTING
 - RESULTS_SUMMARY.md and session-handoff.md stay current: n, per-seed values, both corrections,
   family_size, gate health, epochs, and the name and reason of any dropped seed.
 
-ORDER OF WORK (updated 2026-08-21). THE WHOLE B-SERIES IS CLOSED and nothing is running. Verified on
-2026-08-21 00:54: no run_screening, no runner, no finaliser, no monitor; CUDA cards 0/1/3 free at
-78/78/75 GiB, card 2 held by a co-tenant at 63 GiB. LOAD AVERAGE 102 on 64 cores from other users'
-CPU jobs, and these lanes are CPU-bound on subgraph sampling, so price C1b at the SLOW end of the
-measured 38-90 min/epoch until a real lane says otherwise.
-Do the D-series FIRST, in order, and C1a with it. All five are zero-GPU, each has a hard finish line,
-and D1 is the only item in this file whose failure cannot be repaired after the deadline. Together
-they are a few hours and they leave the submission gated rather than merely correct.
-C1b, the lanes, is the only GPU work left anywhere in this file and the only item that can still
-change what the paper concludes. It is 180-380 GPU-h on a shared box. Do not launch it until C1a's
-amendment has landed (rail 7), and re-measure per-epoch cost on the first lane rather than trusting
-the estimate.
+ORDER OF WORK (rewritten 2026-08-21, after the D-series closed). NOTHING IS RUNNING.
+THE WHOLE D-SERIES AND C1a ARE CLOSED. The A- and B-series were already closed. What is left is:
+
+  1 C1b, the lanes. The ONLY GPU work left anywhere in this file and the only item that can still
+    change what the paper concludes. Rail 7 is now satisfied (Amendment 9 landed), so it is unblocked
+    -- but read C1a's two prerequisites first: LAMBDA_GRAPH=0 must reach the lane, and
+    ladder_report.py must take the arm and reference root as PARAMETERS before any lane lands.
+    180-380 GPU-h on a shared box. Re-measure per-epoch cost on the FIRST lane.
+  2 The rail-4 finding at the top of this file. NOT autonomous. Whether the paper's
+    "sign we cannot predict" argument should change is a scientific call on its central replication
+    claim, eight days out. Flagged and left, which is what rail 4 says to do.
+  3 The style-file re-diff (D3). A human step, 2 minutes, before upload.
+
+Box state measured 2026-08-21 00:54 and not re-checked since: cards 0/1/3 free at 78/78/75 GiB, card
+2 held by a co-tenant at 63 GiB, LOAD AVERAGE 102 on 64 cores from other users' CPU jobs. These lanes
+are CPU-bound on subgraph sampling, so price C1b at the SLOW end of the measured 38-90 min/epoch
+until a real lane says otherwise. RE-CHECK THE CARDS before launching; a free card does not stay free.
+
 B3 is answered without running. B4 is deprioritised on purpose. B1b-d are declined on power under
-Amendment 7.3 and overturning that decision means running them AND re-correcting at m=4, where D3
-does not clear.
+Amendment 7.3, and overturning that means running them AND re-correcting at m=4, where D3 does not
+clear.
 
 RE-MEASURE per-epoch cost on the first lane of any new campaign rather than extrapolating: the same
 lane has measured 38 to 90 min/epoch on this box depending on who else is running.
