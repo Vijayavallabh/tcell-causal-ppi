@@ -111,3 +111,18 @@ if [ $GATE6 -ne 0 ]; then
   echo "FAIL: anonymity gate — see above. Fix the source, never the gate."
   exit 1
 fi
+
+# Gate 7: ARTIFACT AGREEMENT. Added 2026-08-21. verify_numbers.py has two checks and only one of
+# them was ever a gate. The literal INVENTORY catches a number that changes or vanishes during an
+# edit; only ARTIFACT AGREEMENT catches a number that was wrong when it was snapshotted, which is
+# the class of error the 2026-08-20 rewrite actually shipped three of. It ran by hand, when someone
+# remembered. Now it runs every build, over all eleven tables.
+# Bare (no --check) ON PURPOSE: this form fails only when the paper disagrees with an artifact, so
+# it can never fail merely because a number was edited on purpose. --check adds the inventory diff
+# and stays manual, because it needs a deliberate re-snapshot after any intended change.
+GATE7=0
+.venv/bin/python paper/icbinb/verify_numbers.py || GATE7=$?
+if [ $GATE7 -ne 0 ]; then
+  echo "FAIL: a table disagrees with its artifact — see above. Fix the PAPER, not the artifact."
+  exit 1
+fi

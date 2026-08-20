@@ -890,7 +890,10 @@ injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & $+0.0040$ & reco
 injected & $0.05$ & $+0.0081$ & $[+0.0052,+0.0110]$ & $0.018$ & $+0.0033$ & recovered \\
 injected & $0.10$ & $+0.0041$ & $[+0.0026,+0.0056]$ & $0.020$ & $-0.0007$ & recovered \\
 injected & $0.20$ & $+0.0090$ & $[+0.0072,+0.0109]$ & $0.003$ & $+0.0042$ & recovered \\
-injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.023$ & $+0.0135^{*}$ & recovered \\
+% AUTO 2026-08-21: Bonferroni p corrected 0.023 -> 0.022. floor.json gives 0.022487 for the
+% delta=0.40 rung, which rounds DOWN at three places. Every other rung in this table already
+% rounded correctly; found by the extended artifact-agreement check, not by eye.
+injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.022$ & $+0.0135^{*}$ & recovered \\
 \textbf{scrambled} & $0.40$ & $\mathbf{-0.0001}$ & $[-0.0021,+0.0018]$ & $1.000$ & $-0.0050^{*}$ & \textbf{not recovered} \\
 \bottomrule
 \end{tabular}

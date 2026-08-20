@@ -247,6 +247,11 @@ def build_de_stats(spec: DatasetSpec, raw_root: Path = RAW_ROOT, out_root: Path 
         "n_rows": int(len(obs)), "n_genes": int(genes.size),
         "n_targets": int(obs["target_contrast_gene_name"].nunique()),
         "conditions": sorted(obs["culture_condition"].unique().tolist()),
+        # MISNAMED, and kept that way because renaming it would desync every provenance file
+        # already on disk. The value is a COLUMN NAME, not a unit: Shifrut's column is `replicate`
+        # and its unit is the donor, while Datlinger's column is ALSO `replicate` for a different
+        # unit entirely. The semantic units are pinned in docs/replication-prereg.md's table; read
+        # them from there. A check that trusted this key reported the paper's correct table as wrong.
         "replicate_unit": spec.replicate_col,
         "pinnacle_context": spec.pinnacle_context,
         "esm2_only_ablation": spec.pinnacle_context is None,
