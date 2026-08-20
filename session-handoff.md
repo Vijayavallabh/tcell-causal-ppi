@@ -42,7 +42,7 @@ for a different model and tripped Amendment 3.4's own kill criterion. **Two prer
 C1b lane:** `LAMBDA_GRAPH=0` must reach the lane, and `ladder_report.py` must take the arm and
 reference root as parameters, with tests, before the lanes land (Amendment 9.11).
 
-### C1b IS RUNNING (launched 2026-08-21 01:53)
+### C1b IS RUNNING (launched 2026-08-21 02:08) (first launch 01:53 was stopped at 02:07 and RESTARTED at 02:08 after editing the runner mid-flight: bash reads a script incrementally by byte offset, so shifting lines under a running shell can garble everything after the current statement. Only three cheap lanes were in flight. The restart also exposed the stale-claim trap now reaped automatically)
 
 `run_c1_ladder.sh`, 48 lanes into a FRESH root `data/results/c1_ladder` — 24 `expression_only` and 24
 `condition_gated` over the six existing rungs at seeds 0-3, on cards 0/1/3 (card 2 is a co-tenant
