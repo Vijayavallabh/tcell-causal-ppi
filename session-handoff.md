@@ -1,6 +1,6 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-08-20 22:5x): nothing is running. B-series closed. C1 is the open experiment.
+## STOP — READ FIRST (2026-08-20 22:55): nothing is running. B-series closed. C1 is the open experiment.
 
 **Nothing is running and no card is held by us.** Verified, not assumed: no `run_screening`, no runner,
 no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) are free; card 2 is a co-tenant at 64 GiB
