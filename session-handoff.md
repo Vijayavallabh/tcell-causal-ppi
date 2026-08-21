@@ -80,12 +80,29 @@ of 1e-3.** That is the empirical validation of the whole Amendment 9.2 decision.
 campaign reused `run_a2_ladder.sh` it would have burned days measuring a model the paper's null is not
 about, and every lane would have been UNDECIDABLE under Amendment 3.4.
 
-Projection off the measurement: 24 gated lanes at ~8.5 h over 3 cards rolling continuously is ~68 h,
-plus ~4 h of cheap lanes, so **~3 days from the 02:08 start — finishing around 24 Aug** against a 29 Aug
-deadline. Historical lanes on this fold span 7.5-16 GPU-h, so if the average runs nearer 12 h it is ~4
-days and ~25 Aug. Either way there is real margin, but the stop rule stays live: re-check against the
-deadline rather than assuming, and note the workers pick up the next job as each card frees, so this
-is a rolling pipeline rather than lock-step waves.
+**Per-epoch, which is the comparable measure** (wall time alone confounds contention with how many
+epochs early stopping allowed), across the first three gated lanes:
+
+| lane | wall | epochs | min/epoch | GPU-h |
+|---|---|---|---|---|
+| d020_s0 | 8.53 h | 12/20 | 42.6 | 8.51 |
+| d050_s0 | 10.60 h | 13/20 | 48.9 | 10.58 |
+| d100_s0 | 14.69 h | 14/20 | 63.0 | 14.67 |
+
+Both drivers are benign. Early stopping allowed more epochs each time (12, 13, 14 of 20), and per-epoch
+time rose with contention — all inside the 38-90 min/epoch this box is documented to deliver.
+
+**Schedule, central and pessimistic.** At the observed ~51 min/epoch and ~13 epochs, a gated lane is
+~11 h, so 24 of them over 3 rolling cards plus ~4 h of cheap lanes is **~3.9 days from the 02:08 start,
+finishing around 26 Aug**. The pessimistic bound matters and is written down rather than hoped away: if
+later lanes run the full 20 epochs at the slowest observed 63 min/epoch, a lane is ~21 h and the
+campaign needs **~7 days, i.e. 28 Aug** — inside the 29 Aug deadline but with no margin. So re-check
+against the deadline rather than assuming, and invoke the stop rule (Amendment 9.9, rail 5) rather than
+quietly extending. Load fell from ~95 to ~50 on 21 Aug afternoon, which should help.
+
+Card 2 was re-checked at 18:05 on 21 Aug and is STILL held by its co-tenant, so no fourth worker is
+available; cards 0/1/3 are ours. Workers take the next job as each card frees, so this is a rolling
+pipeline, not lock-step waves.
 
 **If card 2 frees up**, adding a fourth worker takes 8 waves to 6 and cuts roughly a quarter off the
 wall clock. The runner is idempotent and reaps stale claims, so a second invocation with `CARDS=2` is
