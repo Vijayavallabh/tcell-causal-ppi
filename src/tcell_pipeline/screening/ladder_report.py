@@ -345,6 +345,23 @@ def _verdict(rungs: dict, contrasts: dict, seeds=SEEDS) -> dict:
         return {"floor": None, "floor_status": "control_missing", "notes": notes,
                 "control_clears": None}
 
+    # A CONTROL THAT EXISTS BUT CANNOT BE TESTED IS ALSO NOT A PASSED CONTROL. The check above only
+    # asks whether the rung is present. A control whose lanes were DROPPED - by gate collapse under
+    # Amendment 3.4, or by failing to complete - leaves the rung in place with n=0, whose mean is
+    # None, and `(mean or 0) > 0` is then False, so the veto passes silently and a floor is named.
+    # This is not hypothetical for THIS ladder: the permuted rung is exactly where the gate sits
+    # closest to the dead threshold, because a scrambled neighbourhood gives the gate nothing worth
+    # keeping open. Measured on seed 0: 0.024 on the control against 0.57-0.70 on the real rungs.
+    control_testable = [n for n in control if contrasts[n]["n"] >= 2]
+    if not control_testable:
+        ns = {n: contrasts[n]["n"] for n in control}
+        notes.append(f"*** THE PERMUTED CONTROL IS PRESENT BUT UNTESTABLE (n={ns}). No floor is "
+                     f"reported: the veto is absolute (Amendment 6.7) and a control that cannot be "
+                     f"tested has not passed. Check whether its lanes were dropped for gate collapse "
+                     f"under Amendment 3.4 - the control is where that is most likely. ***")
+        return {"floor": None, "floor_status": "control_untestable", "notes": notes,
+                "control_clears": None}
+
     # A RUNG WITH n<2 IS UNTESTED, NOT CLEARED. The floor is the smallest rung that clears AND is
     # cleared by every LARGER rung, so an untested larger rung leaves every smaller one unreadable.
     # Without this, an EMPTY ladder reports "the floor is above the largest rung tested, which is

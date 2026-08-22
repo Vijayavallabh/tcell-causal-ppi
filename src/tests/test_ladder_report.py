@@ -339,3 +339,25 @@ def test_a_reduced_but_complete_ladder_still_gets_a_verdict(tmp_path):
     r = run(str(tmp_path), None, seeds=(0, 1))
     assert r["floor_status"] not in ("incomplete_ladder", "control_missing")
     assert any("INCOMPLETE at n<2" in n or "preliminary" in n for n in r["notes"]) or r["floor"]
+
+
+def test_a_control_emptied_by_dropped_lanes_refuses_just_like_a_missing_one(tmp_path):
+    """The present-but-untestable control. A rung whose lanes were dropped - by gate collapse under
+    Amendment 3.4, or by failing to complete - stays on disk with n=0, whose mean is None, so
+    `(mean or 0) > 0` is False and the veto passed SILENTLY.
+
+    Not hypothetical for the C1 ladder: the permuted rung is where the gate sits closest to the dead
+    threshold, since a scrambled neighbourhood gives it nothing worth keeping open (0.024 on seed 0
+    against 0.57-0.70 on the real rungs). The guard can fail: restoring the control's lanes on the
+    SAME fixture must restore a normal verdict."""
+    base = [0.080, 0.081, 0.079, 0.080]
+    _rung(tmp_path, "d020", _lift(base, 0.010), base)
+    _rung(tmp_path, "d400", _lift(base, 0.030), base)
+    _rung(tmp_path, "permuted_d400", base, base, seeds=(0,))       # one lane: cannot be tested
+    r = run(str(tmp_path), None)
+    assert r["floor"] is None and r["floor_status"] == "control_untestable"
+    assert any("UNTESTABLE" in n for n in r["notes"])
+
+    _rung(tmp_path, "permuted_d400", base, base)                   # control restored to 4 lanes
+    ok = run(str(tmp_path), None)
+    assert ok["floor_status"] != "control_untestable", "the guard cannot fail, so it proves nothing"

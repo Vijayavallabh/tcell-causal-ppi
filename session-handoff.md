@@ -130,10 +130,17 @@ shorter training. The answer is that both arms trained until their own early-sto
 one pre-registered protocol — defensible, but it should be stated rather than discovered. It is also a
 concrete reason why Amendment 9.4 is right to call any comparison between the two floors DESCRIPTIVE.
 
-**2. The minimum gate mean declines as the injection grows:** 0.7027, 0.6495, 0.6997, 0.6366, 0.5735
-across d020, d050, d100, d200, d400. Every value is three orders of magnitude above the 1e-3 dead
-threshold, so nothing here is a collapse and Amendment 3.4 does not bind. At n=1 per rung this is an
-observation about one seed and nothing more; do not read a trend into it.
+**2. The gate closes hard on the PERMUTED CONTROL, and only there.** Seed 0's minimum gate means are
+0.7027, 0.6495, 0.6997, 0.6366, 0.5735 on d020-d400 — and **0.0240 on permuted_d400**, an order of
+magnitude below every real rung. Mechanistically that is what a working gate should do: a scrambled
+neighbourhood gives it nothing worth keeping open. Every value is still above the 1e-3 dead threshold
+(the control by 24x), so Amendment 3.4 does not bind and no lane is undecidable. At n=1 this is one
+seed; do not read a trend into it. Seed 1's d020 came in at 0.4138 against seed 0's 0.7027 on the same
+rung, so the lane-to-lane spread is wide.
+
+It matters operationally, not just descriptively: **the control is the rung most likely to lose lanes
+to gate collapse**, and losing them would leave the control present but untestable. `ladder_report`
+now refuses in that case rather than letting the veto pass silently — see the guard note below.
 
 **If you pick this up mid-flight:** re-measure per-epoch cost on the first `condition_gated` lane
 rather than trusting 7.5-16 GPU-h, and if the measured rate puts it past 29 Aug, **stop and report at
