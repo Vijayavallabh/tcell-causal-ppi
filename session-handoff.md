@@ -109,6 +109,32 @@ wall clock. The runner is idempotent and reaps stale claims, so a second invocat
 safe. Treat it as best-effort only: `run_l4_card2.sh` preflighted card 2 at 78 GiB, started a lane, and
 lost it to a returning co-tenant 2h47m later.
 
+### Recorded 2026-08-22 at n=1, BEFORE any contrast is computable — not a result
+
+Two observations from seed 0's landed lanes. Both are written down now, while the primary needs n=4 and
+has n=1, precisely so neither can look like a post-hoc excuse once the numbers exist. This is the same
+discipline that made Amendment 6's post-hoc increment worth reading: it was committed while three rungs
+were still unrun.
+
+**1. The two ladders are not matched on training length, and the reason is early stopping.** Amendment
+6's untyped ladder ran essentially every lane to the 20-epoch cap (19-20, one 16). C1's gated lanes
+early-stop far sooner: 12, 13, 14, 14 epochs on d020-d200, and only d400 reached 20.
+
+This is NOT a protocol difference. Both ladders run the identical pre-registered protocol — 20-epoch
+cap, the same `EARLY_STOP_PATIENCE`, the same fold, the same batch size (Amendment 6.6, held fixed by
+9.1). `condition_gated` simply stops improving on validation sooner than `untyped_gnn` does. That is a
+property of the arm, not a handicap imposed on it.
+
+It is recorded because someone will eventually ask whether a higher gated floor is an artifact of
+shorter training. The answer is that both arms trained until their own early-stopping criterion under
+one pre-registered protocol — defensible, but it should be stated rather than discovered. It is also a
+concrete reason why Amendment 9.4 is right to call any comparison between the two floors DESCRIPTIVE.
+
+**2. The minimum gate mean declines as the injection grows:** 0.7027, 0.6495, 0.6997, 0.6366, 0.5735
+across d020, d050, d100, d200, d400. Every value is three orders of magnitude above the 1e-3 dead
+threshold, so nothing here is a collapse and Amendment 3.4 does not bind. At n=1 per rung this is an
+observation about one seed and nothing more; do not read a trend into it.
+
 **If you pick this up mid-flight:** re-measure per-epoch cost on the first `condition_gated` lane
 rather than trusting 7.5-16 GPU-h, and if the measured rate puts it past 29 Aug, **stop and report at
 whatever n landed, labelled preliminary with its n** (rail 5, Amendment 9.9). Do not quietly extend.
