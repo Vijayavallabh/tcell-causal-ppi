@@ -361,3 +361,26 @@ def test_a_control_emptied_by_dropped_lanes_refuses_just_like_a_missing_one(tmp_
     _rung(tmp_path, "permuted_d400", base, base)                   # control restored to 4 lanes
     ok = run(str(tmp_path), None)
     assert ok["floor_status"] != "control_untestable", "the guard cannot fail, so it proves nothing"
+
+
+def test_a_lane_still_running_is_excluded_from_gate_health_rather_than_counted(tmp_path):
+    """The trainer appends to the history every epoch, so a RUNNING lane has a partial minimum that
+    can still fall. Counting it reports gate health over lanes `collect` never counted, so the
+    analysis and the health report describe different sets — and mid-campaign it invites exactly the
+    error of comparing a finished lane's gate against a running one's.
+
+    A history with no parquet is the signature of a lane in flight."""
+    from tcell_pipeline.screening import ladder_report as lr
+
+    base = [0.080, 0.081, 0.079, 0.080]
+    root = tmp_path / "ladder"
+    _gated_rung(root, "d200", _lift(base, 0.02), base)
+    for s in SEEDS:
+        _lane_history(root, "d200", s, [0.7, 0.6])
+    # a rung whose history exists but whose lane has NOT landed: no parquet written
+    _lane_history(root, "permuted_d400", 0, [0.7, 0.002])
+    h = lr.gate_health(str(root), "condition_gated", SEEDS)
+    assert h["in_flight_lanes"] == ["permuted_d400_condition_gated_s0"]
+    assert "permuted_d400_condition_gated_s0" not in h["lanes"]
+    # and its 0.002 must NOT drag the reported minimum down
+    assert h["min_gate_mean"] == pytest.approx(0.6)

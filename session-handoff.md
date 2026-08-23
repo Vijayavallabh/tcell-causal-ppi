@@ -147,8 +147,15 @@ mid-range among its own rungs, not an outlier at all.**
 | d400 | 0.5735 | 0.3400 |
 | **permuted_d400** | **0.0240** | **0.4654** |
 
-So there is no "the gate closes on the control" effect. Seed 0's 0.0240 is a single low lane, and seed
-1's lowest is d200 at 0.1573 — a different rung entirely. What the two seeds DO show is that gate
+**That correction was itself made against a PARTIAL reading, and this is the caveat on it.** When I
+compared them, `permuted_d400_s1` was still RUNNING: 19 epochs of history and no parquet. Its 0.4654
+was a minimum-so-far that could still fall. The comparison put a completed seed-0 lane beside a
+running seed-1 one — the same mistake in miniature as reading a result off an unfinished campaign.
+`gate_health` now EXCLUDES lanes with a history but no parquet and names them under `in_flight_lanes`,
+so the report can no longer mix the two, and re-check seed 1's control once it lands.
+
+Subject to that, there is no "the gate closes on the control" effect. Seed 0's 0.0240 is a single low
+lane, and seed 1's lowest is d200 at 0.1573 — a different rung entirely. What the two seeds DO show is that gate
 minima vary widely lane to lane (0.02 to 0.70) and that seed 1 sits systematically below seed 0. Every
 lane remains above the 1e-3 dead threshold, the closest by 24x, so Amendment 3.4 still does not bind.
 

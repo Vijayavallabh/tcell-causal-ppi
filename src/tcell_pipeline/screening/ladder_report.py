@@ -111,13 +111,23 @@ def gate_health(ladder_root: str, arm: str, seeds=SEEDS) -> dict:
     root = Path(ladder_root)
     if not root.is_dir():
         return {"status": "unavailable", "reason": f"no ladder root at {ladder_root}", "lanes": {}}
-    lanes, incomplete, ungated = {}, [], []
+    lanes, incomplete, ungated, in_flight = {}, [], [], []
     for d in sorted(root.glob("*d[0-9][0-9][0-9]")):
         for s in seeds:
             h = d / arm / str(s) / "logs" / "stage_a_history.json"
+            pq = d / arm / f"{s}.parquet"
             if not h.exists():
-                if (d / arm / f"{s}.parquet").exists():
+                if pq.exists():
                     incomplete.append(f"{d.name}_{arm}_s{s}")   # landed but no history: say so
+                continue
+            # A HISTORY WITHOUT A PARQUET IS A LANE STILL RUNNING. The trainer appends every epoch, so
+            # an in-flight lane has a PARTIAL minimum that can still fall. Counting it would report
+            # gate health over lanes that `collect` never counted, so the analysis and the health
+            # report would describe different sets. It also misleads a human reading the numbers
+            # mid-campaign: on 2026-08-23 I compared a completed lane's gate against a running one's
+            # and drew a conclusion from the difference.
+            if not pq.exists():
+                in_flight.append(f"{d.name}_{arm}_s{s}")
                 continue
             try:
                 # A NULL gate_mean is not a dead gate, it is an arm with NO LEARNED GATE: the
@@ -138,16 +148,17 @@ def gate_health(ladder_root: str, arm: str, seeds=SEEDS) -> dict:
         return {"status": "ungated", "lanes": {}, "ungated_lanes": ungated,
                 "reason": f"{len(ungated)} lanes have history but record gate_mean=None throughout: "
                           f"{arm} has no learned gate, so there is nothing for Amendment 3.4 to bind on",
-                "history_unreadable": incomplete}
+                "history_unreadable": incomplete, "in_flight_lanes": in_flight}
     if not lanes:
         return {"status": "unavailable",
                 "reason": f"no stage_a_history.json with train.gate_mean under {ladder_root}/*/{arm}/",
-                "lanes": {}, "history_unreadable": incomplete}
+                "lanes": {}, "history_unreadable": incomplete, "in_flight_lanes": in_flight}
     worst = min(lanes.values())
     return {"status": "collapsed" if worst <= GATE_DEAD else "live",
             "min_gate_mean": worst, "gate_dead_threshold": GATE_DEAD,
             "collapsed_lanes": sorted(k for k, v in lanes.items() if v <= GATE_DEAD),
-            "history_unreadable": incomplete, "ungated_lanes": ungated, "lanes": lanes}
+            "history_unreadable": incomplete, "ungated_lanes": ungated,
+            "in_flight_lanes": in_flight, "lanes": lanes}
 
 
 def _delta_of(name: str) -> float | None:
