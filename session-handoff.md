@@ -130,17 +130,32 @@ shorter training. The answer is that both arms trained until their own early-sto
 one pre-registered protocol — defensible, but it should be stated rather than discovered. It is also a
 concrete reason why Amendment 9.4 is right to call any comparison between the two floors DESCRIPTIVE.
 
-**2. The gate closes hard on the PERMUTED CONTROL, and only there.** Seed 0's minimum gate means are
-0.7027, 0.6495, 0.6997, 0.6366, 0.5735 on d020-d400 — and **0.0240 on permuted_d400**, an order of
-magnitude below every real rung. Mechanistically that is what a working gate should do: a scrambled
-neighbourhood gives it nothing worth keeping open. Every value is still above the 1e-3 dead threshold
-(the control by 24x), so Amendment 3.4 does not bind and no lane is undecidable. At n=1 this is one
-seed; do not read a trend into it. Seed 1's d020 came in at 0.4138 against seed 0's 0.7027 on the same
-rung, so the lane-to-lane spread is wide.
+**2. A gate story I told from one seed, and seed 1 refuted it. CORRECTED 2026-08-23.**
 
-It matters operationally, not just descriptively: **the control is the rung most likely to lose lanes
-to gate collapse**, and losing them would leave the control present but untestable. `ladder_report`
-now refuses in that case rather than letting the veto pass silently — see the guard note below.
+On seed 0 the permuted control's gate came in at **0.0240** against 0.57-0.70 on every real rung, and I
+wrote that this was mechanistically what a working gate should do, since a scrambled neighbourhood
+gives it nothing worth keeping open. It was labelled "at n=1 this is one seed; do not read a trend into
+it", and that caution turned out to be the load-bearing part. **Seed 1's permuted control is 0.4654 —
+mid-range among its own rungs, not an outlier at all.**
+
+| rung | s0 | s1 |
+|---|---|---|
+| d020 | 0.7027 | 0.4138 |
+| d050 | 0.6495 | 0.4600 |
+| d100 | 0.6997 | 0.4804 |
+| d200 | 0.6366 | 0.1573 |
+| d400 | 0.5735 | 0.3400 |
+| **permuted_d400** | **0.0240** | **0.4654** |
+
+So there is no "the gate closes on the control" effect. Seed 0's 0.0240 is a single low lane, and seed
+1's lowest is d200 at 0.1573 — a different rung entirely. What the two seeds DO show is that gate
+minima vary widely lane to lane (0.02 to 0.70) and that seed 1 sits systematically below seed 0. Every
+lane remains above the 1e-3 dead threshold, the closest by 24x, so Amendment 3.4 still does not bind.
+
+**The guard that observation prompted is still right, and for a reason that does not depend on it.** A
+control whose lanes are dropped leaves the rung present with n=0, and the veto then passes silently.
+That is a defect regardless of which rung happens to have the lowest gate; the seed-0 reading only made
+it salient. `ladder_report` refuses on an untestable control now, and the fix stands on its own.
 
 **If you pick this up mid-flight:** re-measure per-epoch cost on the first `condition_gated` lane
 rather than trusting 7.5-16 GPU-h, and if the measured rate puts it past 29 Aug, **stop and report at
