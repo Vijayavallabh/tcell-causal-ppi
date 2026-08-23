@@ -398,6 +398,20 @@ def _verdict(rungs: dict, contrasts: dict, seeds=SEEDS) -> dict:
               and (contrasts[n]["mean"] or 0) > 0]
     if not clears:
         biggest = real[-1] if real else None
+        # "NOTHING CLEARED" AND "THE INSTRUMENT IS BLIND" ARE DIFFERENT CLAIMS, and only a COMPLETE
+        # ladder can carry the second. At the pre-registered n the above_ladder reading is a result:
+        # the pipeline was given an injected signal that large and did not recover it. Below that n it
+        # is a statement about the budget, not the instrument - at n=2 the intervals here span +-0.10,
+        # so nothing could plausibly clear whatever the truth is, and asserting that the pipeline
+        # "cannot see" a signal would be a negative manufactured from missing seeds. Amendment 9.9
+        # expects a stopped campaign to be REPORTED at reduced n; it does not license this sentence.
+        if incomplete:
+            notes.append(f"No rung clears both corrections AT THIS n, and that does NOT establish a "
+                         f"floor above the ladder. {len(incomplete)} rung(s) are short of the "
+                         f"pre-registered {len(seeds)} seeds, so a null here is a statement about the "
+                         f"budget rather than about the instrument. Preliminary, with its n (rail 5).")
+            return {"floor": None, "floor_status": "above_ladder_preliminary", "notes": notes,
+                    "control_clears": False}
         notes.append(f"No rung clears both corrections. The floor is ABOVE the largest rung tested"
                      + (f" (delta={rungs[biggest]['delta']}), which is itself a result: this pipeline "
                         f"cannot see an injected graph signal even at that size." if biggest else "."))

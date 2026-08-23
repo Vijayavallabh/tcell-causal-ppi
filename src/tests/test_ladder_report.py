@@ -384,3 +384,25 @@ def test_a_lane_still_running_is_excluded_from_gate_health_rather_than_counted(t
     assert "permuted_d400_condition_gated_s0" not in h["lanes"]
     # and its 0.002 must NOT drag the reported minimum down
     assert h["min_gate_mean"] == pytest.approx(0.6)
+
+
+def test_an_underpowered_ladder_does_not_claim_the_floor_is_above_it(tmp_path):
+    """"Nothing cleared" and "the instrument is blind" are different claims, and only a COMPLETE
+    ladder carries the second. At the pre-registered n, above_ladder is a real result: the pipeline
+    got a signal that large and missed it. Short of that n it is a statement about the budget.
+
+    The guard can fail: the SAME effect sizes at full n must still produce the affirmative verdict."""
+    base = [0.080, 0.081, 0.079, 0.080]
+    for name in ("d020", "d400"):
+        _rung(tmp_path, name, _lift(base, 0.0002), base, seeds=(0, 1))
+    _rung(tmp_path, "permuted_d400", base, base, seeds=(0, 1))
+    thin = run(str(tmp_path), None, seeds=(0, 1, 2, 3))          # only 2 of 4 seeds landed
+    assert thin["floor_status"] == "above_ladder_preliminary"
+    assert not any("cannot see an injected graph signal" in n for n in thin["notes"])
+
+    for name in ("d020", "d400"):
+        _rung(tmp_path, name, _lift(base, 0.0002), base)         # backfill to the full four
+    _rung(tmp_path, "permuted_d400", base, base)
+    full = run(str(tmp_path), None, seeds=(0, 1, 2, 3))
+    assert full["floor_status"] == "above_ladder", "the guard cannot fail, so it proves nothing"
+    assert any("cannot see an injected graph signal" in n for n in full["notes"])

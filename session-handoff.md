@@ -147,7 +147,11 @@ mid-range among its own rungs, not an outlier at all.**
 | d400 | 0.5735 | 0.3400 |
 | **permuted_d400** | **0.0240** | **0.4654** |
 
-**That correction was itself made against a PARTIAL reading, and this is the caveat on it.** When I
+**RESOLVED 2026-08-23 15:18.** Seed 1's control completed at **0.465407**, unchanged from the partial
+0.4654, so the correction below stands on completed data. Both controls are now final: seed 0 at
+0.0240, seed 1 at 0.4654.
+
+**That correction was originally made against a PARTIAL reading, and this is the caveat on it.** When I
 compared them, `permuted_d400_s1` was still RUNNING: 19 epochs of history and no parquet. Its 0.4654
 was a minimum-so-far that could still fall. The comparison put a completed seed-0 lane beside a
 running seed-1 one — the same mistake in miniature as reading a result off an unfinished campaign.
