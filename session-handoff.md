@@ -138,14 +138,20 @@ gives it nothing worth keeping open. It was labelled "at n=1 this is one seed; d
 it", and that caution turned out to be the load-bearing part. **Seed 1's permuted control is 0.4654 —
 mid-range among its own rungs, not an outlier at all.**
 
-| rung | s0 | s1 |
-|---|---|---|
-| d020 | 0.7027 | 0.4138 |
-| d050 | 0.6495 | 0.4600 |
-| d100 | 0.6997 | 0.4804 |
-| d200 | 0.6366 | 0.1573 |
-| d400 | 0.5735 | 0.3400 |
-| **permuted_d400** | **0.0240** | **0.4654** |
+| rung | s0 | s1 | s2 |
+|---|---|---|---|
+| d020 | 0.7027 | 0.4138 | 0.4837 |
+| d050 | 0.6495 | 0.4600 | 0.5099 |
+| d100 | 0.6997 | 0.4804 | 0.2000 |
+| d200 | 0.6366 | **0.1573** | 0.3870 |
+| d400 | 0.5735 | 0.3400 | 0.2036 |
+| **permuted_d400** | **0.0240** | 0.4654 | 0.3790 |
+
+**SETTLED at n=3 (2026-08-25).** The control's three readings are 0.0240, 0.4654, 0.3790. Seed 0's is
+not merely low for its rung, it is the single lowest value in the entire matrix, which is exactly why
+it looked like a pattern from one seed. The second-lowest is d200 on seed 1 at 0.1573 — a REAL rung,
+not the control. There is no control effect. What the matrix does show is that seed 0 ran
+systematically the highest gates and that lane-to-lane spread is wide (0.02 to 0.70).
 
 **RESOLVED 2026-08-23 15:18.** Seed 1's control completed at **0.465407**, unchanged from the partial
 0.4654, so the correction below stands on completed data. Both controls are now final: seed 0 at
