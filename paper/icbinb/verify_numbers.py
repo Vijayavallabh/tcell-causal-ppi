@@ -244,7 +244,22 @@ PROSE_DECLARED = {
     # --- properties of the inputs, recorded in build provenance rather than in a results file ---
     "9{,}730": "targets in the genome-wide screen; from the DE build provenance.",
     "44": "datasets in the harmonized scPerturb resource; a cited property of that resource.",
-    "86": "share of PPI edges that are functional_assoc; a property of the graph build.",
+    # AUTO 2026-08-26: was "86". The artifact (a2_power/rationale_bound.json) measures
+    # 6,857,702 / 8,029,296 = 85.41%, which rounds to 85, not 86. The 86 traced only to a code
+    # comment carrying a different edge total. The paper now says 85 in all four places.
+    # AUTO 2026-08-26: derived from TWO artifacts, so prose:all (which matches within one
+    # section's artifact values) structurally cannot cover them. prose:derived recomputes each
+    # from a2_ladder/floor.json and c1_ladder/floor_condition_gated.json and matches the words
+    # around it; these entries exist only so prose:all stops reporting them as unaccounted.
+    "0.96": "gated/untyped paired sd ratio on the scrambled control; recomputed by prose:derived.",
+    "4.1": "untyped/gated mean ratio at delta=0.40; recomputed by prose:derived.",
+    "0.84": "Bonferroni-over-six p if the gated arm had the untyped sd; recomputed by prose:derived.",
+    "63": "seeds to match the untyped se, lowest of the four small rungs; recomputed by prose:derived.",
+    "358": "seeds to match the untyped se, highest rung; recomputed by prose:derived.",
+    "22": "epochs in the lambda sweep of Figure 2 (q4_lambda_sweep_22ep.json); a run setting.",
+    "85": "share of PPI edges that are functional_assoc; measured at 85.41% in rationale_bound.json.",
+    "8{,}029{,}296": "protein-protein edge count of the built graph; a property of the graph build.",
+    "11.3": "BioGRID share of protein-protein edges; the tier the source ablation did not cover.",
     "0.228": "median functional_assoc edge score; a property of the graph build.",
     "0.57": "mean edge gate after the repair, read from training logs rather than a results JSON.",
     # --- ratios derived in the sentence that states them; their components ARE gated -----------
@@ -486,6 +501,97 @@ def _prose_assertions(tex):
                    f"consistency, Norman's seed signs, the ladder's 48 lanes, Frangieh's live gates)")
 
 
+@table("prose:derived")
+def _prose_derived(tex):
+    """Quantities the paper DERIVES from two artifacts rather than reading off one.
+
+    This is the blind spot prose:all cannot cover. That check passes a literal when the string
+    occurs anywhere in the section's artifact values at any of thirteen precisions, and app:floor
+    alone emits 4,013 such strings including every bare integer up to 32, so a one or two digit
+    number passes for free and a ratio between two artifacts passes whenever either operand happens
+    to round to it. That is how "4.0 to 9.5x the untyped arm's ON THE SAME RUNGS" survived to
+    2026-08-26: the real range over the six rungs is 0.96x to 9.46x, the stated band excluded
+    delta=0.40 and the scrambled control, and delta=0.40 is the rung the whole "nothing up to 0.40"
+    claim rests on. Every derivation below is recomputed from the artifacts and matched against the
+    words around it, so a reworded sentence fails loudly instead of quietly going unchecked."""
+    flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
+    fails = []
+    u = load("data/results/a2_ladder/floor.json")
+    g = load("data/results/c1_ladder/floor_condition_gated.json")
+    uc, gc = u["contrasts"], g["contrasts"]
+    inj = [k for k in uc if not k.startswith("permuted")]
+    ratio = {k: gc[k]["sd"] / uc[k]["sd"] for k in uc}
+
+    def need(claim, value, context):
+        """context carries {V}; we accept the paper writing it at 1 or 2 decimals."""
+        for txt in (f"{value:.3f}", f"{value:.2f}", f"{value:.1f}", f"{value:.0f}"):
+            if context.replace("{V}", txt) in flat:
+                return
+        fails.append(f"derived {claim}: recomputed {value:.4f}; the paper does not state it in "
+                     f"context (looked for '{context.replace('{V}', f'{value:.1f}')}')")
+
+    need("paired sd ratio, lowest injected rung", min(ratio[k] for k in inj),
+         r"is ${V}$ to $9.5\times$ the untyped")
+    need("paired sd ratio, highest injected rung", max(ratio[k] for k in inj),
+         r"to ${V}\times$ the untyped arm's across")
+    need("paired sd ratio, scrambled control", ratio["permuted_d400"],
+         r"arms are equally noisy (${V}\times$)")
+    need("sd ratio at the largest rung", ratio["d400"],
+         r"gated arm carries only ${V}\times$ the")
+    need("mean ratio at the largest rung", uc["d400"]["mean"] / gc["d400"]["mean"],
+         r"estimate is ${V}\times$ smaller")
+    need("seeds to match the untyped se at d400", 4 * ratio["d400"] ** 2,
+         r"would take ${V}$ seeds at")
+    need("seeds to match, other rungs low", min(4 * ratio[k] ** 2 for k in inj if k != "d400"),
+         r"and ${V}$ to $358$ at the other four")
+    need("seeds to match, other rungs high", max(4 * ratio[k] ** 2 for k in inj if k != "d400"),
+         r"to ${V}$ at the other four")
+
+    # The paper's claim that equalising the noise STILL would not clear. Student t, df=3, closed form.
+    m, sd, n = gc["d400"]["mean"], uc["d400"]["sd"], 4
+    t = m / (sd / math.sqrt(n))
+    x = t / math.sqrt(3.0)
+    p_two = 1.0 - (2.0 / math.pi) * (x / (1.0 + t * t / 3.0) + math.atan(x))
+    need("t if the gated arm had the untyped arm's sd", t, r"short ($t{=}{V}$")
+    need("that p, corrected over six", min(1.0, p_two * 6.0), r"$, ${V}$ corrected over six")
+
+    ui = u["post_hoc_increment_over_zero"]["d400"]["mean"]
+    gi = g["post_hoc_increment_over_zero"]["d400"]["mean"]
+    need("untyped increment over gated at d400", ui / gi,
+         r"increment is ${V}\times$ the gated one")
+
+    # The I^2 pair in Section 4.3 must be like-for-like: BOTH over the seven replication screens.
+    p7 = load("data/results/replication/pooled.json")["pooled"]
+    need("untyped I2 over the seven replication screens", p7["promotion_margin"]["I2"] * 100,
+         r"against ${V}\%$)")
+    need("typed I2 with the reference screen added",
+         load("data/results/replication/pooled_with_reference.json")["pooled"]["h2a"]["I2"] * 100,
+         r"raises its $I^2$ from $39.2\%$ to ${V}\%$")
+
+    # The K<128 confound claim in App.~D: one negative in three against none in five is what
+    # capacity alone would give by chance. Fisher exact, two-sided, from the per-dataset signs.
+    eff = load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]
+    all8 = load("data/results/replication/pooled_with_reference.json")["pooled"]["promotion_margin"]
+    hi = eff["effects"]                                       # the five K=128 datasets
+    lo = [e for e in all8["effects"] if e not in hi]           # the three that ran below K=128
+    a = sum(1 for e in hi if e < 0)                            # negatives among K=128
+    b = sum(1 for e in lo if e < 0)                            # negatives among K<128
+    n1, n2, neg = len(hi), len(lo), a + b
+    def hyp(k):
+        return (math.comb(n1, k) * math.comb(n2, neg - k)) / math.comb(n1 + n2, neg)
+    p_obs = hyp(a)
+    p_two = sum(hyp(k) for k in range(0, neg + 1)
+                if 0 <= neg - k <= n2 and k <= n1 and hyp(k) <= p_obs + 1e-12)
+    need("Fisher exact on sign against K", p_two, r"by chance ($p{=}{V}$, Fisher exact)")
+    if not (a == 0 and b == 1):
+        fails.append(f"derived K-confound table: expected 0 negatives among the five K=128 datasets "
+                     f"and 1 among the three below, got {a} and {b}")
+
+    return fails, ("full: 16 cross-artifact derivations recomputed from a2_ladder/floor.json, "
+                   "c1_ladder/floor_condition_gated.json and the three pooled artifacts, each "
+                   "matched to the words around it")
+
+
 @table("prose:headline")
 def _prose_headline(tex):
     """The load-bearing numbers that live in PROSE, not in any table.
@@ -632,9 +738,9 @@ def _prose_headline(tex):
         ("B3 MDE rungs median",    "spread, ${v}$ on the injected",    f"{B3['mde']['real_sd_uncorrected']:.4f}"),
         ("B3 MDE corrected",       "and ${v}$ once the enlarged",      f"{B3['mde']['control_sd_bonferroni']:.4f}"),
         ("B3 proportional pred",   "damage would be ${v}$ there",      f4(B3["predictions_at_target_delta"]["proportional"])),
-        ("C1 post-hoc increment",  "zero point is ${v}$ ($95",         f4(c1inc["mean"])),
+        ("C1 post-hoc increment",  "and ${v}$ ($95",                    f4(c1inc["mean"])),
         ("C1 increment CI low",    "CI $[{v},",                        f4(c1inc["ci_low"])),
-        ("C1 increment CI high",   ",{v}]$, $p=0.035$",                f4(c1inc["ci_high"])),
+        ("C1 increment CI high",   ",{v}]$, $p{=}0.035$)",              f4(c1inc["ci_high"])),
     ]
     SCR = load("data/results/screening/robustness_5seed.json")["contrasts"]
     # The three fold RE-DRAWS are the c080c10 family. The c075c15_* roots are the harder-threshold
@@ -760,7 +866,7 @@ def _prose_headline(tex):
         ("arm band low",           "band from ${v}$ to",      f"{math.floor(l5means[0] * 1000) / 1000:.3f}"),
         ("arm band high",          "to ${v}$. An independent", f"{l5means[-1]:.3f}"),
         # --- the largest ladder rung and the C1 gate minimum ---------------------------------------
-        ("largest rung",           "any size up to ${v}$,",   f"{FL['rungs']['d400']['delta']:.2f}"),
+        ("largest rung",           "no injected size up to ${v}$,", f"{FL['rungs']['d400']['delta']:.2f}"),
         ("C1 gate minimum",        "minimum mean ${v}$ against", f"{C1H['min_gate_mean']:.4f}"),
         # --- CI half-widths and interval widths: arithmetic on artifact values, not assertions -----
         ("n=7 CI half-width",      "half-width from $0.0034$ to ${v}$", f"{halfwidth(pm):.4f}"),

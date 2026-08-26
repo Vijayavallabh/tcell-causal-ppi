@@ -1,3 +1,49 @@
+# *** DEVIL'S-ADVOCATE PASS 2026-08-26: TWO ARGUMENTS QUALIFIED, NEITHER WITHDRAWN ***
+
+A line-by-line adversarial read of the paper found twelve defects, all now fixed. Two of them
+qualify arguments the paper leans on, and both belong here rather than only in the LaTeX.
+
+**1. The homogeneity contrast is pool-dependent.** Section 4.3 said the typed arm's null is
+homogeneous "on the same datasets" as the untyped arm's heterogeneity, and paired I^2=39.2% with
+87.5%. Those came from different pools: 39.2% is `pooled.json` (k=7, replication only) and 87.5% is
+`pooled_with_reference.json` (k=8). Like-for-like:
+
+| pool | typed h2a I^2 | untyped I^2 |
+|---|---|---|
+| 7 replication screens | 39.2% | **88.7%** |
+| 8 incl. reference | **87.8%** | 87.5% |
+
+At k=7 the argument holds and is stronger than what was printed. At k=8 it vanishes: both arms sit
+near 88%. The paper now quotes the k=7 pair and states the dependence outright in App. D, because a
+reader who pools all eight for both arms sees no contrast and is entitled to know we saw that too.
+The typed arm's homogeneity is a property of the replication screens, not of every pool holding them.
+
+**2. The gated arm's floor is a LEVELS result, and at the top rung variance does not explain it.**
+The ladder table above compares levels. The untyped arm enters at +0.0048 over no graph with no
+injection at all; the gated arm enters at -0.0009. Subtracting each arm's own zero point gives what
+the injection actually bought, and there the two arms are in the same state:
+
+| rung | untyped increment | p | gated increment | p |
+|---|---|---|---|---|
+| 0.02 | +0.0040 | 0.14 | -0.0049 | 0.36 |
+| 0.40 | +0.0135 | **0.032** | +0.0053 | **0.035** |
+
+Neither survives correction over six. The untyped increment is 2.5x the gated one and that ratio is
+the whole measured difference in injected-signal sensitivity. Separately, "the gated arm's paired sd
+is 4.0 to 9.5x the untyped arm's on the same rungs" was wrong: measured, 0.96x to 9.46x, and the two
+rungs it excluded were delta=0.40 (1.67x) and the scrambled control (0.96x). At delta=0.40 the gated
+mean is 4.1x smaller while its noise is only 1.67x larger, and handing it the untyped arm's sd
+outright still leaves it short (t=2.00, p=0.14, 0.84 corrected). At that rung the shortfall is the
+mean, not the noise. **The C1 verdict stands; the mechanism claim is now split by rung.**
+
+**Why neither was caught earlier.** `prose:all` passes a literal when the string occurs anywhere in
+the section's artifact values at any of thirteen precisions. `app:floor` alone emits 4,013 such
+strings including every bare integer up to 32, so short numbers and cross-artifact ratios pass for
+free. A new check, `prose:derived`, recomputes 16 such quantities from two artifacts each and matches
+them to the surrounding words; it was proven to fail on the exact "4.0" that slipped through.
+
+---
+
 # *** C1 CLOSED 2026-08-26. THE TYPED GATED ARM'S FLOOR IS ABOVE THE ENTIRE LADDER. ***
 
 **This is the outcome Amendment 9.8 committed to in writing before the campaign ran, and 9.8 requires
