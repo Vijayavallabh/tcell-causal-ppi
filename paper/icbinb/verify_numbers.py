@@ -43,6 +43,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 SNAP = HERE / "numbers.snapshot.json"
+GATE_DEAD = 1e-3   # config.GATE_DEAD; duplicated so this script stays importable without src/
 
 # Numeric literals inside math mode: the form every measured quantity is written in.
 NUM = re.compile(r"[-+]?\d+(?:\{,\})?\d*(?:\.\d+)?")
@@ -174,6 +175,58 @@ PROSE_REGIONS = {
     "app:mechanism": [_R + "screening_a1/a1_mechanism.json", _R + "screening_b1/b1_message_form.json",
                       _R + "a2_power/arch_search_bound.json",
                       _R + "screening_untyped_n7/robustness_5seed.json"],
+    # Added 2026-08-26. Twelve sections had no mapping at all, holding 260 literals between them,
+    # more than the 245 the check already covered. "Nothing unaccounted" was only ever true inside
+    # the mapped set, which is exactly the kind of partial coverage this file exists to refuse.
+    "sec:setup": [_R + "screening/summary.json", _R + "screening_lambda0/robustness_5seed.json",
+                  "data/splits/manifest.json"],
+    "sec:approach": [_R + "screening_lambda0/robustness_5seed.json"],
+    # sec:outcome carries no numeric literal of its own; mapped anyway so that no section is silently
+    # outside the check, which is how 260 literals went unexamined until 2026-08-26.
+    "sec:outcome": [_R + "screening_lambda0/robustness_5seed.json"],
+    "sec:checklist": [_R + "screening_lambda0/robustness_5seed.json", _R + "a2_ladder/floor.json",
+                      _R + "c1_ladder/floor_condition_gated.json", _R + "feature_ablation_report.json",
+                      _R + "screening_untyped_n7/robustness_5seed.json",
+                      _R + "replication/pooled_with_reference.json", _R + "b2_deciles/deciles.json",
+                      _R + "a3_external/k_sweep.json"],
+    "sec:limits": [_R + "screening_lambda0/robustness_5seed.json", _R + "a2_ladder/floor.json",
+                   _R + "c1_ladder/floor_condition_gated.json"],
+    "app:arch": [_R + "screening_lambda0/robustness_5seed.json", _R + "feature_ablation_report.json"],
+    "app:archsearch": [_R + "a2_power/arch_search_bound.json"] +
+                      sorted(str(q.relative_to(ROOT)) for q in (ROOT / "data/results/arch_search").glob("*.json")),
+    "app:repl": [_R + "replication/pooled_with_reference.json", _R + "replication/pooled.json",
+                 _R + "replication/pooled_k128_subset.json",
+                 _R + "replication/frangieh_on_target_qc.json",
+                 _R + "screening_untyped_n7/robustness_5seed.json",
+                 _R + "screening/robustness_5seed.json"] +
+                sorted(str(q.relative_to(ROOT)) for q in
+                       (ROOT / "data/results/replication").glob("*/robustness_5seed.json")) +
+                sorted(str(q.relative_to(ROOT)) for q in
+                       (ROOT / "data/intermediate/replication").glob("*.DE_stats_v2.*.json")),
+    "app:ablate": [_R + "feature_ablation_report.json",
+                   _R + "screening_lambda0/robustness_5seed.json",
+                   _R + "screening_c080c10_h1/robustness_5seed.json",
+                   _R + "screening_c075c15_n5/robustness_5seed.json"],
+    "app:causes": [_R + "feature_ablation_report.json", _R + "rationale_audit_lambda0/audit_report.json",
+                   _R + "comparators/comparators_vs_h1.json",
+                   _R + "comparators/tabular_baselines_vs_h1.json",
+                   _R + "screening_lambda0/second_metric_5seed.json",
+                   _R + "screening_lambda0/robustness_5seed.json",
+                   _R + "screening_untyped_n7/robustness_5seed.json",
+                   _R + "a2_power/rationale_bound.json"],
+    "app:prereg": [_R + "replication/pooled_with_reference.json", _R + "l4/vardecomp_h2a.json",
+                   _R + "l4/vardecomp_h1_vs_no_graph.json", _R + "a2_power/power_simulation.json",
+                   _R + "screening_lambda0/robustness_5seed.json",
+                   _R + "screening_c080c10_h1/robustness_5seed.json",
+                   _R + "screening_c075c15_n5/robustness_5seed.json",
+                   _R + "screening_c080c10_r2/robustness_5seed.json",
+                   _R + "screening_c080c10_r3/robustness_5seed.json",
+                   "data/splits/manifest.json", _R + "splits_c075c15/manifest.json",
+                   _R + "splits_c080c10/manifest.json"] +
+                  sorted(str(q.relative_to(ROOT)) for q in
+                         (ROOT / "data/intermediate/replication").glob("*.provenance.json")),
+    "app:repro": [_R + "reproducibility/repro_real_report.json",
+                  _R + "reproducibility/manifest_real.json"],
 }
 
 # Literals that are NOT results and therefore cannot be re-derived from a results artifact. Every one
@@ -241,6 +294,39 @@ PROSE_DECLARED = {
     "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
     "0.013": "the simulation's false-positive rate under no true effect; not persisted in its JSON.",
     "0.77": "upper end of the live gate mean after the repair; read from training logs.",
+    # --- ARCHITECTURE DIMENSIONS. Fixed in the model definition, not produced by any run. --------
+    "128": "PINNACLE embedding width, and the program-basis K. A model/config constant.",
+    "1280": "ESM-2 650M embedding width; a property of the pretrained encoder.",
+    "1412": "total perturbation-feature width; the sum of the components listed beside it.",
+    "256": "hidden width of the intervention and graph vectors; a model constant.",
+    "512": "the neighbourhood sampling cap, NEIGHBORHOOD_CAP; a sampler constant.",
+    # --- DATASET SIZES. Properties of the inputs, recorded in build provenance not in results. ---
+    "33{,}983": "DE rows in the reference screen.",
+    "10{,}282": "genes scored per row in the reference screen.",
+    "11{,}526": "distinct gene targets in the reference screen.",
+    "2{,}393": "targets present in Replogle RPE1's source file, before any rule was applied.",
+    "248": "targets present in Frangieh's source file, before any rule was applied.",
+    "1{,}028": "genes in one decile of 10,282; a binning arithmetic, not a measurement.",
+    "1{,}119": "proteins in PINNACLE's CD4 context; a property of that resource.",
+    "7{,}216": "family groups after a re-draw; a split-construction count.",
+    "3{,}632": "family groups before it; a split-construction count.",
+    # --- BUILD-TIME FEATURE COVERAGE. Computed while assembling the feature stores, never persisted.
+    "99.4": "share of DE rows for which ESM-2 resolves; feature-store coverage.",
+    "96.5": "share with nonzero physical PPI degree; feature-store coverage.",
+    "98.4": "share with nonzero functional PPI degree; feature-store coverage.",
+    "29.5": "share with nonzero complex degree; feature-store coverage.",
+    "90.8": "share receiving a ZERO PINNACLE vector; the complement of its 9.2% coverage.",
+    "604": "median functional-assoc degree; a property of the graph build.",
+    "53": "median physical PPI degree; a property of the graph build.",
+    # --- COMPUTE BUDGET, read off the run registry rather than a results artifact ----------------
+    "379": "training lanes behind the paper; a count of runs.",
+    "16.8": "the longest single lane in GPU-hours; a runtime, not a result.",
+    "2.3": "the shortest single lane in GPU-hours; a runtime, not a result.",
+    # --- DERIVED, and anchored as arithmetic in prose:headline rather than stored anywhere -------
+    "0.0026": "half-width of the n=7 CI; prose:headline re-derives it as (ci_high - ci_low) / 2.",
+    "0.0034": "half-width of the n=5 CI; re-derived the same way.",
+    "0.072": "floor of the band the four arms occupy, TRUNCATED so the band contains typed_static "
+             "at 0.0726; prose:headline re-derives it with that truncation.",
     # --- design choices ------------------------------------------------------------------------
     "24": "gated lanes in the C1 campaign; a design count, six rungs times four seeds.",
     "101": "rank-interval boundary in the B2 binning; a binning choice, not a measurement.",
@@ -264,7 +350,8 @@ def _artifact_values(paths) -> set:
         elif isinstance(o, (int, float)):
             x = float(o)
             for f in (f"{x:+.4f}", f"{x:.4f}", f"{x:+.3f}", f"{x:.3f}", f"{x:.2f}", f"{x:.1f}",
-                      f"{x * 100:.1f}", f"{x * 100:.0f}", f"{x:.0f}", f"{x:.5f}", f"{x:.6f}"):
+                      f"{x * 100:.1f}", f"{x * 100:.0f}", f"{x:.0f}", f"{x:.5f}", f"{x:.6f}",
+                      f"{x:+.6f}", f"{x:+.5f}"):
                 out.add(f)
             if abs(x) >= 1000 and float(x).is_integer():
                 out.add(f"{int(x):,}".replace(",", "{,}"))
@@ -338,6 +425,65 @@ def _prose_all(tex):
                              f"Context: ...{ctx[-60:]}...")
     return fails, (f"full: {checked} prose literals across {len(PROSE_REGIONS)} mapped sections, each "
                    f"re-derived from that section's own artifacts or declared ({declared} declared)")
+
+
+@table("prose:assertions")
+def _prose_assertions(tex):
+    """Claims the paper makes in WORDS rather than numbers, which are still checkable.
+
+    "none dropped", "no failures", "gates live throughout", "fold sizes consistent" are assertions
+    about the data, not rhetoric, and until 2026-08-26 nothing checked any of them. A number that
+    goes stale gets caught by the checks above; a sentence that goes stale did not.
+
+    Each entry states the claim as the paper makes it and the artifact condition that must hold."""
+    flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
+    fails = []
+
+    def need(condition, claim, detail):
+        if not condition:
+            fails.append(f"assertion '{claim}': {detail}")
+
+    n7 = load("data/results/screening_untyped_n7/robustness_5seed.json")
+    pm = n7["contrasts"]["promotion_margin"]
+    if "none dropped" in flat:
+        need(not pm["dropped"] and len(pm["seeds_used"]) == 7, "seeds 0 to 6, none dropped",
+             f"seeds_used={pm['seeds_used']} dropped={pm['dropped']}")
+
+    fold = n7["fold"]
+    if "fold sizes" in flat or "observed fold sizes" in flat:
+        need(bool(fold.get("fold_sizes_consistent")), "fold sizes consistent across all seven seeds",
+             f"fold_sizes_consistent={fold.get('fold_sizes_consistent')}")
+
+    nm = load("data/results/replication/NormanWeissman2019_filtered/robustness_5seed.json")
+    nmc = nm["contrasts"]["promotion_margin"]
+    if "not a fragile lane" in flat:
+        neg = sum(1 for d in nmc["deltas"] if d < 0)
+        need(neg == len(nmc["deltas"]) and not nmc["dropped"],
+             "Norman: four of four seeds negative, none dropped",
+             f"{neg}/{len(nmc['deltas'])} negative, dropped={nmc['dropped']}")
+
+    if "no failures" in flat:
+        landed = sum(len(list((ROOT / f"data/results/a2_ladder/{r}/{a}").glob("[0-9].parquet")))
+                     for r in ("d020", "d050", "d100", "d200", "d400", "permuted_d400")
+                     for a in ("untyped_gnn", "expression_only"))
+        need(landed == 48, "48 training runs, no failures", f"{landed} parquets landed, expected 48")
+
+    # Frangieh is the one gated replication, and the paper says its gates were live throughout.
+    if "every gate demonstrably live" in flat:
+        mins = []
+        for s in range(8):
+            h = ROOT / f"data/results/replication/FrangiehIzar2021_RNA/condition_gated/{s}/logs/stage_a_history.json"
+            if h.exists():
+                g = [e["train"]["gate_mean"] for e in json.loads(h.read_text())
+                     if e.get("train", {}).get("gate_mean") is not None]
+                if g:
+                    mins.append(min(g))
+        need(bool(mins) and min(mins) > GATE_DEAD,
+             "Frangieh: every gate demonstrably live throughout training",
+             f"per-seed minima {[round(x, 4) for x in mins]} against the {GATE_DEAD} threshold")
+
+    return fails, (f"full: {5} worded assertions checked against artifacts (dropped seeds, fold "
+                   f"consistency, Norman's seed signs, the ladder's 48 lanes, Frangieh's live gates)")
 
 
 @table("prose:headline")
