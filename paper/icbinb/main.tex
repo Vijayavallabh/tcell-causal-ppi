@@ -435,8 +435,9 @@ alone.
 
 \textbf{A bounded null, and the bound is per fold, not general.} No fold yields a benefit surviving
 correction, and no single fold's upper limit bounds the effect elsewhere (Appendix~\ref{app:power}).
-The instrument is not the limit for our best graph arm; the typed arm's own floor is unmeasured
-(Appendix~\ref{app:floor}).
+% AUTO 2026-08-26: "the typed arm's own floor is unmeasured" was true when written and is now false.
+The instrument is not the limit for our best graph arm, but at $n{=}4$ it is for the gated one, which
+recovers no injected signal even at $0.40$ response SDs (Appendix~\ref{app:floor}).
 
 \textbf{Our own pre-registration nearly prevented the replication.} Under the rules as written, four
 of six candidate datasets fell out. Auditing that decision produced the more useful finding, and it is
@@ -868,7 +869,8 @@ The honest summary is therefore an ordering plus a floor. What we can assert: no
 fold separately, and no single fold's upper limit bounds it elsewhere. Our \emph{best} graph arm
 recovers an injected graph signal at $0.02$ response SDs and recovers nothing when the same signal
 follows a scrambled graph at $0.40$ (Appendix~\ref{app:floor}), so the pipeline's sensitivity is
-measured; the typed arm's own floor is not.
+% AUTO 2026-08-26: the typed arm's floor is measured now, and it is far worse.
+measured. The gated arm's is measured too, and it recovers no rung up to $0.40$.
 
 \section{The detection floor, measured}
 \label{app:floor}
@@ -943,6 +945,54 @@ $\delta{=}0.40$   & $0.1679$ & $0.1862$ & $+0.0823$ & $+0.0958$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+% AUTO 2026-08-26: C1, pre-registered as Amendment 9 BEFORE its lanes were trained. 48 lanes, 0
+% failures. This measures the floor of the arm the paper's null is actually about, which Amendment 6.5
+% deliberately did not, and which this paper previously called unmeasured in three places.
+\paragraph{The floor of the arm the null is about, measured.} The ladder above uses
+\textsc{untyped\_gnn}, chosen in advance on cost and sensitivity, and it bounds the \emph{pipeline}
+rather than the gated encoder. That gap is now closed. Re-running the identical six rungs with
+\textsc{condition\_gated} against \textsc{expression\_only} --- same frozen fold, same four seeds, same
+injected matrices, and $\lambda_{\mathrm{graph}}{=}0$ so the gate stays live --- recovers
+\emph{nothing at any injected size}.
+
+\begin{table}[h]
+\centering\small
+\caption{The same six rungs read with the \emph{gated} arm, which is the arm this paper's null
+concerns. $\Delta$ is (arm) $-$ \textsc{expression\_only}, paired over four seeds, corrected as one
+family of six. The untyped columns repeat Table~\ref{tab:floor2} for comparison.}
+\label{tab:floorgated}
+\begin{tabular}{lrrrr}
+\toprule
+condition & \textsc{untyped} $\Delta$ & $p_{\mathrm{Bonf}}$ & \textsc{gated} $\Delta$ & $p_{\mathrm{Bonf}}$ \\
+\midrule
+$\delta{=}0.02$ & $+0.0088$ & $\mathbf{0.003}$ & $-0.0057$ & $1.000$ \\
+$\delta{=}0.05$ & $+0.0081$ & $\mathbf{0.018}$ & $-0.0007$ & $1.000$ \\
+$\delta{=}0.10$ & $+0.0041$ & $\mathbf{0.020}$ & $-0.0058$ & $1.000$ \\
+$\delta{=}0.20$ & $+0.0090$ & $\mathbf{0.003}$ & $-0.0030$ & $1.000$ \\
+$\delta{=}0.40$ & $+0.0183$ & $\mathbf{0.022}$ & $+0.0045$ & $1.000$ \\
+\textbf{scrambled $0.40$} & $-0.0001$ & $1.000$ & $-0.0014$ & $0.603$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The control still does not clear, so this is a floor reading rather than a vacuous one, and every one
+of the $24$ lanes kept a live gate (minimum mean $0.0240$ against the $10^{-3}$ collapse threshold), so
+no lane is undecidable under our own kill criterion.
+
+\textbf{The mechanism is variance, not blindness, and the distinction bounds the claim.} The gated
+arm's per-seed paired standard deviation is $4.0$ to $9.5\times$ the untyped arm's on the same rungs,
+consistent with the $10.8\times$ per-arm seed spread reported above. Its estimates are not
+systematically wrong; they are buried. At the largest injection its post-hoc increment over the zero
+point is $+0.0053$ ($95\%$ CI $[+0.0007,+0.0099]$, $p=0.035$ uncorrected), a hint of dose-response that
+does not survive correction over six. Matching the untyped arm's sensitivity would take roughly $13$ to
+$16$ seeds at most rungs, against the four we ran.
+
+So the claim this supports is not that the gated encoder is blind to graph structure. It is that
+\emph{at the seed count used throughout this paper}, that encoder cannot resolve an injected graph
+signal of any size up to $0.40$ response SDs --- twenty times the size its untyped sibling recovers.
+Our headline null is measured with that instrument, and it should be read as a statement about what
+this encoder can resolve at this budget rather than about whether a PPI prior helps.
 
 \paragraph{What the injection bought, over what was already there.} Each rung is tested against zero,
 and this fold already carries a real graph benefit of $+0.0048$ with no injection at all, so a rung can

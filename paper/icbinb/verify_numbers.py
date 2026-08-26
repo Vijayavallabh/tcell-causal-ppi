@@ -537,6 +537,33 @@ _METRIC_COL = ["pearson_delta", "pearson_delta_top20", "mse_top20", "edistance_s
 _METRIC_ROW = [("h2a", 1.0), ("h2b", 1.0), ("promotion_margin", 1.0), ("h1_vs_no_graph", 1.0)]
 
 
+@table("tab:floorgated")
+def _floorgated(tex):
+    """C1's ladder (Amendment 9) beside Amendment 6's, both re-derived from their own artifacts.
+
+    This table is the one that corrected three "the typed arm's own floor is unmeasured" statements,
+    so it carries more weight than its size suggests and is checked against BOTH ladders rather than
+    transcribed from either."""
+    fails = []
+    u = load("data/results/a2_ladder/floor.json")["contrasts"]
+    g = load("data/results/c1_ladder/floor_condition_gated.json")["contrasts"]
+    n = 0
+    for cs in cells_of(tex, "tab:floorgated"):
+        rung = _rung_of(cs)
+        if rung is None or rung == "zero" or len(cs) < 5:
+            continue
+        n += 1
+        cmp_cell(fails, f"tab:floorgated {rung} untyped delta", cs[1], u[rung]["mean"])
+        cmp_cell(fails, f"tab:floorgated {rung} gated delta", cs[3], g[rung]["mean"])
+        for cell, art, who in ((cs[2], u[rung], "untyped"), (cs[4], g[rung], "gated")):
+            m = re.search(r"(\d\.\d+)", cell)
+            if m and f"{art['p_bonferroni']:.{len(m.group(1).split('.')[1])}f}" != m.group(1):
+                fails.append(f"tab:floorgated {rung} {who} Bonferroni: paper {m.group(1)} artifact "
+                             f"{art['p_bonferroni']:.4f}")
+    return fails, (f"full: {n} rungs x (untyped delta, untyped Bonferroni, gated delta, gated "
+                   f"Bonferroni) vs a2_ladder/floor.json and c1_ladder/floor_condition_gated.json")
+
+
 @table("tab:metrics")
 def _metrics(tex):
     fails, d = [], load("data/results/a3_external/rescored.json")
