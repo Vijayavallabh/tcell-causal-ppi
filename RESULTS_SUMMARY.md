@@ -1,3 +1,45 @@
+# *** PROSE PASS 2026-08-26: THE STYLE RULES WERE NEVER GATED ***
+
+Seven defects. The paper had already been through /no-ai-slop and /humanizer, and it shows: the
+banned-word scan turned up four hits and all four were legitimate ("robustness report" is an artifact
+name, "experiment harness" is a noun). What it had not survived was maintenance.
+
+**1. The paper contradicted its own spelling convention in 25 places.** Its title says "Regularizer",
+its abstract "unnormalized" and "normalize", and "center" appears 17 times against "centre" never. So
+the convention was settled. Scattered against it: neighbourhood(5), neighbour(7), normalis*(5),
+unnormalis*(1), localis*(2), labelled(3), modelled(2). Two of those I introduced myself earlier today,
+in the fig:arch caption and the simulation paragraph. All normalised.
+
+**2. The floor claim appeared three times, and my own fix had made it inconsistent.** Abstract,
+checklist item 12 and App. H all said the best arm "recovers an injected graph signal at 0.02". App. I
+now establishes that this is a statement about LEVELS, and the gated arm's wording was changed to
+"clears" this morning, but "recovers" survived in all three copies of the untyped claim. All three now
+say "clears correction at an injected signal of 0.02", and App. H's near-verbatim restatement of the
+abstract is compressed to the consequence, which is what that paragraph is for.
+
+**3. Two sentences existed twice, differing only by synonym.** "A component can change the
+variance/spread without changing the expectation, and the contrast/paired contrast will not show
+you that/show it" appeared in checklist 10 and App. H. And two appendices opened a paragraph with
+"Three corrections follow, and the first is against us" / "Three things follow, and the first corrects
+us". Deduplicated. One near-duplicate pair remains on purpose: the abstract and checklist item 12 make
+the same claim for different reasons, pages apart.
+
+**4. Hyphenation drift**: re-draw(21) against redraw(5). Normalised, and see the caveat below.
+
+**5. My own fig:arch caption was one 83-word sentence** joined by three semicolons. Split into five.
+
+**A bug I introduced and caught.** The hyphenation pass rewrote `\text{redraw}` to `\text{re-draw}`
+INSIDE the variance-component math subscript, which broke two prose:derived anchors. The gate caught
+it immediately, which is the argument for gates. prose:style now asserts that subscript stays
+unhyphenated so the same regex cannot reach into the equation again.
+
+**New gate: prose:style.** The post-edit checklist has demanded "0 em/en dashes, 0 banned words" since
+this paper began and **nothing enforced it** -- every pass checked by hand. Now gated: em and en
+dashes, 18 banned words, 10 British spellings, and the redraw subscript, over main.tex with comments
+stripped since an AUTO note is not prose. Four planted violations caught.
+
+---
+
 # *** REFERENCES PASS 2026-08-26: A WRONG AUTHOR ON OUR OWN DATASET CITATION ***
 
 Nine defects. Every cited DOI was resolved against Crossref and bioRxiv rather than eyeballed,

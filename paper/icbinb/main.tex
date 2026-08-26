@@ -48,8 +48,8 @@ in \emph{disagreeing} directions ($I^2{=}87.5\%$, pooled random effects $+0.0091
 $[-0.0024,+0.0207]$), while the typed null holds and tightens across seven further screens (pooled
 $+0.0018$, random-effects $95\%$ CI $[-0.0028,+0.0065]$, $I^2{=}39\%$, $Q$ $p{=}0.13$). So the prior is not what fails; the
 encoder we built to exploit it is, and a ``graph versus no graph'' null can be an artifact of the
-graph \emph{encoder} rather than evidence about the graph. Our \emph{best} graph arm recovers an
-injected graph signal at $0.02$ response SDs and recovers nothing when the same signal follows a
+graph \emph{encoder} rather than evidence about the graph. Our \emph{best} graph arm clears correction at an
+injected signal of $0.02$ response SDs and clears nothing when the same signal follows a
 scrambled graph. The \emph{gated} arm our null is stated on clears at no injected size up to $0.40$, at
 up to $9\times$ the paired noise, and on the increment isolating the injection neither arm separates
 below $0.40$. That null bounds what this encoder can resolve at four seeds rather than whether the
@@ -108,7 +108,7 @@ response to knocking down a target gene, in a latent program space. The data is 
 primary human CD4$^{+}$ T-cell CRISPRi Perturb-seq resource of \citet{zhu2025gwperturbseq} (four
 donors; conditions Rest, Stim8hr, Stim48hr). The supervised target is a differential-expression matrix
 of $33{,}983$ (perturbation $\times$ condition) rows over $10{,}282$ genes, covering $11{,}526$
-distinct gene targets, modelled in a $K{=}128$ sparse-PCA program basis \citep{zou2006sparsepca} fit
+distinct gene targets, modeled in a $K{=}128$ sparse-PCA program basis \citep{zou2006sparsepca} fit
 \emph{inside} each training fold.
 
 \paragraph{Metric and split.} The primary endpoint is \textsc{systema}, the perturbation-specific
@@ -349,7 +349,7 @@ pruned. The two that carry the argument are C and D, and neither is about biolog
 cause as refuted, on a $14$-cell search that left the default gated encoder on top. The search was the
 wrong shape: every cell varied \emph{how} the typed, gated encoder passes messages and not one removed
 the typing and gating themselves, so it could not have found this. Running the whole family at $n{=}7$ on the frozen
-fold localises the damage instead. Ordered by \textsc{systema}: untyped $0.0904$, expression-only
+fold localizes the damage instead. Ordered by \textsc{systema}: untyped $0.0904$, expression-only
 $0.0861$, condition-gated $0.0818$, typed-static $0.0740$. % AUTO 2026-08-26: the two corrected p-values here duplicated \S\ref{sec:repl} verbatim; that
 % section states them in full and this one needs only the contrast.
 Plain topology beats no graph ($+0.0043$, all seven
@@ -361,7 +361,7 @@ gate is not adding signal; it is partly repairing a wound the typing inflicts, a
 % AUTO 2026-08-26: "79% of it" read as 79% of the -0.0120 typing cost stated two clauses earlier.
 % It is 79% of the +0.0176 gap to the untyped arm, as App.~\ref{app:mechanism} says. The m=1 caveat
 % that appendix insists on was also missing here.
-the typing at all: normalising each relation's messages by degree recovers $79\%$ of the untyped gap,
+the typing at all: normalizing each relation's messages by degree recovers $79\%$ of the untyped gap,
 at one arm and uncorrected $p{=}0.0245$, and still
 beats no graph by nothing, so the deficit looks like an aggregation artifact rather than a statement
 about evidence types. \textbf{Survives}, and it best explains the null. Appendix~\ref{app:causes} gives the
@@ -420,11 +420,11 @@ difficulty statistic $0.103$ against a designed range of $0.056$, so the sweep w
 more than the knob.
 \item \textbf{Report per-arm variance across seeds, not only the paired contrast.} Our graph arms
 carry $6$ to $32\times$ the seed-to-seed spread of the no-graph arm at the same mean. A component can
-change the variance without changing the expectation, and the contrast will not show you that.
+change the spread without changing the expectation, and the paired contrast will not show you that.
 \item \textbf{Pre-register the contrast family and correct for it.} With four simultaneous contrasts,
 two of ours reach nominal significance and neither survives both corrections.
 \item \textbf{Inject a signal you know is there, with a scrambled control.} A null is a claim about
-your instrument. Ours recovers an injected graph signal at $0.02$ response SDs and recovers nothing
+your instrument. Ours clears correction at an injected signal of $0.02$ response SDs and clears nothing
 % AUTO 2026-08-26: this cited our instrument as a clean pass while the arm our null is about fails
 % the same test. A checklist item that overstates its own worked example is worse than no example.
 when the same component follows a \emph{scrambled} graph (Appendix~\ref{app:floor}). The scrambled
@@ -531,15 +531,16 @@ is applied before aggregation, so the same physical edge can be active in one co
 \centering
 \includegraphics[width=\linewidth]{eg_ipg_architecture.pdf}
 % AUTO 2026-08-26: this caption named only the boxed term, so the figure could not stand alone.
-\caption{EG-IPG, and where it breaks. Left to right: the perturbation and context encoder fuses the
-target's frozen features (ESM-2, PINNACLE, three PPI degrees, control baseline expression) with
-condition and donor context into $h_{\mathrm{do}}$; the typed evidence-gated graph encoder runs three
-relational message-passing layers over a sampled $2$-hop neighbourhood, each edge scaled by the
-condition gate of Eq.~\ref{eq:gate}; a cross-attention readout pools nodes into $h_{\mathrm{graph}}$;
-and the decoder mixes a graph-derived program delta with a parallel expression-only prediction through
-a learned $\gamma$, so $\gamma{=}0$ recovers the \textsc{expression\_only} arm exactly. The boxed
-edge-sparsity term is Eq.~\ref{eq:graphloss} and the locus of the confound analyzed in
-\S\ref{sec:confound}: it acts on the gate, which is the only thing separating the four arms.}
+\caption{EG-IPG, and where it breaks. Four modules run left to right. The perturbation and context
+encoder fuses the target's frozen features (ESM-2, PINNACLE, three PPI degrees, control baseline
+expression) with condition and donor context into $h_{\mathrm{do}}$. The typed evidence-gated graph
+encoder runs three relational message-passing layers over a sampled $2$-hop neighborhood, scaling each
+edge by the condition gate of Eq.~\ref{eq:gate}. A cross-attention readout pools nodes into
+$h_{\mathrm{graph}}$. The decoder then mixes a graph-derived program delta with a parallel
+expression-only prediction through a learned $\gamma$, so $\gamma{=}0$ recovers the
+\textsc{expression\_only} arm exactly. The boxed edge-sparsity term is Eq.~\ref{eq:graphloss} and the
+locus of the confound analyzed in \S\ref{sec:confound}. It acts on the gate, which is the only thing
+separating the four arms.}
 \label{fig:arch}
 \end{figure}
 
@@ -551,9 +552,9 @@ edge-sparsity term is Eq.~\ref{eq:graphloss} and the locus of the confound analy
 \centering
 % AUTO 2026-08-26: this caption stated the search's conclusion as a finding, directly above the
 % paragraph explaining that the search could not resolve anything, and App.~\ref{app:mechanism} later
-% says "refuted within the searched space" was never established for normalisation. The ranking is
+% says "refuted within the searched space" was never established for normalization. The ranking is
 % still reported; what it is not is evidence.
-\caption{Representative cells from the $14$-cell architecture search (inner training fold, single seed, and five epochs against the twenty every other lane in this paper runs). No cell outranks the default gated encoder, but the paragraph below shows the search could not resolve differences of this size, and Appendix~\ref{app:mechanism} overturns its verdict on normalisation. Read the ordering as a record of what we ran, not as a result. Attention cells use GATv2 \citep{brody2022gatv2}. ``gate'' is the mean final edge gate.}
+\caption{Representative cells from the $14$-cell architecture search (inner training fold, single seed, and five epochs against the twenty every other lane in this paper runs). No cell outranks the default gated encoder, but the paragraph below shows the search could not resolve differences of this size, and Appendix~\ref{app:mechanism} overturns its verdict on normalization. Read the ordering as a record of what we ran, not as a result. Attention cells use GATv2 \citep{brody2022gatv2}. ``gate'' is the mean final edge gate.}
 \vspace{2pt}
 {\small
 \begin{tabular}{@{}lcc@{}}
@@ -595,7 +596,7 @@ whether its effect clears its own noise by a margin re-seeding cannot close, and
 \section{Which part of the typing does the damage?}
 \label{app:mechanism}
 
-\S\ref{sec:causes} localises the deficit to edge typing: $-0.0120$ \textsc{systema} at $n{=}7$, seven of
+\S\ref{sec:causes} localizes the deficit to edge typing: $-0.0120$ \textsc{systema} at $n{=}7$, seven of
 seven seeds, surviving both corrections. It does not say what about typing costs that. Two explanations
 are confounded inside the number. The relation partition may be the wrong inductive bias; or typed
 message passing simply carries four times the message parameters over the same edges, in which case the
@@ -606,8 +607,8 @@ with their decision rule before either was trained.
 $2{,}396{,}160$ message parameters to $599{,}040$ and the model's total parameters by $34\%$ ($5{,}254{,}884$ to $3{,}457{,}764$), and changing nothing
 else. \textsc{typed\_permuted} keeps the per-relation modules and reassigns every protein-protein edge's
 relation label at random, preserving each relation's edge count exactly. The relabelling happens
-\emph{after} neighbourhood sampling, because the sampler ranks candidate neighbours by relation, so
-permuting the stored graph would have changed which neighbours enter the subgraph rather than only which
+\emph{after} neighborhood sampling, because the sampler ranks candidate neighbors by relation, so
+permuting the stored graph would have changed which neighbors enter the subgraph rather than only which
 weights process them.
 
 \begin{table}[h]
@@ -637,14 +638,14 @@ What remains is what all three typed arms share and the untyped one does not. Bo
 well below the untyped \textsc{gcn} ($-0.0172$ and $-0.0111$) and below the no-graph baseline ($-0.0126$
 and $-0.0065$), so the deficit survives both interventions intact. The candidates left are the form of
 the message rather than its routing: signed messages, the per-edge feature term, the complex-membership
-node type, the residual feed-forward block, and summing a relation's messages instead of normalising
+node type, the residual feed-forward block, and summing a relation's messages instead of normalizing
 them by degree.
 
 That last one deserves a note, because we previously reported it as refuted. The architecture search
 that refuted it spans $0.0089$ across all $14$ of its cells, while the untyped-minus-typed gap we measure
 at $n{=}5$ on the same fold is $0.0176$. A search whose whole range is half the size of the difference
 under study was not resolving these arms at all, so ``refuted within the searched space'' was never
-established for normalisation either, which is the same lesson as \S\ref{sec:causes} arriving one level
+established for normalization either, which is the same lesson as \S\ref{sec:causes} arriving one level
 further down.
 
 % AUTO 2026-08-20: B1a. Pre-registered as Amendment 7 before the arm was trained.
@@ -653,7 +654,7 @@ encoder with each relation's messages weighted by $1/\sqrt{d_i d_j}$ instead of 
 changes, and deliberately not one parameter, since A1 had already excluded capacity. Against the
 landed \textsc{typed\_static} lanes at the same five seeds it recovers $+0.0139$ \textsc{systema}
 ($95\%$ CI $[+0.0029,+0.0248]$, five of five seeds positive), or $79\%$ of the $+0.0176$ gap to the
-untyped arm. The deficit is therefore mostly not the typing: it is the unnormalised sum, where a
+untyped arm. The deficit is therefore mostly not the typing: it is the unnormalized sum, where a
 relation's contribution scales with its degree, so \textsc{functional\_assoc} ($85\%$ of all edges,
 median score $0.228$) dominates the node update by count.
 
@@ -692,7 +693,7 @@ Second, target count and condition count are anti-correlated across candidates. 
 \paragraph{Measured outcome.} We built the DE matrices and applied the rules. Table~\ref{tab:repl} is what survived.
 % AUTO 2026-08-10: the replication has now run; the old "measurement returned two" is superseded.
 % AUTO 2026-08-26: ten were built and eight passed QC; Papalexi passes QC and is not trained.
-Eight of ten candidates passed on-target quality control and seven were trained to completion: Frangieh melanoma, Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide, Norman K562, and Tian iPSC-neuron CRISPRi and CRISPRa. Two decisions were forced by measurement and pre-registered before the first lane ran. First, the program dimension is not portable: $K$ cannot exceed the training fold's row count, and a replication dataset has one row per (target, condition), so the reference $K{=}128$ does not hold everywhere: Tian CRISPRi runs at $K{=}32$, and Tian CRISPRa and Norman at $K{=}16$, each a labelled deviation (Table~\ref{tab:repl}).
+Eight of ten candidates passed on-target quality control and seven were trained to completion: Frangieh melanoma, Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide, Norman K562, and Tian iPSC-neuron CRISPRi and CRISPRa. Two decisions were forced by measurement and pre-registered before the first lane ran. First, the program dimension is not portable: $K$ cannot exceed the training fold's row count, and a replication dataset has one row per (target, condition), so the reference $K{=}128$ does not hold everywhere: Tian CRISPRi runs at $K{=}32$, and Tian CRISPRa and Norman at $K{=}16$, each a labeled deviation (Table~\ref{tab:repl}).
 % AUTO 2026-08-21: this sentence previously asserted that the K=128 subset estimate was reported. It
 % was not: pool.py had no such option and no artifact contained it. The pre-registered analysis has now
 % been run (data/results/replication/pooled_k128_subset.json) and the two estimates disagree, which is
@@ -718,8 +719,8 @@ knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.613$, $90\%$
 % digit, the pre-Amendment-2 pseudobulk provenance (Frangieh 216, Norman 102, Papalexi 24, Replogle 12,
 % Datlinger 6), so it marked Replogle "dropped" while the results section two paragraphs below trains
 % three Replogle datasets and pools them. Rebuilt from the DE_stats_v2 artifacts, and the K column
-% added because Amendment 3.1 requires every K deviation to be labelled wherever it appears.
-\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells per (target, condition) against pooled same-condition controls). Ten were built, eight passed on-target quality control, and seven were trained. Papalexi passes QC but falls below the $50$-group target-axis floor, so it is barred from any headline or pooled estimate. Only Frangieh carries more than one condition, so it is the only dataset that can test h1. $K$ is the program-basis dimension fixed by Amendment 3.1; any $K{\ne}128$ is a labelled deviation from the reference architecture, and \emph{n/a} marks the three rows that were never trained and so have no basis. The pre-registration pins a replicate unit per dataset; the table does not carry that column and Appendix~\ref{app:prereg} discusses it.}
+% added because Amendment 3.1 requires every K deviation to be labeled wherever it appears.
+\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells per (target, condition) against pooled same-condition controls). Ten were built, eight passed on-target quality control, and seven were trained. Papalexi passes QC but falls below the $50$-group target-axis floor, so it is barred from any headline or pooled estimate. Only Frangieh carries more than one condition, so it is the only dataset that can test h1. $K$ is the program-basis dimension fixed by Amendment 3.1; any $K{\ne}128$ is a labeled deviation from the reference architecture, and \emph{n/a} marks the three rows that were never trained and so have no basis. The pre-registration pins a replicate unit per dataset; the table does not carry that column and Appendix~\ref{app:prereg} discusses it.}
 \label{tab:repl}
 \vspace{2pt}
 {\footnotesize
@@ -746,7 +747,7 @@ We also pinned the graph's node features to a cell-type-matched PINNACLE context
 
 \begin{table}[htbp]
 \centering
-\caption{The same nested family, $n{=}5$ paired seeds, on three folds at decreasing sequence-similarity thresholds. We deliberately omit a ``difficulty'' column: the natural candidate, median train-to-sequestered-split cosine ($0.796$, $0.759$, $0.741$), is not stable under redrawing (see text). Absolute \textsc{systema} is not comparable across folds, so only paired contrasts are shown. No h1 contrast survives family-wise correction on any fold. The h2a column is a point estimate only, deliberately: its interval and correction differ per fold and are given in \S\ref{sec:null}, where the failed replication of h2a is the subject rather than a side column.}
+\caption{The same nested family, $n{=}5$ paired seeds, on three folds at decreasing sequence-similarity thresholds. We deliberately omit a ``difficulty'' column: the natural candidate, median train-to-sequestered-split cosine ($0.796$, $0.759$, $0.741$), is not stable under re-drawing (see text). Absolute \textsc{systema} is not comparable across folds, so only paired contrasts are shown. No h1 contrast survives family-wise correction on any fold. The h2a column is a point estimate only, deliberately: its interval and correction differ per fold and are given in \S\ref{sec:null}, where the failed replication of h2a is the subject rather than a side column.}
 \label{tab:folds}
 \vspace{2pt}
 {\small
@@ -898,7 +899,7 @@ against how the reference data were themselves constructed, before the rule is f
 
 A third fold at an intermediate threshold gives the same corrected verdict everywhere (Table~\ref{tab:folds}); Appendix~\ref{app:power} records why we decline to read a difficulty trend into the point estimates.
 
-We then measured why, and the answer is that these are not three difficulty levels. Holding threshold and cap fixed at the intermediate setting and varying only the partition seed, three realizations of the \emph{same} split specification give median train-to-sequestered-split cosines of $0.759$, $0.793$ and $0.862$. That is a spread of $0.103$ from partition noise alone, against $0.056$ for the entire designed range across all three thresholds ($0.796$ to $0.741$): \textbf{redrawing one split moves the difficulty statistic almost twice as far as deliberately changing the threshold does}, and the third redraw is \emph{easier} than the frozen fold it was supposed to sit below. The realizations also differ structurally, sharing only $20\%$ of their validation targets and differing twofold in validation size, and the no-graph baseline moves with them: at five paired seeds per re-draw it scores $0.0991$, $0.0942$ and $0.0845$ \textsc{systema}, a $0.0146$ spread on our most stable arm, larger than either effect in Table~\ref{tab:folds}. % AUTO 2026-08-26: "it tracks validation-set size" was a causal claim off three points, where a
+We then measured why, and the answer is that these are not three difficulty levels. Holding threshold and cap fixed at the intermediate setting and varying only the partition seed, three realizations of the \emph{same} split specification give median train-to-sequestered-split cosines of $0.759$, $0.793$ and $0.862$. That is a spread of $0.103$ from partition noise alone, against $0.056$ for the entire designed range across all three thresholds ($0.796$ to $0.741$): \textbf{re-drawing one split moves the difficulty statistic almost twice as far as deliberately changing the threshold does}, and the third re-draw is \emph{easier} than the frozen fold it was supposed to sit below. The realizations also differ structurally, sharing only $20\%$ of their validation targets and differing twofold in validation size, and the no-graph baseline moves with them: at five paired seeds per re-draw it scores $0.0991$, $0.0942$ and $0.0845$ \textsc{systema}, a $0.0146$ spread on our most stable arm, larger than either effect in Table~\ref{tab:folds}. % AUTO 2026-08-26: "it tracks validation-set size" was a causal claim off three points, where a
 % perfect rank match arises by chance one time in six. Stated as the association it is.
 It does not track the cosine statistic either, since the nominally hardest re-draw scores highest. It orders with validation-set size, which the re-draws moved from $3{,}632$ to $7{,}216$ unbidden, though with three re-draws that ordering would arise by chance one time in six and we offer it as the more plausible reading rather than a measured relationship.
 
@@ -949,7 +950,7 @@ datasets, untyped & between dataset & $0.0205$ & $252$ datasets & $0.02$ \\
 \end{tabular}
 \end{table}
 
-Three things follow, and the first corrects us. The old text said the between-re-draw component was at least as large as the between-seed one; measured, it is not, and not by a little. For h2a the training seed contributes $0.0107$ against the re-draw's $0.0003$, so the noise we blamed on re-drawing the split was mostly the seed. Second, the floor depends on what you want the claim to survive. On this fold as run, a $0.0043$ benefit would need $15$ seeds and we had $7$; a claim that must also survive re-drawing the fold would need $73$. Third, and least comfortable for the literature this sits in: the between-dataset spread of the \emph{untyped} contrast is $0.0205$, five times the effect anyone reports, because the datasets disagree in sign. Detecting a $0.0043$ pooled benefit against that spread needs on the order of $250$ datasets. The harmonized resource we drew from has $44$ \citep{peidli2024scperturb}, and the largest cross-dataset perturbation studies we know of use single digits. That is not a statement about our pipeline. It is a statement about what a pooled cross-dataset claim in this area can currently support.
+Three of those components repay attention, and the first corrects us. The old text said the between-re-draw component was at least as large as the between-seed one; measured, it is not, and not by a little. For h2a the training seed contributes $0.0107$ against the re-draw's $0.0003$, so the noise we blamed on re-drawing the split was mostly the seed. Second, the floor depends on what you want the claim to survive. On this fold as run, a $0.0043$ benefit would need $15$ seeds and we had $7$; a claim that must also survive re-drawing the fold would need $73$. Third, and least comfortable for the literature this sits in: the between-dataset spread of the \emph{untyped} contrast is $0.0205$, five times the effect anyone reports, because the datasets disagree in sign. Detecting a $0.0043$ pooled benefit against that spread needs on the order of $250$ datasets. The harmonized resource we drew from has $44$ \citep{peidli2024scperturb}, and the largest cross-dataset perturbation studies we know of use single digits. That is not a statement about our pipeline. It is a statement about what a pooled cross-dataset claim in this area can currently support.
 
 The honest summary is therefore an ordering plus a floor. What we can assert: no fold, and no re-draw of a fold, yields a graph benefit that survives family-wise correction over the pre-registered family of four, and the smallest effect we were positioned to detect on the frozen fold at the seven seeds we ran is $0.0075$, rising to $0.0185$ if the claim must also survive re-drawing the fold. Our headline null is an estimate of $-0.0009$, an order of magnitude inside the first of those. What we still cannot assert: that any particular upper limit constrains the effect on a fold, dataset or protocol we did not run. We then ran the empirical version of this table rather than leaving it as future work; it is Appendix~\ref{app:floor}.
 
@@ -963,7 +964,7 @@ magnitude moved the headline from $-0.0019$ to $-0.0009$, changing no conclusion
 
 \paragraph{Why the confounded run is only a control.} A dead-gate run has the graph off, so its parity with no-graph says nothing on its own; the \emph{live-gate} comparison carries the claim, and the confounded run serves only as a control on the fix.
 
-\paragraph{Why the added variance matters.} Message passing over a mostly-noisy neighborhood gives the optimizer a high-variance pathway to fit, and that added variance is what widens the interval a benefit must clear. A component can change the spread without changing the expectation, and the paired contrast alone will not show it.
+\paragraph{Why the added variance matters.} Message passing over a mostly-noisy neighborhood gives the optimizer a high-variance pathway to fit, and that added variance is what widens the interval a benefit must clear. Checklist item 10 is the general form of this.
 
 % AUTO 2026-08-26: MOVED here from Section~\ref{sec:null} for the page budget (rail 3). The claim
 % stays in the body in Table~\ref{tab:causes} row A; these are the numbers behind it.
@@ -976,11 +977,11 @@ spread without moving the expected score.
 % AUTO 2026-08-20: MOVED here from Limitations for the page budget (rail 3). The body keeps the
 % claim; this is what backs it.
 \paragraph{What the per-fold intervals above do and do not bound.} They bound the effect on each
-fold separately, and no single fold's upper limit bounds it elsewhere. Our \emph{best} graph arm
-recovers an injected graph signal at $0.02$ response SDs and recovers nothing when the same signal
-follows a scrambled graph at $0.40$ (Appendix~\ref{app:floor}), so the pipeline's sensitivity is
-% AUTO 2026-08-26: the typed arm's floor is measured now, and it is far worse.
-measured. The gated arm's is measured too, and it clears no rung up to $0.40$.
+fold separately, and no single fold's upper limit bounds it elsewhere. The instrument itself is
+% AUTO 2026-08-26: this restated the abstract almost verbatim, the third copy of one sentence. The
+% ladder is stated in the abstract and in full in App.~\ref{app:floor}; here only the consequence.
+measured for both arms (Appendix~\ref{app:floor}): the untyped arm clears at $0.02$ response SDs, and
+the gated arm clears no rung up to $0.40$.
 
 \section{The detection floor, measured}
 \label{app:floor}
@@ -988,15 +989,15 @@ measured. The gated arm's is measured too, and it clears no rung up to $0.40$.
 The simulation in Appendix~\ref{app:power} says what this pipeline should be able to detect. This says
 whether it does. We add a known graph-dependent component to the real responses at a ladder of sizes and
 report the smallest one recovered. For each perturbation target the component is the mean response of its
-protein-interaction neighbours, computed over \emph{training rows only}, scaled so its spread matches the
+protein-interaction neighbors, computed over \emph{training rows only}, scaled so its spread matches the
 training response's and multiplied by $\delta$; so $\delta$ reads as a fraction of a response standard
-deviation. A model that can read the graph can predict a held-out target from its neighbours. One that
+deviation. A model that can read the graph can predict a held-out target from its neighbors. One that
 cannot, cannot. Six conditions, two arms, four paired seeds each: $48$ training runs, no failures.
 
 Two properties make the number mean anything, and both were fixed before any lane ran. No validation
 response reaches any injected value, including through the scaling constant, asserted by a test that
 perturbs a validation response and requires the whole injection matrix to be bit-identical. And one rung
-is a NEGATIVE CONTROL in which each target receives some \emph{other} target's neighbourhood, at the
+is a NEGATIVE CONTROL in which each target receives some \emph{other} target's neighborhood, at the
 largest $\delta$, preserving the injected component's size and distribution while destroying its relation
 to the graph. Rows outside the training and validation folds are left bit-identical, so the sequestered
 split is untouched.
@@ -1006,7 +1007,7 @@ split is untouched.
 \caption{Injected-signal ladder. $\Delta$ is \textsc{untyped\_gnn} $-$ \textsc{expression\_only} on
 \textsc{systema}, paired over four seeds, corrected as one family of six with Bonferroni and Holm both
 required. ``increment'' subtracts the same seed's gap with no injection, and is post-hoc. The last row
-is the negative control: the same injection magnitude over a scrambled neighbourhood.}
+is the negative control: the same injection magnitude over a scrambled neighborhood.}
 \label{tab:floor2}
 \begin{tabular}{lrrrrrl}
 \toprule
@@ -1030,7 +1031,7 @@ injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.022$ & $+0.0135^{*}$ & 
 The floor is at or below $0.02$ response standard deviations, the smallest size we injected: every
 injected rung is recovered under both corrections.
 
-\paragraph{The control is what makes that readable.} At the same magnitude, a scrambled neighbourhood
+\paragraph{The control is what makes that readable.} At the same magnitude, a scrambled neighborhood
 gives a gap of $-0.0001$ with an interval of width $0.004$ around zero, so the gaps above are the graph
 being read and not the injection being large. The absolute scores make the same point from the other
 side (Table~\ref{tab:floorabs}).
@@ -1135,7 +1136,7 @@ written and committed while two rungs were still training, which is the only rea
 
 \paragraph{Do not read the rungs against each other by their own intervals.} The $\Delta$ column's
 intervals are within-rung and paired on the seed, so they are tight, and the $\delta{=}0.10$ rung's
-$+0.0041$ sits outside its neighbours' intervals on both sides. That comparison is not licensed: each
+$+0.0041$ sits outside its neighbors' intervals on both sides. That comparison is not licensed: each
 rung is a different dataset, and the quantity with the right error bars for comparing across rungs is
 the increment, whose intervals are two to four times wider and overlap one another at every rung.
 A ladder is a set of separate experiments, not a curve.
@@ -1147,7 +1148,7 @@ Appendix~\ref{app:power} put the smallest detectable effect
 at $0.0075$ \textsc{systema} on this fold at seven seeds, and the $\delta{=}0.02$ rung produced a gap of
 $+0.0088$ detected at four. The two sit close together, but the simulation runs at the frozen fold's
 between-seed spread of $0.0043$ while the ladder pairs on identical injected data and carries $0.00106$
-at that rung, four times less. The built instrument beat the modelled one because it is quieter, not
+at that rung, four times less. The built instrument beat the modeled one because it is quieter, not
 because the model was calibrated against it.
 
 \paragraph{The scrambled control carries a finding of its own.} Its increment over the zero point is
@@ -1168,12 +1169,12 @@ response SDs to a detectable contrast; it does \emph{not} say the typed encoder 
 own evidence the typed arm is the poorer detector, so its floor is plausibly higher and we did not
 measure it.
 
-Second, the injected component is the mean response of a target's PPI neighbours, which is, up to
+Second, the injected component is the mean response of a target's PPI neighbors, which is, up to
 scaling, the quantity a message-passing layer computes. The ladder therefore measures sensitivity to a
 signal shaped like the architecture's own inductive bias, the most favourable case there is. The
 scrambled control rules out the arms responding to injected magnitude regardless of the graph; it does
 not rule out the injected signal being of a form this architecture is built to find. A real graph
-effect in biology need not be a neighbour mean, and a floor measured against one does not transfer to
+effect in biology need not be a neighbor mean, and a floor measured against one does not transfer to
 one that is not.
 
 \textbf{This is one magnitude.} The damage is measured at
@@ -1337,7 +1338,7 @@ $5001$ to $10{,}282$ & $+0.0096^{\star}$ & $5/5$ & $-0.0051$ \\
 \end{table}
 
 Two cautions on reading Table~\ref{tab:bins}. First, the \emph{level} of a within-interval correlation
-is not comparable across intervals: genes are selected by the same observed response that serves as the
+is not comparable across intervals: genes are selected by the same observed response that is the
 correlation's target, so range restriction and selection on a noisy statistic both bias it. Only the
 contrast within an interval is clean, because both arms are scored on the identical genes of the
 identical rows and neither arm's prediction enters the selection. Second, the resolution of the binning

@@ -512,6 +512,54 @@ def _prose_assertions(tex):
                    f"consistency, Norman's seed signs, the ladder's 48 lanes, Frangieh's live gates)")
 
 
+@table("prose:style")
+def _prose_style(tex):
+    """The style rules this project treats as mandatory but had never gated.
+
+    The post-edit checklist has required "0 em/en dashes, 0 banned words" since the paper began, and
+    every pass has enforced it by hand. Nothing checked it. A 2026-08-26 prose pass also found the
+    paper mixing British and American spelling in 25 places while its own title says "Regularizer"
+    and its abstract "unnormalized"; "center" appeared 17 times and "centre" never, so the convention
+    was already decided and simply not followed. Hand-enforcement is how that survives.
+
+    Comments are stripped first: an AUTO note is not prose and does not render."""
+    prose = re.sub(r"(?m)^%.*$", "", tex)
+    fails = []
+
+    for ch, name in (("\u2014", "em dash"), ("\u2013", "en dash")):
+        n = prose.count(ch)
+        if n:
+            fails.append(f"prose:style {n} {name}(s) in main.tex. The house rule is zero; use a "
+                         f"period, comma, colon or parentheses.")
+
+    # Words with no defensible use here. "robust"/"harness" are deliberately absent: this paper uses
+    # "robustness report" as an artifact name and "experiment harness" as a noun, both legitimate.
+    BANNED = ["delve", "tapestry", "realm", "beacon", "multifacet", "meticulous", "paradigm shift",
+              "game.chang", "cutting-edge", "ever-evolving", "supercharge", "transformative",
+              "utiliz", "facilitat", "empower", "streamlin", "a testament", "pivotal moment"]
+    for w in BANNED:
+        if re.search(w, prose, re.I):
+            fails.append(f"prose:style banned word matching /{w}/ appears in the paper")
+
+    # The convention is American, set by the title and abstract and by center(17)/centre(0).
+    BRITISH = ["neighbour", "normalis", "localis", "labelled", "modelled", "behaviour", "centre",
+               "summaris", "analyse", "recognis"]
+    for w in BRITISH:
+        hits = re.findall(w, prose, re.I)
+        if hits:
+            fails.append(f"prose:style British spelling /{w}/ x{len(hits)}; this paper's title and "
+                         f"abstract set the American convention")
+
+    # A math subscript label is not prose: a 2026-08-26 hyphenation pass rewrote \text{redraw} to
+    # \text{re-draw} inside an equation and broke two anchors. Keep the label unhyphenated.
+    if re.search(r"\\text\{re-draw\}", prose):
+        fails.append("prose:style the variance-component subscript must stay \\text{redraw}; a "
+                     "hyphenation pass reached inside the math label once already")
+
+    return fails, ("full: em/en dashes, 18 banned words, 10 British spellings and the redraw "
+                   "subscript, over main.tex with comments stripped")
+
+
 @table("refs:attribution")
 def _refs_attribution(tex):
     """Named methods must carry a citation, and every cited key must exist.
