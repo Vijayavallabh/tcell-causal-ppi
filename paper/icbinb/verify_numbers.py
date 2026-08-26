@@ -161,7 +161,11 @@ PROSE_REGIONS = {
                  _R + "replication/pooled_k128_subset.json"],
     "sec:causes": [_R + "screening_untyped_n7/robustness_5seed.json", _R + "feature_ablation_report.json",
                    _R + "replication/pooled_with_reference.json", _R + "a2_ladder/floor.json",
-                   _R + "rationale_audit_lambda0/audit_report.json"],
+                   _R + "rationale_audit_lambda0/audit_report.json",
+                   # AUTO 2026-08-26: sec:causes now cites B1a's uncorrected p, the m=1 caveat that
+                   # App.~C insists on and the body had dropped. prose:derived checks the value; this
+                   # entry is what lets prose:all account for it in the right section.
+                   _R + "screening_b1/b1_message_form.json"],
     "app:floor": [_R + "a2_ladder/floor.json", _R + "c1_ladder/floor_condition_gated.json",
                   _R + "c1_ladder/c1_power_posthoc.json", _R + "a2_ladder/b3_power.json",
                   _R + "screening_untyped_n7/robustness_5seed.json"],
@@ -524,11 +528,11 @@ def _prose_derived(tex):
 
     def need(claim, value, context):
         """context carries {V}; we accept the paper writing it at 1 or 2 decimals."""
-        for txt in (f"{value:.3f}", f"{value:.2f}", f"{value:.1f}", f"{value:.0f}"):
+        for txt in (f"{value:.4f}", f"{value:.3f}", f"{value:.2f}", f"{value:.1f}", f"{value:.0f}"):
             if context.replace("{V}", txt) in flat:
                 return
         fails.append(f"derived {claim}: recomputed {value:.4f}; the paper does not state it in "
-                     f"context (looked for '{context.replace('{V}', f'{value:.1f}')}')")
+                     f"context (looked for '{context.replace('{V}', f'{value:.4f}')}')")
 
     need("paired sd ratio, lowest injected rung", min(ratio[k] for k in inj),
          r"is ${V}$ to $9.5\times$ the untyped")
@@ -587,9 +591,71 @@ def _prose_derived(tex):
         fails.append(f"derived K-confound table: expected 0 negatives among the five K=128 datasets "
                      f"and 1 among the three below, got {a} and {b}")
 
-    return fails, ("full: 16 cross-artifact derivations recomputed from a2_ladder/floor.json, "
-                   "c1_ladder/floor_condition_gated.json and the three pooled artifacts, each "
-                   "matched to the words around it")
+    # ---- App.~G: the nested variance decomposition, BOTH contrasts, and the level confound -------
+    vh2a = load("data/results/l4/vardecomp_h2a.json")
+    vh1 = load("data/results/l4/vardecomp_h1_vs_no_graph.json")
+    for lab, v, ctx in [
+        ("h2a sd_seed", vh2a["sd_seed"], r"{\text{seed}}={V}$ ($26$ df)"),
+        ("h2a sd_level", vh2a["sd_level"], r"{\text{level}}={V}$ ($3$ df)"),
+        ("h2a sd_redraw", vh2a["sd_redraw"], r"{\text{redraw}}={V}$ ($2$ df)"),
+        ("h1 sd_seed", vh1["sd_seed"], r"{\text{seed}}={V}$ ($22$ df)"),
+        ("h1 sd_level", vh1["sd_level"], r"{\text{level}}={V}$ ($2$ df)"),
+        ("h1 sd_redraw", vh1["sd_redraw"], r"{\text{redraw}}={V}$ ($2$ df)"),
+    ]:
+        for txt in (f"{v:.4f}", f"{v:.3f}"):
+            if ctx.replace("{V}", txt) in flat:
+                break
+        else:
+            fails.append(f"derived {lab}: recomputed {v:.4f}; not stated in context "
+                         f"'{ctx.replace('{V}', f'{v:.4f}')}'")
+    need("h1 seed-over-level ratio", vh1["sd_seed"] / vh1["sd_level"], r"by ${V}\times$ rather than three")
+    need("h1 redraw component", vh1["sd_redraw"], r"h1's re-draw component is ${V}$ against")
+    need("h2a redraw component", vh2a["sd_redraw"], r"against h2a's ${V}$, roughly eightfold")
+
+    # The confound itself: the two contrasts' re-draws are NOT at the same level. If a future rebuild
+    # ever replicates both at one level this fires, and the paragraph must stop saying "confounded".
+    def redraw_levels(v):
+        from collections import Counter
+        c = Counter(k.split("|")[0] for k in v["cells"])
+        return sorted(k for k, n in c.items() if n > 1)
+    l1, l2a = redraw_levels(vh1), redraw_levels(vh2a)
+    if not (l1 == ["0.80/0.10"] and l2a == ["0.75/0.15"]):
+        fails.append(f"derived redraw-level confound: App.~G says h1's re-draws sit at 0.80/0.10 and "
+                     f"h2a's at 0.75/0.15; the artifacts now give {l1} and {l2a}")
+
+    # ---- App.~J: the two survivals the discussion used to skip, and h1's near-miss --------------
+    am = load("data/results/a3_external/rescored.json")["across_metric"]
+    def surv(o):
+        return o.get("p_bonferroni", 1) < 0.05 and o.get("p_holm", 1) < 0.05
+    n_surv = sum(1 for o in am.values() if surv(o))
+    if f"Five of the twenty cells" not in flat or n_surv != 5:
+        fails.append(f"derived survival count: {n_surv} of {len(am)} cells survive both corrections; "
+                     f"App.~J says five of twenty")
+    ed = am["energy_distance/h2a"]
+    eb = am["energy_distance/h2b"]
+    eh1 = am["energy_distance/h1_vs_no_graph"]
+    need("energy h2a mean", abs(ed["mean"]), r"h2a ($-{V}$, Bonferroni")
+    need("energy h2a Bonferroni", ed["p_bonferroni"], r"Bonferroni ${V}$) and h2b")
+    need("energy h2b mean", eb["mean"], r"h2b ($+{V}$, Bonferroni")
+    need("energy h2b Bonferroni", eb["p_bonferroni"], r"Bonferroni ${V}$), the largest")
+    need("energy h1 raw p", eh1["p_value"], r"graph at raw $p{=}{V}$ and clears Holm")
+    need("energy h1 Holm", eh1["p_holm"], r"clears Holm at ${V}$, missing")
+    need("energy h1 Bonferroni", eh1["p_bonferroni"], r"missing Bonferroni at ${V}$")
+    if surv(eh1):
+        fails.append("derived: energy-distance h1 now survives BOTH corrections. App.~J reports it as "
+                     "a near-miss and rail 4 would fire. Re-read before editing.")
+
+    # ---- App.~B: the search's epoch budget, and App.~C's m=1 p --------------------------------
+    asb = load("data/results/a2_power/arch_search_bound.json")
+    if asb["epochs_run"] != [5]:
+        fails.append(f"derived arch-search epochs: artifact says {asb['epochs_run']}, App.~B says five")
+    b1 = load("data/results/screening_b1/b1_message_form.json")["contrasts"]["D3"]
+    need("B1a uncorrected p", b1["p_value"], r"uncorrected $p{=}{V}$")
+    need("B1a recovery share", b1["recovery_share"] * 100, r"recovers ${V}\%$ of the untyped gap")
+
+    return fails, ("full: 30 cross-artifact derivations recomputed from a2_ladder/floor.json, "
+                   "c1_ladder/floor_condition_gated.json, the pooled artifacts, both variance "
+                   "decompositions, rescored.json, arch_search_bound.json and b1_message_form.json")
 
 
 @table("prose:headline")

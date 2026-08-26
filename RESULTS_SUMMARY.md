@@ -1,3 +1,58 @@
+# *** APPENDIX DEVIL'S-ADVOCATE PASS 2026-08-26: THREE THAT MATTER ***
+
+Ten defects across the eleven appendices, all fixed. Three change what a reader should take away.
+
+**1. App. J discussed three of five surviving cells.** Five of the twenty re-scored cells clear both
+corrections. The prose covered three. The two it skipped are both on the energy distance, the endpoint
+that same appendix nominates as its distributional evidence over the E-distance:
+
+| endpoint / contrast | mean | Bonf | Holm | status |
+|---|---|---|---|---|
+| energy / h2a | -2.0102 | 0.0498 | 0.0398 | survives, was undiscussed |
+| energy / h2b | +5.3028 | 0.0092 | 0.0082 | survives, was undiscussed, largest positive in the table |
+| energy / h1 | +3.2926 | 0.0520 | 0.0398 | **clears Holm, misses Bonferroni by 0.002** |
+
+h2b clearing matters because Section 4.2 tells the reader h2b clears neither correction on SYSTEMA.
+The last row matters more: h1 is the contrast the headline null is about, it favours the graph at raw
+p=0.0026, and the sentence "h1 never favours the graph on any correlation endpoint" was scoped to
+exclude exactly the endpoint where it comes closest. Rail 4 does NOT fire (our rule needs both
+corrections and Bonferroni is 0.052) and the null is unchanged, but all three are now reported in
+App. J with the near-miss stated in our own words. A gate fires if h1 ever clears both.
+
+**2. The architecture search ran five epochs, not twenty.** `arch_search_bound.json` records
+`epochs_run: [5]`. Every lane behind a reported result runs 20. The appendix gave two reasons the
+search was uninformative (wrong shape, no power) and missed the one a reviewer reaches first: at a
+quarter of the training budget it may have ranked convergence speed. Now stated as a third objection,
+in the table caption, and in Section 2's lane description. The caption also stopped asserting "no
+normalization variant beats the default", which App. C overturns.
+
+**3. The h1 variance decomposition was on disk and unreported, and the claim it backs is confounded.**
+`l4/vardecomp_h1_vs_no_graph.json` exists. App. G asserted "partition noise is large for h1, AS THE
+FLIPPING VERDICTS ABOVE SHOW" from three point estimates while the measured components sat unused.
+
+| contrast | sd_seed | sd_level | sd_redraw | re-draws measured at |
+|---|---|---|---|---|
+| h2a | 0.0107 (26 df) | 0.0033 (3 df) | 0.0003 (2 df) | 0.75/0.15 |
+| h1 | 0.0052 (22 df) | 0.0037 (2 df) | **0.0025** (2 df) | **0.80/0.10** |
+
+Both are now quoted. The eightfold gap is real but **confounded with difficulty level**, because each
+contrast's re-draws sit at a different threshold. A gate fires if a future rebuild ever replicates both
+at one level, at which point the confound wording must go. Also corrected: "five paired seeds each" (the
+frozen-fold cell has seven, hence df_seed 26 not 24), and for h1 the seed leads the level by 1.4x, not
+the 3x quoted for h2a.
+
+**Also fixed.** "recovers 79% of it" in Section 5 read as 79% of the -0.0120 typing cost; it is 79% of
+the +0.0176 untyped gap, and the m=1 / p=0.0245 caveat App. C insists on was missing from the body.
+"Six harmonized public candidates" now marks itself as the pre-Amendment-2 build against Table 4's ten.
+"Exactly as its 9.2% coverage predicts" overstated: PINNACLE's +0.000006 is ~50x smaller than coverage
+alone explains. "It tracks validation-set size" was a causal claim off three points (chance 1 in 6).
+
+**Harness.** prose:derived grew from 16 to 30 recomputed cross-artifact quantities, now covering both
+variance decompositions, the energy-distance cells, the arch-search epoch budget and B1a's p. Every one
+of the numbers added today passed prose:all by presence before this; four planted errors were caught.
+
+---
+
 # *** DEVIL'S-ADVOCATE PASS 2026-08-26: TWO ARGUMENTS QUALIFIED, NEITHER WITHDRAWN ***
 
 A line-by-line adversarial read of the paper found twelve defects, all now fixed. Two of them

@@ -121,7 +121,7 @@ Five paired seeds share one frozen fold. Four contrasts are pre-registered and c
 \emph{both} Bonferroni and Holm \citep{holm1979}; a contrast counts only if it clears both. A benefit
 counts only if it is positive and clears both corrections at $n\geq4$ paired seeds, a bar fixed before
 any lane ran. Everything below rests on $379$ training lanes on A100 80GB cards, $2.3$ to $16.8$
-GPU-hours each, $20$ epochs at batch size $8$ ($22$ in Figure~\ref{fig:lambda}).
+GPU-hours each, $20$ epochs at batch size $8$ ($22$ in Figure~\ref{fig:lambda}, $5$ in the architecture search).
 
 \section{Proposed approach}
 \label{sec:approach}
@@ -362,9 +362,13 @@ to help but is \emph{actively harmful} ($-0.0120$, seven of seven seeds negative
 at $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0077$, which
 does \emph{not} survive correction), leaving the gated arm at $-0.0043$ against no graph at all. The
 gate is not adding signal; it is partly repairing a wound the typing inflicts, and unreliably. Which \emph{part} of the typing costs this is barely
-the typing at all: normalising each relation's messages by degree recovers $79\%$ of it, and still
-beats no graph by nothing, so the deficit is an aggregation artifact rather than a statement about
-evidence types. \textbf{Survives}, and it best explains the null. Appendix~\ref{app:causes} gives the
+% AUTO 2026-08-26: "79% of it" read as 79% of the -0.0120 typing cost stated two clauses earlier.
+% It is 79% of the +0.0176 gap to the untyped arm, as App.~\ref{app:mechanism} says. The m=1 caveat
+% that appendix insists on was also missing here.
+the typing at all: normalising each relation's messages by degree recovers $79\%$ of the untyped gap,
+at one arm and uncorrected $p{=}0.0245$, and still
+beats no graph by nothing, so the deficit looks like an aggregation artifact rather than a statement
+about evidence types. \textbf{Survives}, and it best explains the null. Appendix~\ref{app:causes} gives the
 arm-by-arm numbers.
 
 \paragraph{D. The baseline was never graph-free.} Our \textsc{expression\_only} arm turns message
@@ -539,7 +543,11 @@ is applied before aggregation, so the same physical edge can be active in one co
 
 \begin{table}[h]
 \centering
-\caption{Representative cells from the $14$-cell architecture search (inner training fold, single seed). No normalization, pruning, edge-weighting or attention variant beats the default gated encoder. ``gate'' is the mean final edge gate.}
+% AUTO 2026-08-26: this caption stated the search's conclusion as a finding, directly above the
+% paragraph explaining that the search could not resolve anything, and App.~\ref{app:mechanism} later
+% says "refuted within the searched space" was never established for normalisation. The ranking is
+% still reported; what it is not is evidence.
+\caption{Representative cells from the $14$-cell architecture search (inner training fold, single seed, and five epochs against the twenty every other lane in this paper runs). No cell outranks the default gated encoder, but the paragraph below shows the search could not resolve differences of this size, and Appendix~\ref{app:mechanism} overturns its verdict on normalisation. Read the ordering as a record of what we ran, not as a result. ``gate'' is the mean final edge gate.}
 \vspace{2pt}
 {\small
 \begin{tabular}{@{}lcc@{}}
@@ -560,7 +568,9 @@ condition\_gated, prune functional $<0.7$    & $0.0828$ & $0.30$ \\
 \end{table}
 
 % AUTO 2026-08-16: the search was also underpowered, which we can now say with a number rather than a worry.
-\paragraph{The search could not have found anything, whatever its shape.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. We ranked $14$ architectures on differences we had no power to resolve, and then reported the ranking as though it had refuted something. Anyone reading a single-seed architecture table, ours included, should ask what its rows would look like re-seeded.
+\paragraph{The search could not have found anything, whatever its shape.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. % AUTO 2026-08-26: a third objection, and the one a reader reaches first. arch_search_bound.json
+% records epochs_run=[5].
+And a third objection precedes both. Every cell ran \emph{five} epochs against the twenty every lane behind our reported results runs, so even a search of the right shape at an adequate $n$ would have been ranking these architectures a quarter of the way into training. Convergence speed and final quality are not the same ordering, and nothing here separates them. We ranked $14$ architectures on differences we had no power to resolve, at a budget that was not the one we report, and then reported the ranking as though it had refuted something. Anyone reading a single-seed architecture table, ours included, should ask what its rows would look like re-seeded.
 
 % AUTO 2026-08-18: A1 landed. Two diagnostic arms, pre-registered before they ran, 83 GPU-hours.
 \section{Which part of the typing does the damage?}
@@ -807,7 +817,9 @@ The degrees-only variant reproduces the full ablation within its interval, so th
 \paragraph{D, in full: what the ``no graph'' baseline actually contains.}
 The frozen feature vector that arm carries is graph-derived in two places: three PPI degree scalars, whose physical and functional components are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), and a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-contextualized interaction network. So the contrast we and others label ``graph versus no graph'' actually measures \emph{the marginal value of message passing over a node-level graph summary}, and the ablation is blind to that summary by construction.
 
-So the ablation the field should run is a three-way one that also strips graph-derived node features, and we ran it (Appendix~\ref{app:ablate}): zeroing them, leaving dimensionality and parameter count identical so the contrast isolates information rather than capacity, costs $-0.0036$ \textsc{systema} over five paired seeds under family-wise correction ($p=0.0005$). All of it is three degree scalars; PINNACLE alone is worth $+0.000006$, exactly as its $9.2\%$ coverage predicts.
+So the ablation the field should run is a three-way one that also strips graph-derived node features, and we ran it (Appendix~\ref{app:ablate}): zeroing them, leaving dimensionality and parameter count identical so the contrast isolates information rather than capacity, costs $-0.0036$ \textsc{systema} over five paired seeds under family-wise correction ($p=0.0005$). All of it is three degree scalars; % AUTO 2026-08-26: coverage predicts a REDUCED effect, not this one. At 9.2% coverage against the
+% degrees' 0.0035 you would expect order 1e-4; the measured value is fifty times smaller still.
+PINNACLE alone is worth $+0.000006$, which is far less even than its $9.2\%$ coverage would predict: nine percent of the degree scalars' effect would be of order $10^{-4}$, and this is fifty times smaller than that. Thin coverage is part of it, and the rest is that the embedding carries almost nothing usable on the rows where it does resolve.
 
 A three-number summary of the network outweighs the topology built on top of it. We do not claim degree is a good predictor in absolute terms; $0.0036$ against a baseline of $0.0857$ is about four percent, and it clears correction largely because the no-graph arm is our lowest-variance one. The claim is comparative and it is about experimental design: what that ablation discards outweighs what it measures. The experiment costs under six GPU-hours, which is the other reason to run it rather than flag it as future work, as an earlier draft of this paper did.
 
@@ -817,8 +829,12 @@ A three-number summary of the network outweighs the topology built on top of it.
 % AUTO 2026-08-19: moved here from Limitations for the page budget; content unchanged.
 % AUTO 2026-08-26: this opened with the same seven words as App.~\ref{app:repl}. That section
 % establishes the pre-registration; this one is about the clause that froze a mistake.
-\paragraph{The rule, and what it cost.} We built differential-expression matrices for six harmonized
-public candidates \citep{peidli2024scperturb}. The
+% AUTO 2026-08-26: six is the pre-Amendment-2 build; Table~\ref{tab:repl} reports ten under the
+% corrected rule. Both are right for their own moment and nothing said so.
+\paragraph{The rule, and what it cost.} Under the original rule, before the amendment this section is
+about, we built differential-expression matrices for six harmonized
+public candidates \citep{peidli2024scperturb}; the corrected rule later built ten
+(Table~\ref{tab:repl}). The
 pre-registration fixed the differential-expression unit as ``two or more replicate pseudobulks per
 (target, condition)'' at a $25$-cell floor, and specified that a dataset unable to meet it is dropped
 rather than switched to a different test. Four candidates fell out. The clause did what such clauses
@@ -851,14 +867,24 @@ against how the reference data were themselves constructed, before the rule is f
 
 A third fold at an intermediate threshold gives the same corrected verdict everywhere (Table~\ref{tab:folds}); Appendix~\ref{app:power} records why we decline to read a difficulty trend into the point estimates.
 
-We then measured why, and the answer is that these are not three difficulty levels. Holding threshold and cap fixed at the intermediate setting and varying only the partition seed, three realizations of the \emph{same} split specification give median train-to-sequestered-split cosines of $0.759$, $0.793$ and $0.862$. That is a spread of $0.103$ from partition noise alone, against $0.056$ for the entire designed range across all three thresholds ($0.796$ to $0.741$): \textbf{redrawing one split moves the difficulty statistic almost twice as far as deliberately changing the threshold does}, and the third redraw is \emph{easier} than the frozen fold it was supposed to sit below. The realizations also differ structurally, sharing only $20\%$ of their validation targets and differing twofold in validation size, and the no-graph baseline moves with them: at five paired seeds per re-draw it scores $0.0991$, $0.0942$ and $0.0845$ \textsc{systema}, a $0.0146$ spread on our most stable arm, larger than either effect in Table~\ref{tab:folds}. It does not track the cosine statistic either, since the nominally hardest re-draw scores highest; it tracks validation-set size, which the re-draws moved from $3{,}632$ to $7{,}216$ unbidden.
+We then measured why, and the answer is that these are not three difficulty levels. Holding threshold and cap fixed at the intermediate setting and varying only the partition seed, three realizations of the \emph{same} split specification give median train-to-sequestered-split cosines of $0.759$, $0.793$ and $0.862$. That is a spread of $0.103$ from partition noise alone, against $0.056$ for the entire designed range across all three thresholds ($0.796$ to $0.741$): \textbf{redrawing one split moves the difficulty statistic almost twice as far as deliberately changing the threshold does}, and the third redraw is \emph{easier} than the frozen fold it was supposed to sit below. The realizations also differ structurally, sharing only $20\%$ of their validation targets and differing twofold in validation size, and the no-graph baseline moves with them: at five paired seeds per re-draw it scores $0.0991$, $0.0942$ and $0.0845$ \textsc{systema}, a $0.0146$ spread on our most stable arm, larger than either effect in Table~\ref{tab:folds}. % AUTO 2026-08-26: "it tracks validation-set size" was a causal claim off three points, where a
+% perfect rank match arises by chance one time in six. Stated as the association it is.
+It does not track the cosine statistic either, since the nominally hardest re-draw scores highest. It orders with validation-set size, which the re-draws moved from $3{,}632$ to $7{,}216$ unbidden, though with three re-draws that ordering would arise by chance one time in six and we offer it as the more plausible reading rather than a measured relationship.
 
 The contrast itself moves too, and this is the part we would most want from someone else's paper. Running the graph-versus-no-graph comparison on all three re-draws at five paired seeds each gives h1 $=+0.0082$ (uncorrected $95\%$ CI $[+0.0017,+0.0148]$, $p=0.025$), $+0.0026$ ($[+0.0005,+0.0047]$, $p=0.027$) and $+0.0021$ ($[-0.0024,+0.0065]$, $p=0.266$). Same experiment, same specification, same five seeds, differing only in how the partition was drawn: the estimate spans fourfold and \emph{the qualitative verdict flips}. Two re-draws give an interval excluding zero at $p\approx0.03$; the third does not. An author who drew the first would report an apparent graph benefit, one who drew the third would report nothing, and neither would be wrong. What survives all three is the sign and the correction, since none clears Bonferroni over the pre-registered family of four ($0.101$, $0.109$, $1.000$). That is why we let the corrected verdict carry the paper and treat the uncorrected intervals as the cautionary exhibit rather than the result.
 
 The consequence is not that our contrasts are wrong, since each is paired within its own split, but that the \emph{ordering} in Table~\ref{tab:folds} carries far less information than three rows suggest. We therefore explicitly do \textbf{not} claim a dose-response in OOD difficulty, and we suggest the same caution for any single-realization split sweep: a threshold knob that appears to control difficulty may be moving it less than the seed does. Establishing a difficulty effect requires several realizations per level, so that between-level differences can be read against the within-level spread.
 
 % AUTO 2026-08-16: the design recommended above has now been run; hedge replaced by measurement.
-\paragraph{We then ran that design.} Three re-draws at $0.75/0.15$ and a fourth difficulty level at $0.70/0.05$, five paired seeds each, give six cells over four levels and let the nested variance be split three ways: between level, between re-draws within a level, and between seeds within a re-draw. For h2a the components are $\mathrm{sd}_{\text{seed}}=0.0107$ ($26$ df), $\mathrm{sd}_{\text{level}}=0.0033$ ($3$ df) and $\mathrm{sd}_{\text{redraw}}=0.0003$ ($2$ df). Three things follow. Partition noise is \emph{contrast-dependent}: it is large for h1, as the flipping verdicts above show, and negligible for h2a. A difficulty effect on h2a is therefore real and roughly an order of magnitude above re-draw noise, but with $2$ to $3$ df on those components that ratio is indicative, not a number to quote. And the term that dominates both contrasts is neither of them: \textbf{the training seed moves h2a about three times as far as the difficulty setting does}, and it is the only component here with enough degrees of freedom to be estimated precisely. A split sweep read off single-seed runs is measuring the seed.
+% AUTO 2026-08-26: three corrections. (a) "five paired seeds each" is wrong for one of the six cells,
+% the frozen fold, which has seven; that is why df_seed is 26 and not 24. (b) "partition noise is large
+% for h1, AS THE FLIPPING VERDICTS ABOVE SHOW" inferred a variance component from three point
+% estimates while the measured decomposition sat unused in vardecomp_h1_vs_no_graph.json. It is now
+% quoted. (c) It is also confounded, because the two contrasts' re-draws are at different levels, and
+% the paper attributed the difference to the contrast without noticing.
+\paragraph{We then ran that design.} Three re-draws at $0.75/0.15$ and a fourth difficulty level at $0.70/0.05$, five paired seeds each except the frozen fold's seven, give six cells over four levels and let the nested variance be split three ways: between level, between re-draws within a level, and between seeds within a re-draw. For h2a the components are $\mathrm{sd}_{\text{seed}}=0.0107$ ($26$ df), $\mathrm{sd}_{\text{level}}=0.0033$ ($3$ df) and $\mathrm{sd}_{\text{redraw}}=0.0003$ ($2$ df). We ran the same decomposition for h1, over five cells at three levels: $\mathrm{sd}_{\text{seed}}=0.0052$ ($22$ df), $\mathrm{sd}_{\text{level}}=0.0037$ ($2$ df) and $\mathrm{sd}_{\text{redraw}}=0.0025$ ($2$ df). Three things follow, and a caveat governs the first.
+
+Partition noise looks \emph{contrast-dependent}: h1's re-draw component is $0.0025$ against h2a's $0.0003$, roughly eightfold, which is what the flipping verdicts above suggested and what we previously asserted from those verdicts alone. The caveat is that the two estimates are not measured on the same partitions. h1's three re-draws sit at the intermediate $0.80/0.10$ setting and h2a's at the harder $0.75/0.15$, because those are the levels at which each contrast's arms were replicated, so the eightfold difference is confounded with difficulty level and we cannot separate the two. It may be the contrast; it may be the level. Second, a difficulty effect on h2a sits roughly an order of magnitude above re-draw noise, but with $2$ to $3$ df on those components we report the ratio as indicative and do not call it established. And the term that dominates both contrasts is neither of them: \textbf{the training seed moves h2a about three times as far as the difficulty setting does}, and it is the only component here with enough degrees of freedom to be estimated precisely. For h1 the seed still leads, but by $1.4\times$ rather than three, so even that ordering is contrast-dependent. A split sweep read off single-seed runs is measuring the seed.
 
 
 
@@ -1175,6 +1201,23 @@ everywhere, and h1 never favours the graph on any correlation endpoint. What doe
 with other endpoints is the \emph{untyped} result. On the row that asks whether any graph beats no
 graph, TxPert's endpoint says yes and \textsc{gears}' says no, both at $p<0.005$ after correcting over
 all twenty cells.
+
+% AUTO 2026-08-26: the paragraph above discussed three of the five surviving cells, and the two it
+% skipped are both on the endpoint this appendix nominates as its distributional evidence. Scoping a
+% sentence to the endpoints where the claim holds is the look-elsewhere move this appendix opens by
+% condemning, so the other two are reported here with the near-miss that sits beside them.
+\paragraph{The two survivals the paragraph above skips, and one near-miss.} Five of the twenty cells
+survive both corrections and the sentences above discuss three. The other two are the energy distance's
+h2a ($-2.010$, Bonferroni $0.050$) and h2b ($+5.303$, Bonferroni $0.009$), the largest surviving
+positive anywhere in the table, on the endpoint we nominated above as the distributional evidence in
+preference to the E-distance. h2b clearing there is worth stating plainly because \S\ref{sec:null}
+reports it clearing neither correction on \textsc{systema}: the gate's repair of the typing wound is
+endpoint-dependent in the same way the untyped result is. Beside them sits a near-miss we would rather
+a reader heard from us. On that same endpoint h1, the contrast our headline null is about, favours the
+graph at raw $p{=}0.0026$ and clears Holm at $0.0398$, missing Bonferroni at $0.0520$. It therefore
+does not survive our rule, which requires both, and we do not count it. But ``h1 never favours the
+graph on any correlation endpoint'' is a sentence whose scope is doing work, and the endpoint it
+excludes is the one where h1 comes closest to clearing in the graph's favour.
 
 \paragraph{Where the sign flips, measured rather than asserted.} Those two endpoints are the same
 statistic over different gene sets, so the disagreement has a location. Sweeping the size of the scored
