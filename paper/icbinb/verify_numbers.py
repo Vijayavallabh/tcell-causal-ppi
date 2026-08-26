@@ -140,6 +140,74 @@ _CONTRAST_OF = {("typed_static", "expression_only"): "h2a",
                 ("condition_gated", "expression_only"): "h1_vs_no_graph"}
 
 
+@table("prose:headline")
+def _prose_headline(tex):
+    """The load-bearing numbers that live in PROSE, not in any table.
+
+    WHY THIS EXISTS. 329 of the paper's numeric literals sit in tables and every one is re-derived by
+    the checks below. About 570 sit in prose, and until 2026-08-26 exactly TWO of those were checked
+    against an artifact. The rest were guarded by the literal inventory alone, which catches a number
+    that CHANGES during an edit and passes one that was WRONG when it was snapshotted. That gap was
+    not hypothetical: the paper reported Holm 0.021 where screening_untyped_n7 gives 0.02046976.
+
+    EACH CLAIM IS ANCHORED TO THE WORDS AROUND IT, and the first version of this check was not. It
+    asserted only that the artifact value appeared SOMEWHERE in the paper, which is too weak when the
+    value is common: re-introducing the Holm error deliberately did NOT trip it, because 0.020 also
+    appears as a Bonferroni entry in another table. A guard that cannot fail proves nothing.
+
+    The contexts are plain strings rather than regexes, matched against a whitespace-normalised copy
+    of the source so a line wrap between the words and the value cannot cause a false failure.
+
+    KNOWN LIMIT, stated rather than left to be discovered. Where a claim's context occurs more than
+    once and only ONE occurrence is corrupted, the surviving correct one still satisfies the check.
+    The literal INVENTORY covers that case, because it counts occurrences and a changed digit shows
+    up as one dropped and one introduced. The two checks are complementary and neither is sufficient
+    alone. Verified by planting five errors, one per claim shape: all five fire."""
+    flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
+    L = load("data/results/screening_lambda0/robustness_5seed.json")["contrasts"]
+    N7 = load("data/results/screening_untyped_n7/robustness_5seed.json")["contrasts"]
+    P8 = load("data/results/replication/pooled_with_reference.json")
+    P7 = load("data/results/replication/pooled.json")["pooled"]["h2a"]
+    FL = load("data/results/a2_ladder/floor.json")
+    FA = load("data/results/feature_ablation_report.json")
+    HD = load("data/results/screening_c075c15_n5/robustness_5seed.json")["contrasts"]
+    pm = N7["promotion_margin"]
+    ng = next(v for v in FA if v["variant"] == "nograph")
+    pd8 = P8["per_dataset"]["promotion_margin"]
+    p8 = P8["pooled"]["promotion_margin"]
+
+    def f4(x):
+        return f"{x:+.4f}"
+
+    # (what, context with {v} where the artifact value belongs, artifact value)
+    claims = [
+        ("h1 headline",        "systema}={v}$",                 f4(L["h1_vs_no_graph"]["mean"])),
+        ("h2a frozen fold",    "worse by ${v}$",                f4(L["h2a"]["mean"])),
+        ("untyped n=7 mean",   "${v}$ \\textsc{systema} at $n{=}7$", f4(pm["mean"])),
+        ("untyped Bonferroni", "Bonferroni ${v}$ and Holm",     f"{pm['p_bonferroni']:.3f}"),
+        ("untyped Holm",       "and Holm ${v}$",                f"{pm['p_holm']:.3f}"),
+        ("n=7 h2a",            "harmful} (${v}$",               f4(N7["h2a"]["mean"])),
+        ("n=7 h2b",            "(${v}$, which",                 f4(N7["h2b"]["mean"])),
+        ("Replogle RPE1",      "RPE1 (${v}$)",                  f4(pd8["ReplogleWeissman2022_rpe1"]["mean"])),
+        ("Norman",             "Norman (${v}$)",                f4(pd8["NormanWeissman2019_filtered"]["mean"])),
+        ("pooled RE",          "give ${v}$",                    f4(p8["random_effect"])),
+        ("pooled I^2",         "I^2{=}{v}\\%",                  f"{p8['I2'] * 100:.1f}"),
+        ("typed pooled RE",    "worth ${v}$",                   f4(P7["random_effect"])),
+        ("three-way ablation", "costs ${v}$",                   f4(ng["mean"])),
+        ("ablation corrected", "corrected $p={v}$",             f"{ng['p_bonf']:.4f}"),
+        ("harder-split h2a",   "to ${v}$ ($p=",                 f4(HD["h2a"]["mean"])),
+        ("measured floor",     "at ${v}$ response SDs",         f"{FL['floor']:.2f}"),
+    ]
+    fails = []
+    for what, tmpl, val in claims:
+        ctx = tmpl.replace("{v}", val)
+        if ctx not in flat:
+            fails.append(f"prose {what}: the artifact gives {val}, and the paper does not state it in "
+                         f"context (looked for {ctx!r})")
+    return fails, (f"full: {len(claims)} load-bearing prose claims re-derived from 7 artifacts, each "
+                   f"anchored to its surrounding words")
+
+
 @table("tab:family")
 def _family(tex):
     """The headline five-seed family.
