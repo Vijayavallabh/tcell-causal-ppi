@@ -1,3 +1,53 @@
+# *** TABLES AND FIGURES DEVIL'S-ADVOCATE PASS 2026-08-26 ***
+
+Twelve defects across fourteen tables and two figures. Mostly presentation, but three of them meant
+a reader could not reach or could not read the evidence.
+
+**Five tables were never cross-referenced, and one of them was the C1 result.** tab:floor,
+tab:floorabs, **tab:floorgated**, tab:mechanism and tab:metrics carried labels nothing pointed at.
+LaTeX warns about undefined references and never about unused labels, so the "0 undefined" gate is
+blind to this by construction. With [h]/[htbp] placement a float that drifts leaves the reader no
+pointer at all. All five are referenced now; the paper has Tables 1 to 14 and every one is cited.
+
+**Two tables were not tables.** The three-way feature ablation, cause D's central evidence, was a
+bare center+tabular: no caption, no number, no label. The architecture search had a caption but no
+\label. Both are proper table environments now (tab:ablate, tab:archsearch), each with a caption
+that says what the columns mean.
+
+**Figure 2 is a single-seed sweep and never said so.** Nine runs, nine lambda values, one seed each.
+This in a paper whose App. B now tells readers to ask what a single-seed table looks like re-seeded,
+and whose checklist item 10 makes the same point. The caption states n=1 now, and App. B carries the
+argument for why one seed is enough there and not for the architecture search: the gate collapse
+spans seven orders of magnitude against a seed spread that never exceeds a factor of two, while the
+search resolves 0.0089 against a seed spread of 0.0043. The test is whether the effect clears its own
+noise by a margin re-seeding cannot close.
+
+**tab:family's FWER column did not mean what its caption said.** The caption defined it as whether a
+contrast survives both corrections. The column read worse / no / no / **parity**. Three contrasts
+fail to survive; two got a bare "no" and the headline row got "parity", an interpretation, in the
+column defined as a survival indicator. It now reads "no", with the caption stating that failing to
+survive is not evidence of equivalence and that the parity claim rests on the interval. Its CIs also
+moved from 3 decimals to the 4 every other table uses, so h1's interval no longer appears as
+[-0.007,+0.005] here and [-0.0072,+0.0054] in tab:folds.
+
+**Also fixed.** tab:floor2's verdict column had no header. tab:metrics put five endpoints on three
+incompatible scales with no units; the caption now says so outright and warns against reading across
+columns. tab:repl's caption described a replicate-unit column the table does not have, and left "n/a"
+undefined. tab:folds now says why h2a gets a point estimate and no interval. fig:arch's 99-character
+caption became one that lets the figure stand alone. tab:bins now names its two omitted contrasts.
+
+**One near-miss worth recording.** Writing the tab:bins caption I claimed h2b and h1 "star nowhere".
+The artifact says h2b stars nowhere but **h1 stars once**, in the top-20 bin at -0.0454 (Bonferroni
+0.044), the same genes where the untyped arm takes its deficit. Caught by checking before shipping.
+That claim is now gated both numerically and as wording, so the same sentence cannot drift back.
+
+**Harness.** prose:derived is at 36 recomputed quantities. New this round: Figure 2's lambda=0 gate
+and a structural assertion that the sweep is still one run per point, the pre-repair h1 the moved
+paragraph brought into App. H, and tab:bins's omitted-column counts checked as numbers AND as wording.
+Six planted errors caught.
+
+---
+
 # *** APPENDIX DEVIL'S-ADVOCATE PASS 2026-08-26: THREE THAT MATTER ***
 
 Ten defects across the eleven appendices, all fixed. Three change what a reader should take away.

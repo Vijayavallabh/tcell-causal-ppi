@@ -166,10 +166,15 @@ PROSE_REGIONS = {
                    # App.~C insists on and the body had dropped. prose:derived checks the value; this
                    # entry is what lets prose:all account for it in the right section.
                    _R + "screening_b1/b1_message_form.json"],
+    # AUTO 2026-08-26: App.~B now argues about Figure 2's sweep, and App.~H received the
+    # "repair does not manufacture the null" paragraph, which cites the CONFOUNDED root.
     "app:floor": [_R + "a2_ladder/floor.json", _R + "c1_ladder/floor_condition_gated.json",
                   _R + "c1_ladder/c1_power_posthoc.json", _R + "a2_ladder/b3_power.json",
                   _R + "screening_untyped_n7/robustness_5seed.json"],
-    "app:power": [_R + "a2_power/power_simulation.json", _R + "l4/vardecomp_h2a.json",
+    # AUTO 2026-08-26: App.~H received the "repair does not manufacture the null" paragraph,
+    # which cites the pre-repair (CONFOUNDED) root; prose:derived checks the value itself.
+    "app:power": [_R + "screening/robustness_5seed.json",
+                  _R + "a2_power/power_simulation.json", _R + "l4/vardecomp_h2a.json",
                   _R + "l4/vardecomp_h1_vs_no_graph.json", _R + "a2_power/arch_search_bound.json",
                   _R + "screening_lambda0/robustness_5seed.json",
                   _R + "screening_c075c15_n5/robustness_5seed.json",
@@ -196,7 +201,9 @@ PROSE_REGIONS = {
     "sec:limits": [_R + "screening_lambda0/robustness_5seed.json", _R + "a2_ladder/floor.json",
                    _R + "c1_ladder/floor_condition_gated.json"],
     "app:arch": [_R + "screening_lambda0/robustness_5seed.json", _R + "feature_ablation_report.json"],
-    "app:archsearch": [_R + "a2_power/arch_search_bound.json"] +
+    # AUTO 2026-08-26: App.~B now argues about Figure 2's sweep as well as its own table.
+    "app:archsearch": [_R + "a2_power/arch_search_bound.json",
+                       "data/results/q4_lambda_sweep_22ep.json"] +
                       sorted(str(q.relative_to(ROOT)) for q in (ROOT / "data/results/arch_search").glob("*.json")),
     "app:repl": [_R + "replication/pooled_with_reference.json", _R + "replication/pooled.json",
                  _R + "replication/pooled_k128_subset.json",
@@ -645,6 +652,44 @@ def _prose_derived(tex):
         fails.append("derived: energy-distance h1 now survives BOTH corrections. App.~J reports it as "
                      "a near-miss and rail 4 would fire. Re-read before editing.")
 
+    # ---- tab:bins: the caption now claims h2b stars nowhere and h1 in exactly one interval -----
+    head = load("data/results/b2_deciles/deciles.json")["schemes"]["head"]
+    def stars(contrast):
+        # cells are keyed "<interval>/<contrast>", flat, not nested
+        out = []
+        for key, o in head["cells"].items():
+            iv, _, c = key.rpartition("/")
+            if c != contrast or not isinstance(o, dict):
+                continue
+            if o.get("survives_family_wise", o.get("p_bonferroni", 1) < 0.05
+                     and o.get("p_holm", 1) < 0.05):
+                out.append((iv, o))
+        return out
+    s_h2b, s_h1 = stars("h2b"), stars("h1_vs_no_graph")
+    if len(s_h2b) != 0 or len(s_h1) != 1 or s_h1[0][0] != "1-20":
+        fails.append(f"derived tab:bins omitted columns: the caption says h2b stars nowhere and h1 in "
+                     f"exactly the 1-20 bin; artifacts give h2b {len(s_h2b)} and h1 "
+                     f"{[i for i, _ in s_h1]}")
+    else:
+        need("h1 star in the top-20 bin", s_h1[0][1]["mean"], r"bin, at ${V}$ (Bonferroni")
+        need("that bin's Bonferroni", s_h1[0][1]["p_bonferroni"], r"(Bonferroni ${V}$), the same genes")
+        # the caption's WORDED counts, which no numeric check can reach
+        for phrase, claim in [("h2b, which stars in no interval", "h2b stars nowhere"),
+                              ("h1, which stars in exactly one", "h1 stars in exactly one interval")]:
+            if phrase not in flat:
+                fails.append(f"derived tab:bins wording: the artifacts support '{claim}' but the "
+                             f"caption no longer says it (looked for '{phrase}')")
+
+    # ---- App.~B's single-seed argument, and App.~H's pre-repair headline ----------------------
+    sweep = load("data/results/q4_lambda_sweep_22ep.json")
+    z = [r for r in sweep["runs"] if r["lambda_graph"] == 0][0]["trajectory"][-1]
+    need("live gate at lambda=0 in the sweep", z["val_gate"], r"from ${V}$ to $\sim$$10^{-7}$")
+    if len(sweep["runs"]) != len({r["lambda_graph"] for r in sweep["runs"]}):
+        fails.append("derived: the lambda sweep now has more than one run per point, so Figure 2's "
+                     "caption must stop saying 'one run at one seed'")
+    pre = load("data/results/screening/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]["mean"]
+    need("pre-repair h1", abs(pre), r"headline from $-{V}$ to $-0.0009$")
+
     # ---- App.~B: the search's epoch budget, and App.~C's m=1 p --------------------------------
     asb = load("data/results/a2_power/arch_search_bound.json")
     if asb["epochs_run"] != [5]:
@@ -653,7 +698,7 @@ def _prose_derived(tex):
     need("B1a uncorrected p", b1["p_value"], r"uncorrected $p{=}{V}$")
     need("B1a recovery share", b1["recovery_share"] * 100, r"recovers ${V}\%$ of the untyped gap")
 
-    return fails, ("full: 30 cross-artifact derivations recomputed from a2_ladder/floor.json, "
+    return fails, ("full: 36 cross-artifact derivations recomputed from a2_ladder/floor.json, "
                    "c1_ladder/floor_condition_gated.json, the pooled artifacts, both variance "
                    "decompositions, rescored.json, arch_search_bound.json and b1_message_form.json")
 

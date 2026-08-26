@@ -196,7 +196,7 @@ means anything.
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.82\linewidth]{lambda_sweep.pdf}
-\caption{The default edge-sparsity weight silently disables the graph. Each point trains a fresh evidence-gated arm for twenty-two epochs on the blocked-target-OOD split and reports the mean edge gate (left, log scale) and the fraction of gates below the dead threshold (right). At $\lambda_{\mathrm{graph}}{=}0$ the gates stay live; a penalty of only $10^{-5}$ already sends the mean gate below $10^{-3}$; the default $10^{-2}$ drives it to $\sim$$10^{-6}$, and the full-data campaign reaches $\sim$$10^{-7}$ at that default.}
+\caption{The default edge-sparsity weight silently disables the graph. Each point is \emph{one} run at one seed, twenty-two epochs on the blocked-target-OOD split, reporting the mean edge gate (left, log scale) and the fraction below the dead threshold (right). On why one seed is enough for this particular figure, see Appendix~\ref{app:archsearch}. At $\lambda_{\mathrm{graph}}{=}0$ the gates stay live; a penalty of only $10^{-5}$ already sends the mean gate below $10^{-3}$; the default $10^{-2}$ drives it to $\sim$$10^{-6}$, and the full-data campaign reaches $\sim$$10^{-7}$ at that default.}
 \label{fig:lambda}
 \end{figure}
 
@@ -207,7 +207,7 @@ Table~\ref{tab:family} reports the corrected five-seed comparison on live gates.
 
 \begin{table}[htbp]
 \centering
-\caption{Corrected five-seed paired comparison, live gates, biologically blocked target-OOD fold. Arms: eo (expression\_only), cg (condition\_gated), ts (typed\_static), ug (untyped\_gnn). ``FWER'' marks whether a contrast survives \emph{both} Bonferroni and Holm at $\alpha{=}0.05$ over the four simultaneous tests. $\Delta_{\textsc{pear}}$ is the same contrast under program-space Pearson-delta.}
+\caption{Corrected five-seed paired comparison, live gates, biologically blocked target-OOD fold. Arms: eo (expression\_only), cg (condition\_gated), ts (typed\_static), ug (untyped\_gnn). ``FWER'' marks whether a contrast survives \emph{both} Bonferroni and Holm at $\alpha{=}0.05$ over the four simultaneous tests. Failing to survive is not evidence of equivalence: the bold row's parity claim rests on its interval, not on its \emph{no}. $\Delta_{\textsc{pear}}$ is the same contrast under program-space Pearson-delta.}
 \label{tab:family}
 \vspace{2pt}
 {\small
@@ -215,19 +215,15 @@ Table~\ref{tab:family} reports the corrected five-seed comparison on live gates.
 \toprule
 Contrast & $\Delta_{\textsc{sys}}$ & $95\%$ CI & FWER & $\Delta_{\textsc{pear}}$ \\
 \midrule
-ts $-$ eo & $-0.0131$ & $[-0.019,-0.007]$ & \textbf{worse} & $-0.0067$ \\
-cg $-$ ts & $+0.0122$ & $[+0.003,+0.022]$ & no & $+0.0062$ \\
-ug $-$ eo & $+0.0045$ & $[+0.001,+0.008]$ & no & $+0.0023$ \\
-\textbf{cg $-$ eo} & $\mathbf{-0.0009}$ & $\mathbf{[-0.007,+0.005]}$ & \textbf{parity} & $\mathbf{-0.0005}$ \\
+ts $-$ eo & $-0.0131$ & $[-0.0190,-0.0072]$ & \textbf{worse} & $-0.0067$ \\
+cg $-$ ts & $+0.0122$ & $[+0.0028,+0.0215]$ & no & $+0.0062$ \\
+ug $-$ eo & $+0.0045$ & $[+0.0011,+0.0079]$ & no & $+0.0023$ \\
+\textbf{cg $-$ eo} & $\mathbf{-0.0009}$ & $\mathbf{[-0.0072,+0.0054]}$ & \textbf{no} & $\mathbf{-0.0005}$ \\
 \midrule
 \multicolumn{5}{@{}l@{}}{\emph{Per-arm} mean \textsc{systema} ($n{=}5$): ug $0.0902$, eo $0.0857$, cg $0.0848$, ts $0.0726$}\\
 \bottomrule
 \end{tabular}}
 \end{table}
-
-\paragraph{The repair does not manufacture the null.} Repairing a $4.5\times10^{6}$ swing in gate
-magnitude moved the headline from $-0.0019$ to $-0.0009$, changing no conclusion
-(Appendix~\ref{app:power}).
 
 \paragraph{The null survives a second metric, a harder split and a third fold.} Re-scored under
 program-space Pearson-delta, which does not subtract the training mean, both conclusions hold: parity
@@ -534,13 +530,23 @@ is applied before aggregation, so the same physical edge can be active in one co
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{eg_ipg_architecture.pdf}
-\caption{EG-IPG. The boxed edge-sparsity term is the locus of the confound analyzed in \S\ref{sec:confound}.}
+% AUTO 2026-08-26: this caption named only the boxed term, so the figure could not stand alone.
+\caption{EG-IPG, and where it breaks. Left to right: the perturbation and context encoder fuses the
+target's frozen features (ESM-2, PINNACLE, three PPI degrees, control baseline expression) with
+condition and donor context into $h_{\mathrm{do}}$; the typed evidence-gated graph encoder runs three
+relational message-passing layers over a sampled $2$-hop neighbourhood, each edge scaled by the
+condition gate of Eq.~\ref{eq:gate}; a cross-attention readout pools nodes into $h_{\mathrm{graph}}$;
+and the decoder mixes a graph-derived program delta with a parallel expression-only prediction through
+a learned $\gamma$, so $\gamma{=}0$ recovers the \textsc{expression\_only} arm exactly. The boxed
+edge-sparsity term is Eq.~\ref{eq:graphloss} and the locus of the confound analyzed in
+\S\ref{sec:confound}: it acts on the gate, which is the only thing separating the four arms.}
 \label{fig:arch}
 \end{figure}
 
 \section{Architecture search}
 \label{app:archsearch}
 
+% AUTO 2026-08-26: this table had no \label, so nothing could reference it.
 \begin{table}[h]
 \centering
 % AUTO 2026-08-26: this caption stated the search's conclusion as a finding, directly above the
@@ -565,12 +571,25 @@ expression\_only (no graph)                  & $0.0862$ & n/a \\
 condition\_gated, prune functional $<0.7$    & $0.0828$ & $0.30$ \\
 \bottomrule
 \end{tabular}}
+\label{tab:archsearch}
 \end{table}
 
 % AUTO 2026-08-16: the search was also underpowered, which we can now say with a number rather than a worry.
-\paragraph{The search could not have found anything, whatever its shape.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. % AUTO 2026-08-26: a third objection, and the one a reader reaches first. arch_search_bound.json
+\paragraph{The search could not have found anything, whatever its shape.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search in Table~\ref{tab:archsearch} excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. % AUTO 2026-08-26: a third objection, and the one a reader reaches first. arch_search_bound.json
 % records epochs_run=[5].
 And a third objection precedes both. Every cell ran \emph{five} epochs against the twenty every lane behind our reported results runs, so even a search of the right shape at an adequate $n$ would have been ranking these architectures a quarter of the way into training. Convergence speed and final quality are not the same ordering, and nothing here separates them. We ranked $14$ architectures on differences we had no power to resolve, at a budget that was not the one we report, and then reported the ranking as though it had refuted something. Anyone reading a single-seed architecture table, ours included, should ask what its rows would look like re-seeded.
+
+% AUTO 2026-08-26: MOVED here from Figure~\ref{fig:lambda}'s caption for the page budget (rail 3).
+% The caption keeps the fact that the sweep is single-seed; this is why we accept it there and not here.
+\paragraph{Why Figure~\ref{fig:lambda} is allowed to be single-seed and this table is not.} The
+$\lambda$ sweep behind Figure~\ref{fig:lambda} is also one run per point, so the objection above
+applies to it on its face. We accept it there for a reason that does not transfer here. That figure
+measures a gate collapsing across seven orders of magnitude, from $0.76$ to $\sim$$10^{-7}$, and the
+largest seed-to-seed spread we measure anywhere in this paper is a factor of two on a quantity of order
+$10^{-2}$. No amount of re-seeding turns that into the observed curve. The architecture search, by
+contrast, is resolving differences of $0.0089$ against a seed spread of $0.0043$, which is precisely
+the regime where one seed decides the ranking. The test is not whether a sweep is single-seed but
+whether its effect clears its own noise by a margin re-seeding cannot close, and only one of ours does.
 
 % AUTO 2026-08-18: A1 landed. Two diagnostic arms, pre-registered before they ran, 83 GPU-hours.
 \section{Which part of the typing does the damage?}
@@ -580,7 +599,7 @@ And a third objection precedes both. Every cell ran \emph{five} epochs against t
 seven seeds, surviving both corrections. It does not say what about typing costs that. Two explanations
 are confounded inside the number. The relation partition may be the wrong inductive bias; or typed
 message passing simply carries four times the message parameters over the same edges, in which case the
-damage is capacity and has nothing to do with evidence types. Two arms separate them, both registered
+damage is capacity and has nothing to do with evidence types. Two arms separate them (Table~\ref{tab:mechanism}), both registered
 with their decision rule before either was trained.
 
 \textsc{typed\_shared} ties one message module across all four relations instead of one each, cutting
@@ -700,7 +719,7 @@ knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.613$, $90\%$
 % Datlinger 6), so it marked Replogle "dropped" while the results section two paragraphs below trains
 % three Replogle datasets and pools them. Rebuilt from the DE_stats_v2 artifacts, and the K column
 % added because Amendment 3.1 requires every K deviation to be labelled wherever it appears.
-\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells per (target, condition) against pooled same-condition controls). Ten were built, eight passed on-target quality control, and seven were trained. Papalexi passes QC but falls below the $50$-group target-axis floor, so it is barred from any headline or pooled estimate. Only Frangieh carries more than one condition, so it is the only dataset that can test h1. $K$ is the program-basis dimension fixed by Amendment 3.1; any $K{\ne}128$ is a labelled deviation from the reference architecture. Replicate units are pinned per dataset in the pre-registration.}
+\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells per (target, condition) against pooled same-condition controls). Ten were built, eight passed on-target quality control, and seven were trained. Papalexi passes QC but falls below the $50$-group target-axis floor, so it is barred from any headline or pooled estimate. Only Frangieh carries more than one condition, so it is the only dataset that can test h1. $K$ is the program-basis dimension fixed by Amendment 3.1; any $K{\ne}128$ is a labelled deviation from the reference architecture, and \emph{n/a} marks the three rows that were never trained and so have no basis. The pre-registration pins a replicate unit per dataset; the table does not carry that column and Appendix~\ref{app:prereg} discusses it.}
 \label{tab:repl}
 \vspace{2pt}
 {\footnotesize
@@ -727,7 +746,7 @@ We also pinned the graph's node features to a cell-type-matched PINNACLE context
 
 \begin{table}[htbp]
 \centering
-\caption{The same nested family, $n{=}5$ paired seeds, on three folds at decreasing sequence-similarity thresholds. We deliberately omit a ``difficulty'' column: the natural candidate, median train-to-sequestered-split cosine ($0.796$, $0.759$, $0.741$), is not stable under redrawing (see text). Absolute \textsc{systema} is not comparable across folds, so only paired contrasts are shown. No h1 contrast survives family-wise correction on any fold.}
+\caption{The same nested family, $n{=}5$ paired seeds, on three folds at decreasing sequence-similarity thresholds. We deliberately omit a ``difficulty'' column: the natural candidate, median train-to-sequestered-split cosine ($0.796$, $0.759$, $0.741$), is not stable under redrawing (see text). Absolute \textsc{systema} is not comparable across folds, so only paired contrasts are shown. No h1 contrast survives family-wise correction on any fold. The h2a column is a point estimate only, deliberately: its interval and correction differ per fold and are given in \S\ref{sec:null}, where the failed replication of h2a is the subject rather than a side column.}
 \label{tab:folds}
 \vspace{2pt}
 {\small
@@ -774,9 +793,21 @@ reading is available from the per-dataset numbers below.
 
 The PINNACLE channel is thinner than its dimensionality suggests: it resolves to a real vector for only $9.2\%$ of rows, the other $90.8\%$ receiving zeros, because its CD4 context covers $1{,}119$ proteins against this screen's $11{,}526$ targets. Checking coverage rather than the feature list is the only way to see that.
 
-Five paired seeds per variant on the frozen fold, against the unablated baseline (mean \textsc{systema} $0.0857$), with Bonferroni and Holm over the three ablation contrasts:
+Five paired seeds per variant on the frozen fold, against the unablated baseline (mean \textsc{systema} $0.0857$), with Bonferroni and Holm over the three ablation contrasts, are in Table~\ref{tab:ablate}.
 
-\begin{center}
+% AUTO 2026-08-26: this was a bare center+tabular. Cause D's central evidence had no caption, no
+% number and no label, so nothing in the paper could point a reader at it.
+\begin{table}[h]
+\centering
+\caption{The three-way feature ablation, $n{=}5$ paired seeds on the frozen fold, against the unablated
+\textsc{expression\_only} baseline (mean \textsc{systema} $0.0857$). Each variant \emph{zeroes} the named
+channels and leaves \texttt{out\_dim} and the parameter count untouched, so the contrast isolates
+information rather than capacity. Negative means the zeroed channel was carrying signal. $p$ is
+corrected with Bonferroni and Holm over the three contrasts, both required. Note the precision: the
+PINNACLE row is quoted to six decimals because its effect is three orders of magnitude below the
+others, not because it is measured more finely.}
+\label{tab:ablate}
+\vspace{2pt}
 {\small
 \begin{tabular}{@{}lcccc@{}}
 \toprule
@@ -787,7 +818,7 @@ degrees only & $-0.00347$ & $[-0.00403,-0.00291]$ & $0.0002$ & carried signal \\
 PINNACLE only & $+0.000006$ & $[-0.000006,+0.000018]$ & $0.64$ & inert \\
 \bottomrule
 \end{tabular}}
-\end{center}
+\end{table}
 
 The degrees-only variant reproduces the full ablation within its interval, so the degree scalars account for essentially all of it. The analysis was written and committed before the runs finished, fixing the contrast, the correction and the interpretation rule in advance.
 
@@ -899,7 +930,7 @@ We initially wrote the frozen fold's interval as though it bounded the graph ben
 The per-fold upper limits are $+0.0054$ (frozen), $+0.0148$ (intermediate) and $+0.0115$ (harder), so the tightest is not a bound on the others.
 
 % AUTO 2026-08-16: the five-seed normal-approximation MDE is replaced by a simulation over the variance components measured in App. F. One clause of the old text was also wrong and is corrected below.
-\paragraph{What we could have detected, simulated rather than approximated.} We first reported a minimum-detectable effect from a normal approximation on five paired per-seed differences, and noted that it assumed the between-seed variance was the only variance. Two things now let us do better. That assumption is no longer needed, because the variance is measured at three levels (Appendix~\ref{app:prereg}); and the bar a result must clear here is not $p<0.05$ but a paired $t$ followed by Bonferroni \emph{and} Holm over a family of four, which is code rather than a closed form. So we simulate it: each replicate draws the whole family, one contrast at the effect under test and three true nulls, runs the pipeline's own test and correction, and we repeat $2{,}000$ times per point. Two calibrations say the simulation is measuring what we think. With no true effect it survives at $0.013$, the corrected rate, not the nominal $0.05$. And the one contrast we know to be a true positive, the untyped arm's $+0.0043$, needs $9$ seeds for $80\%$ power at its own measured spread of $0.0028$; we ran $7$, which the simulation puts at $70\%$ power, and it did survive both corrections.
+\paragraph{What we could have detected, simulated rather than approximated.} We first reported a minimum-detectable effect from a normal approximation on five paired per-seed differences, and noted that it assumed the between-seed variance was the only variance. Two things now let us do better. That assumption is no longer needed, because the variance is measured at three levels (Appendix~\ref{app:prereg}); and the bar a result must clear here is not $p<0.05$ but a paired $t$ followed by Bonferroni \emph{and} Holm over a family of four, which is code rather than a closed form. So we simulate it: each replicate draws the whole family, one contrast at the effect under test and three true nulls, runs the pipeline's own test and correction, and we repeat $2{,}000$ times per point. Table~\ref{tab:floor} collects the result. Two calibrations say the simulation is measuring what we think. With no true effect it survives at $0.013$, the corrected rate, not the nominal $0.05$. And the one contrast we know to be a true positive, the untyped arm's $+0.0043$, needs $9$ seeds for $80\%$ power at its own measured spread of $0.0028$; we ran $7$, which the simulation puts at $70\%$ power, and it did survive both corrections.
 
 \begin{table}[h]
 \centering\small
@@ -925,6 +956,11 @@ The honest summary is therefore an ordering plus a floor. What we can assert: no
 % AUTO 2026-08-19: A2(a) landed. 48 lanes, 6 conditions, the negative control included.
 % AUTO 2026-08-19: MOVED here from the body for the page budget (rail 3). The claim and its
 % mechanism stay in the body; these are the per-arm numbers behind them.
+% AUTO 2026-08-26: MOVED here from Section~\ref{sec:null} for the page budget (rail 3). It sits
+% beside the control paragraph it belongs with, and checklist item 5 keeps the claim in the body.
+\paragraph{The repair does not manufacture the null.} Repairing a $4.5\times10^{6}$ swing in gate
+magnitude moved the headline from $-0.0019$ to $-0.0009$, changing no conclusion.
+
 \paragraph{Why the confounded run is only a control.} A dead-gate run has the graph off, so its parity with no-graph says nothing on its own; the \emph{live-gate} comparison carries the claim, and the confounded run serves only as a control on the fix.
 
 \paragraph{Why the added variance matters.} Message passing over a mostly-noisy neighborhood gives the optimizer a high-variance pathway to fit, and that added variance is what widens the interval a benefit must clear. A component can change the spread without changing the expectation, and the paired contrast alone will not show it.
@@ -974,7 +1010,7 @@ is the negative control: the same injection magnitude over a scrambled neighbour
 \label{tab:floor2}
 \begin{tabular}{lrrrrrl}
 \toprule
-condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & increment & \\
+condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & increment & verdict \\
 \midrule
 no injection & $0$ & $+0.0048$ & $[-0.0000,+0.0097]$ & & & zero point \\
 injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & $+0.0040$ & recovered \\
@@ -997,7 +1033,7 @@ injected rung is recovered under both corrections.
 \paragraph{The control is what makes that readable.} At the same magnitude, a scrambled neighbourhood
 gives a gap of $-0.0001$ with an interval of width $0.004$ around zero, so the gaps above are the graph
 being read and not the injection being large. The absolute scores make the same point from the other
-side.
+side (Table~\ref{tab:floorabs}).
 
 \begin{table}[h]
 \centering\small
@@ -1028,7 +1064,7 @@ $\delta{=}0.40$   & $0.1679$ & $0.1862$ & $+0.0823$ & $+0.0958$ \\
 rather than the gated encoder. That gap is now closed. Re-running the identical six rungs with
 \textsc{condition\_gated} against \textsc{expression\_only}, on the same frozen fold, the same four
 seeds and the same injected matrices, with $\lambda_{\mathrm{graph}}{=}0$ so the gate stays live,
-recovers \emph{nothing at any injected size}.
+recovers \emph{nothing at any injected size} (Table~\ref{tab:floorgated}).
 
 \begin{table}[h]
 \centering\small
@@ -1175,13 +1211,18 @@ Five endpoints times four contrasts is twenty simultaneous tests, and correcting
 endpoint and then reporting whichever endpoint was kind is precisely the look-elsewhere error this
 paper is about. We fixed the correction in the pre-registration before reading the fold: both bars are
 computed, and a survival claim requires the across-metric one, Bonferroni and Holm together.
+Table~\ref{tab:metrics} reports all twenty cells.
 
 \begin{table}[h]
 \centering\small
 \caption{Every arm re-scored under externally reported endpoints, on the same fold and the same five
 seeds. Values are paired per-seed means, oriented so that a positive number favours the first-named
 arm (errors and distances are negated before the contrast is formed). $\star$ marks the cells that
-survive Bonferroni \emph{and} Holm over all twenty.}
+survive Bonferroni \emph{and} Holm over all twenty. \textbf{The five columns are not on a common
+scale and should not be compared across columns.} The three correlation endpoints are dimensionless
+and run to a few hundredths; the two distance endpoints are in squared and unsquared units of the
+program-space response respectively, and run to hundreds and to single digits. Only the sign, the
+star and the within-column ordering carry across.}
 \label{tab:metrics}
 \begin{tabular}{lrrrrr}
 \toprule
@@ -1276,7 +1317,7 @@ perturbation moves hardest''.
 \caption{The same paired contrasts on \emph{disjoint} rank intervals of $|$observed response$|$, most
 moved first. $\star$ marks survival of Bonferroni and Holm over all $36$ cells of this binning,
 a wider family than Table~\ref{tab:ksweep}'s four, which is why h2a stars nowhere here despite being
-negative in every interval. ``seeds'' counts how many of the five give a positive contrast.}
+negative in every interval. ``seeds'' counts how many of the five give a positive contrast. Two of the family's four contrasts are shown, the two the text argues about. The omitted two are h2b, which stars in no interval, and h1, which stars in exactly one: the top-$20$ bin, at $-0.0454$ (Bonferroni $0.044$), the same genes where the untyped arm takes its own deficit.}
 \label{tab:bins}
 \begin{tabular}{rrcr}
 \toprule
