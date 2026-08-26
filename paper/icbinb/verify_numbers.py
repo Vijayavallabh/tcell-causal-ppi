@@ -512,6 +512,61 @@ def _prose_assertions(tex):
                    f"consistency, Norman's seed signs, the ladder's 48 lanes, Frangieh's live gates)")
 
 
+@table("refs:attribution")
+def _refs_attribution(tex):
+    """Named methods must carry a citation, and every cited key must exist.
+
+    Added 2026-08-26 after a references pass found two methods used by name with no citation while
+    their bib entries sat in the file unused: GATv2 in the architecture-search table and GInX in the
+    rationale audit. LaTeX warns about a \\cite with no entry and never about an entry with no \\cite,
+    and never about a method named in prose that was never cited at all, so nothing caught either.
+    The same pass found the paper's own gate mechanism positioned only against graph attention when
+    its direct precedent, differentiable edge masking, was in the bib and uncited.
+
+    Each row is a string that appears in the paper only when the named method is being used, and the
+    bib key that must then be cited somewhere."""
+    flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
+    fails = []
+    cited = set()
+    for m in re.finditer(r"\\cite[a-z]*\*?(?:\[[^\]]*\])*\{([^}]*)\}", tex):
+        cited.update(k.strip() for k in m.group(1).split(","))
+
+    NAMED = [
+        ("GATv2",         "brody2022gatv2"),
+        ("GInX",          "amara2023ginx"),
+        ("GNNExplainer",  "ying2019gnnexplainer"),
+        ("edge masking",  "schlichtkrull2021graphmask"),
+        ("TabPFN",        "hollmann2025tabpfn"),
+        ("\\textsc{gears}", "roohani2024gears"),
+        ("scPerturb",     "peidli2024scperturb"),
+        ("PINNACLE",      "li2024pinnacle"),
+        ("ESM-2",         "lin2023esm2"),
+        ("STRING",        "szklarczyk2023string"),
+        ("BioGRID",       "oughtred2021biogrid"),
+        ("CORUM",         "tsitsiridis2023corum"),
+        ("BioPlex",       "huttlin2021bioplex"),
+        ("HuRI",          "luck2020huri"),
+        ("TxPert",        "wenkel2026txpert"),
+    ]
+    for name, key in NAMED:
+        if name.lower() in flat.lower() and key not in cited:
+            fails.append(f"refs: '{name}' is used by name in the paper and {key} is never cited. "
+                         f"A method named in prose needs an attribution; LaTeX will not tell you.")
+
+    # every cited key must resolve against the two bib files
+    defined = set()
+    for rel in ("paper/references.bib", "paper/icbinb/extra.bib"):
+        f = ROOT / rel
+        if f.exists():
+            defined.update(m.group(1).strip()
+                           for m in re.finditer(r"@\w+\{([^,]+),", f.read_text(encoding="utf-8")))
+    for k in sorted(cited - defined):
+        fails.append(f"refs: \\cite{{{k}}} has no entry in references.bib or extra.bib")
+
+    return fails, (f"full: {len(NAMED)} named methods checked for attribution, "
+                   f"{len(cited)} cited keys resolved against {len(defined)} bib entries")
+
+
 @table("prose:derived")
 def _prose_derived(tex):
     """Quantities the paper DERIVES from two artifacts rather than reading off one.
@@ -913,7 +968,7 @@ def _prose_headline(tex):
         ("re-draw 3 baseline", "${v}$ and $0.0845$", f"{I3['expression_only']['mean']:.4f}"),
         ("re-draw 2 baseline", "and ${v}$ \\textsc{systema}", f"{I2['expression_only']['mean']:.4f}"),
         # --- the rationale audit's GInX comparison ---------------------------------------------
-        ("GInX rationale",     "is GInX, ${v}$ against", f"{gx['rationale']:.3f}"),
+        ("GInX rationale",     "is GInX \\citep{amara2023ginx}, ${v}$ against", f"{gx['rationale']:.3f}"),
         ("GInX random",        "random's ${v}$ at",      f"{gx['random']:.3f}"),
     ]
     I1c = load("data/results/screening_c080c10_h1/robustness_5seed.json")["contrasts"]

@@ -1,3 +1,52 @@
+# *** REFERENCES PASS 2026-08-26: A WRONG AUTHOR ON OUR OWN DATASET CITATION ***
+
+Nine defects. Every cited DOI was resolved against Crossref and bioRxiv rather than eyeballed,
+because this manuscript is LLM-assisted and references are where that fails silently.
+
+**1. THE ONE THAT MATTERS. `zhu2025gwperturbseq` named the wrong author.** The bib had
+"Brixi, Lillian" in position 7. Crossref (10.64898/2025.12.23.696273) and bioRxiv both give
+**Petersen, Lillian K.** This is the citation for the dataset the entire paper rests on, cited in
+the Problem section, the Reproducibility statement and the ethics statement. Fixed and re-rendered.
+It is the classic plausible-substitution failure: right position, right given name, wrong surname,
+and "Brixi" is a real name in this exact subfield.
+
+**2. Two methods were used by name with no citation, with their entries already in the bib.**
+GATv2 in the architecture-search table (`brody2022gatv2`) and GInX in the rationale audit
+(`amara2023ginx`, the "0.084 against random's 0.030" comparison). LaTeX warns about a \cite with no
+entry and never about an entry with no \cite, so nothing caught it.
+
+**3. The gate's direct precedent was uncited.** `schlichtkrull2021graphmask` (differentiable edge
+masking) was in the bib, unused. EG-IPG's condition gate IS a learnable per-edge gate under a
+sparsity penalty, and App. A positioned it only against graph attention, which is the wrong
+comparison class. Now cited, with the observation that our headline confound is a hazard of that
+construction generally, which strengthens the generalisation claim rather than weakening it.
+`ying2019gnnexplainer` likewise, for the sufficiency/necessity rationale metrics.
+
+**Also fixed.** `ahlmanneltze2025linear` was missing volume 22 and pages 1657-1661, which exist.
+`cole2026foundation` listed 3 of its 20 authors behind "and others" while being cited twice as the
+paper's main counterpoint; the full list is in. `vinas2025systema` has a key reading 2025 and a year
+field reading 2026 (Crossref issued 2025, volume 44(6) is the 2026 issue); a note now records both.
+The intro's "tabular foundation models match specialized architectures" cited only TabPFN, a general
+small-data method paper, when royer2026tfm is the domain evidence and was already in the bib.
+
+**VERIFIED AND CORRECT, having tried to break them.** All three `10.64898` preprint DOIs resolve to
+bioRxiv; that prefix is real and my suspicion of it was wrong. `wenkel2026txpert`: all fifteen authors,
+journal and year match Crossref exactly. `royer2026tfm`, `vinas2025systema`, `wongmoccia2025crispr`,
+`hollmann2025tabpfn`, `ahlmanneltze2025linear`: author lists all match. No undefined citations, no
+duplicate keys. And BioGRID really is filtered to `Experimental System Type == physical` in
+ppi_graph.py, so calling it "physical PPI" in Section 3 is accurate.
+
+**New gate: refs:attribution.** Fifteen named methods are now checked for a citation, and every cited
+key is resolved against both bib files. Three planted removals were caught. Note that bib edits need
+`./check_paper.sh --full`; the default run does not invoke bibtex, and the first pass here rendered a
+stale bibliography that still said "Brixi".
+
+**Flaky test, unrelated.** `test_baselines.py::test_each_baseline_fit_predict_shapes[tabicl]` failed
+once in a full-suite run and passed in isolation and on a full re-run (644 passed). Resource
+contention on this shared box, not a code change.
+
+---
+
 # *** TABLES AND FIGURES DEVIL'S-ADVOCATE PASS 2026-08-26 ***
 
 Twelve defects across fourteen tables and two figures. Mostly presentation, but three of them meant
