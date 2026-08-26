@@ -216,6 +216,20 @@ PROSE_DECLARED = {
     "21": "seeds needed to detect the whole residual, derived from the MDE in the same sentence.",
     "77": "seeds needed to detect half of it, derived as above.",
     "250": "datasets needed against the between-dataset spread, derived as above.",
+    # --- split-construction statistics, computed while drawing the folds and never persisted ----
+    "0.796": "median train-to-sequestered cosine of the frozen fold; computed during split construction.",
+    "0.759": "median train-to-sequestered cosine, second fold; same provenance.",
+    "0.741": "median train-to-sequestered cosine, third fold; same provenance.",
+    "0.793": "median train-to-sequestered cosine of a re-draw; same provenance.",
+    "0.862": "median train-to-sequestered cosine of a re-draw; same provenance.",
+    "0.103": "the range the difficulty statistic moved over; derived from the cosines above.",
+    "0.056": "the designed range of that statistic; a design parameter.",
+    # --- rationale-audit quantities normalised per 1% of edges removed, a derivation ------------
+    "0.0043": "sufficiency cost per 1% of STRING edges removed; derived from the raw ablation delta.",
+    "0.0025": "the same for HuRI; derived as above.",
+    "0.0014": "the same for BioPlex; derived as above.",
+    "1.47": "the sufficiency scale the audit reports against; a property of that scale.",
+    "0.011": "rationale minus random sufficiency; derived from the audit's aggregate.",
     # --- design choices ------------------------------------------------------------------------
     "24": "gated lanes in the C1 campaign; a design count, six rungs times four seeds.",
     "101": "rank-interval boundary in the B2 binning; a binning choice, not a measurement.",
@@ -275,8 +289,10 @@ def _prose_all(tex):
     entering the paper. It does NOT reliably catch a wrong digit. Two other checks do that: the
     context-anchored headline claims above, which caught the real Holm error and fire on 5 of 5
     planted ones, and the literal inventory, which catches any number that CHANGES between snapshots.
-    Extending the strong form past 16 claims means writing one context pattern per claim; that is the
-    honest price of stronger coverage and it has not been paid for the remaining literals."""
+    That price has since been paid down: the anchored set went from 16 claims to 108, and the share
+    of prose decimals where a one-digit error trips an anchor rose from 35% to 70%. The remainder is
+    16 literals DECLARED as having no persisted artifact and 24 still covered by accounting alone,
+    mostly thresholds, per-arm bands and biology-QC figures."""
     body = re.sub(r"(?m)^%.*", "", tex)
     body = re.sub(r"\\begin\{tabular\}.*?\\end\{tabular\}", " ", body, flags=re.S)
     # scientific notation is markup, not a literal: $4.5\times10^{6}$ is one quantity, not 4.5 and 6
@@ -367,6 +383,188 @@ def _prose_headline(tex):
         ("measured floor",     "at ${v}$ response SDs",         f"{FL['floor']:.2f}"),
     ]
     fails = []
+    SM = load("data/results/screening_lambda0/second_metric_5seed.json")["metrics"]
+    INT = load("data/results/screening_c080c10_h1/robustness_5seed.json")["contrasts"]
+    P7full = load("data/results/replication/pooled.json")["pooled"]["h2a"]
+    pdh2a = P8["per_dataset"]["h2a"]
+    N7pc = load("data/results/screening_untyped_n7/robustness_5seed.json")["per_config"]
+    pear = {c["contrast"]: c for c in SM["pearson"]["contrasts"]}
+    pcos = {c["contrast"]: c for c in SM["prog_cos"]["contrasts"]}
+    cg_eo_p = pear.get("condition_gated - expression_only")
+    cg_eo_c = pcos.get("condition_gated - expression_only")
+    ts_eo_p = pear.get("typed_static - expression_only")
+
+    claims += [
+        # --- sec:null -------------------------------------------------------------------------
+        ("h1 p-value",         "$p={v}$); the interval",           f"{L['h1_vs_no_graph']['p_value']:.2f}"),
+        ("h2a p-value",        "(${v}$, $p=",                      f4(L["h2a"]["mean"])),
+        ("h2a p",              "$p={v}$, surviving both",          f"{L['h2a']['p_value']:.4f}"),
+        ("Pearson h1",         "gated graph (${v}$, $p=",          f4(cg_eo_p["mean"]) if cg_eo_p else "?"),
+        ("Pearson h1 p",       "$p={v}$) and a deficit",           f"{cg_eo_p['p_value']:.2f}" if cg_eo_p else "?"),
+        ("Pearson h2a",        "static graph (${v}$)",             f4(ts_eo_p["mean"]) if ts_eo_p else "?"),
+        ("prog-cos h1",        "agreeing (${v}$, $p=",             f4(cg_eo_c["mean"]) if cg_eo_c else "?"),
+        ("three folds: frozen","across folds (${v}$,",             f4(L["h1_vs_no_graph"]["mean"])),
+        ("three folds: interm","(${v}$, $+0.0005$)" .replace("+0.0005","{w}"), None),
+        ("harder h2a CI low",  "$95\\%$ CI $[{v},",                f4(HD["h2a"]["ci_low"])),
+        ("harder h2a CI high", ",{v}]$, $p=",                      f4(HD["h2a"]["ci_high"])),
+        ("harder h2a p",       "$p={v}$, clearing neither",        f"{HD['h2a']['p_value']:.2f}"),
+        ("intermediate h2a",   "h2a is ${v}$, within",             f4(INT["h2a"]["mean"])),
+        ("intermediate h2a p", "($p={v}$) because",                f"{INT['h2a']['p_value']:.2f}"),
+        # --- sec:repl -------------------------------------------------------------------------
+        ("typed pooled FE CI", "fixed-effect $95\\%$ CI $[{v},",   f4(P7full["fixed_ci"][0])),
+        ("typed pooled I^2",   "$I^2{=}{v}\\%$, $Q$",              f"{P7full['I2']*100:.1f}"),
+        ("typed pooled Q p",   "$Q$ $p{=}{v}$",                    f"{P7full['Q_p']:.2f}"),
+        ("RPE1 typed arm",     "the other way (${v}$)",            f4(pdh2a["ReplogleWeissman2022_rpe1"]["mean"])),
+        ("pooled 8 p",         "$p{=}{v}$) at $I^2",               f"{p8['random_p']:.2f}"),
+        # --- sec:causes: per-arm means at n=7 --------------------------------------------------
+        ("n7 mean untyped",    "untyped ${v}$,",                   f"{N7pc['untyped_gnn']['mean']:.4f}"),
+        ("n7 mean expr",       "expression-only ${v}$,",           f"{N7pc['expression_only']['mean']:.4f}"),
+        ("n7 mean gated",      "condition-gated ${v}$,",           f"{N7pc['condition_gated']['mean']:.4f}"),
+        ("n7 mean typed",      "typed-static ${v}$",               f"{N7pc['typed_static']['mean']:.4f}"),
+    ]
+    A1 = load("data/results/screening_a1/a1_mechanism.json")
+    AB = load("data/results/a2_power/arch_search_bound.json")
+    B1 = load("data/results/screening_b1/b1_message_form.json")
+    DEC = load("data/results/b2_deciles/deciles.json")["schemes"]["head"]
+    a1f, a1c = A1["family"], A1["context"]
+
+    claims += [
+        # --- app:mechanism ---------------------------------------------------------------------
+        ("A1 D1 (parameter cut)", "primary endpoint by ${v}$",     f4(a1f["D1"]["mean"])),
+        ("A1 D2 (permuted)",      "moves it by ${v}$",             f4(a1f["D2"]["mean"])),
+        ("A1 shared vs untyped",  "{gcn} (${v}$ and",              f4(a1c["shared_vs_untyped"]["mean"])),
+        ("A1 permuted vs untyped","and ${v}$) and below",          f4(a1c["permuted_vs_untyped"]["mean"])),
+        ("A1 shared vs nograph",  "baseline (${v}$ and",           f4(a1c["shared_vs_nograph"]["mean"])),
+        ("A1 permuted vs nograph","and ${v}$), so the deficit",    f4(a1c["permuted_vs_nograph"]["mean"])),
+        ("arch search spread",    "spans ${v}$ across all",        f"{AB['observed_spread']:.4f}"),
+        ("arch search cells",     "across all ${v}$ of its cells", str(AB["n_cells"])),
+        ("B1a gap",               "same fold is ${v}$",            f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
+        ("B1a D3 uncorrected p",  "the uncorrected $p={v}$",       f"{B1['contrasts']['D3']['p_value']:.4f}"),
+        # --- app:metrics -----------------------------------------------------------------------
+        ("B2 top-20 deficit",     "it is large (${v}$)",           f4(DEC["cells"]["1-20/promotion_margin"]["mean"])),
+        ("B2 family size",        "over all ${v}$ cells",          str(DEC["family_size"])),
+    ]
+    VD = load("data/results/l4/vardecomp_h2a.json")
+    B3 = load("data/results/a2_ladder/b3_power.json")
+    ZP = FL["zero_point"]
+    inc = FL["post_hoc_increment_over_zero"]
+    C1 = load("data/results/c1_ladder/floor_condition_gated.json")
+    c1inc = C1["post_hoc_increment_over_zero"]["d400"]
+
+    claims += [
+        # --- app:power -------------------------------------------------------------------------
+        ("per-fold limit frozen",  "upper limits are ${v}$ (frozen)",  f4(L["h1_vs_no_graph"]["ci_high"])),
+        ("per-fold limit interm",  "${v}$ (intermediate)",             f4(INT["h1_vs_no_graph"]["ci_high"])),
+        ("per-fold limit harder",  "and ${v}$ (harder)",               f4(HD["h1_vs_no_graph"]["ci_high"])),
+        ("vardecomp seed sd",      "seed contributes ${v}$ against",   f"{VD['sd_seed']:.4f}"),
+        ("vardecomp redraw sd",    "re-draw's ${v}$",                  f"{VD['sd_redraw']:.4f}"),
+        # --- app:floor -------------------------------------------------------------------------
+        ("ladder zero point",      "benefit of ${v}$ with no injection", f4(ZP["mean"])),
+        ("control gap",            "gives a gap of ${v}$ with",        f4(FL["contrasts"]["permuted_d400"]["mean"])),
+        ("control increment",      "zero point is ${v}$ ($[",          f4(inc["permuted_d400"]["mean"])),
+        ("control incr CI low",    "$[{v},",                           f4(inc["permuted_d400"]["ci_low"])),
+        ("control incr CI high",   ",{v}]$, $p=0.02$)",                f4(inc["permuted_d400"]["ci_high"])),
+        ("d020 gap",               "rung produced a gap of ${v}$",     f4(FL["contrasts"]["d020"]["mean"])),
+        ("d100 delta",             "rung's ${v}$ sits",                f4(FL["contrasts"]["d100"]["mean"])),
+        ("B3 MDE control sd",      "four seeds of ${v}$ on this",      f"{B3['mde']['control_sd_uncorrected']:.4f}"),
+        ("B3 MDE rungs median",    "spread, ${v}$ on the injected",    f"{B3['mde']['real_sd_uncorrected']:.4f}"),
+        ("B3 MDE corrected",       "and ${v}$ once the enlarged",      f"{B3['mde']['control_sd_bonferroni']:.4f}"),
+        ("B3 proportional pred",   "damage would be ${v}$ there",      f4(B3["predictions_at_target_delta"]["proportional"])),
+        ("C1 post-hoc increment",  "zero point is ${v}$ ($95",         f4(c1inc["mean"])),
+        ("C1 increment CI low",    "CI $[{v},",                        f4(c1inc["ci_low"])),
+        ("C1 increment CI high",   ",{v}]$, $p=0.035$",                f4(c1inc["ci_high"])),
+    ]
+    SCR = load("data/results/screening/robustness_5seed.json")["contrasts"]
+    # The three fold RE-DRAWS are the c080c10 family. The c075c15_* roots are the harder-threshold
+    # folds and ran only typed_static and expression_only, so their h1 is null.
+    R2 = load("data/results/screening_c080c10_r2/robustness_5seed.json")["contrasts"]
+    R3 = load("data/results/screening_c080c10_r3/robustness_5seed.json")["contrasts"]
+
+    def dlist(c, sign=1):
+        """The per-seed deltas as the paper writes them: '$+0.0090$, $+0.0050$, ...'."""
+        return ", ".join(f"${sign * d:+.4f}$" for d in c["deltas"])
+
+    claims += [
+        # --- per-seed delta LISTS: one anchor covers every value in the list -------------------
+        ("n=7 untyped per-seed list", "none dropped: {v}.", dlist(pm)),
+        ("harder h2a per-seed list",  "show why: {v}.",     dlist(HD["h2a"])),
+        # --- the n=7 summary statistics ---------------------------------------------------------
+        ("n=7 mean",  "Mean ${v}$, sd",  f4(pm["mean"])),
+        ("n=7 sd",    "sd ${v}$, se",    f"{pm['sd']:.4f}"),
+        ("n=7 se",    "se ${v}$, paired", f"{pm['se']:.4f}"),
+        ("n=7 raw p", "paired $p={v}$ before", f"{pm['p_value']:.4f}"),
+        # --- the n=5 version of the same contrast ------------------------------------------------
+        ("n=5 untyped mean",  "contrast was ${v}$,",   f4(SCR["promotion_margin"]["mean"])),
+        ("n=5 untyped CI low","CI $[{v},",             f4(SCR["promotion_margin"]["ci_low"])),
+        ("n=5 untyped Holm",  "Holm ${v}$ but",        f"{SCR['promotion_margin']['p_holm']:.3f}"),
+        ("n=5 untyped Bonf",  "Bonferroni ${v}$.",     f"{SCR['promotion_margin']['p_bonferroni']:.3f}"),
+        # --- the architecture search bound -------------------------------------------------------
+        ("arch best cell",    "the best is ${v}$ against", f4(AB["best_delta"])),
+        ("arch worst cell",   "the worst is ${v}$,",       f4(AB["worst_delta"])),
+        ("arch seed sd",      "sd}={v}$) would be",        f"{AB['seed_sd_frozen']:.4f}"),
+        ("arch expected span","expected to span ${v}$",    f"{AB['expected_spread_from_seed_noise_alone']:.4f}"),
+        ("arch seeds needed", "would need ${v}$ paired seeds", str(AB["seeds_that_would_be_needed_for_the_best_cell"])),
+        # --- the three fold re-draws -------------------------------------------------------------
+        ("redraw 2 h1",       "$p=0.025$), ${v}$ ($[",     f4(R2["h1_vs_no_graph"]["mean"])),
+        ("redraw 3 h1",       "and ${v}$ ($[-0.0024",      f4(R3["h1_vs_no_graph"]["mean"])),
+        # --- the unrepaired headline, from the pre-repair root -----------------------------------
+        ("unrepaired h1",     "moved the headline from ${v}$ to", f4(SCR["h1_vs_no_graph"]["mean"])),
+        # --- the genome-wide tightest point -------------------------------------------------------
+        # "tightest single point of all" is the TYPED contrast in that sentence, not the untyped one.
+        ("gwps point",        "single point of all (${v}$)", f4(pdh2a["ReplogleWeissman2022_K562_gwps"]["mean"])),
+        # --- the full eight-dataset ordering ------------------------------------------------------
+        ("Tian CRISPRa",      "Tian CRISPRa ${v}$,",  f4(pd8["TianKampmann2021_CRISPRa"]["mean"])),
+        ("Tian CRISPRi",      "Tian CRISPRi ${v}$,",  f4(pd8["TianKampmann2021_CRISPRi"]["mean"])),
+        ("Frangieh untyped",  "Frangieh ${v}$,",      f4(pd8["FrangiehIzar2021_RNA"]["mean"])),
+        ("K562-essential",    "K562-essential ${v}$,", f4(pd8["ReplogleWeissman2022_K562_essential"]["mean"])),
+        # --- the K=128 subset (rail-4 finding) ----------------------------------------------------
+        ("K128 subset RE",    "datasets it is ${v}$ ($[", f4(load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]["random_effect"])),
+        # --- B1a gap and D3 -----------------------------------------------------------------------
+        ("B1a gap in share",  "of the ${v}$ gap",     f4(B1["gap_untyped_minus_typed"]["mean"])),
+    ]
+    RA = load("data/results/rationale_audit_lambda0/audit_report.json")
+    I1 = load("data/results/screening_c080c10_h1/robustness_5seed.json")["per_config"]
+    I2 = load("data/results/screening_c080c10_r2/robustness_5seed.json")["per_config"]
+    I3 = load("data/results/screening_c080c10_r3/robustness_5seed.json")["per_config"]
+    gx = RA["aggregate"]["ginx_by_sparsity"]["0.20"]
+
+    claims += [
+        # --- the three re-draws' baseline systema, which the paper quotes as a spread -----------
+        ("re-draw 1 baseline", "it scores ${v}$,",  f"{I1['expression_only']['mean']:.4f}"),
+        ("re-draw 3 baseline", "${v}$ and $0.0845$", f"{I3['expression_only']['mean']:.4f}"),
+        ("re-draw 2 baseline", "and ${v}$ \\textsc{systema}", f"{I2['expression_only']['mean']:.4f}"),
+        # --- the rationale audit's GInX comparison ---------------------------------------------
+        ("GInX rationale",     "is GInX, ${v}$ against", f"{gx['rationale']:.3f}"),
+        ("GInX random",        "random's ${v}$ at",      f"{gx['random']:.3f}"),
+    ]
+    I1c = load("data/results/screening_c080c10_h1/robustness_5seed.json")["contrasts"]
+    R2c, R3c = R2, R3
+    FAB = load("data/results/feature_ablation_report.json")
+    nod = next(v for v in FAB if v["variant"] == "nodegree")
+
+    claims += [
+        # --- the three folds, all three values --------------------------------------------------
+        ("three folds: intermediate", "${v}$, $+0.0005$)", f4(I1c["h1_vs_no_graph"]["mean"])),
+        ("three folds: harder",       ", ${v}$), which is why", f4(HD["h1_vs_no_graph"]["mean"])),
+        # --- the harder fold's per-seed h1 list (NOT the intermediate one) ----------------------
+        ("harder h1 per-seed", "per-seed differences {v}).", dlist(HD["h1_vs_no_graph"])),
+        # --- PER-ARM seed spreads. The paper quotes the arm's own sd, not the contrast's. --------
+        ("intermediate arm sd", "deviation is ${v}$ there",
+         f"{load('data/results/screening_c080c10_h1/robustness_5seed.json')['per_config']['typed_static']['sd']:.4f}"),
+        ("frozen arm sd",       "against ${v}$ on the frozen",
+         f"{load('data/results/screening_lambda0/robustness_5seed.json')['per_config']['typed_static']['sd']:.4f}"),
+        # --- Bonferroni over the PRE-REGISTERED family of four. The re-draw roots ran fewer arms,
+        # --- so their own p_bonferroni uses a smaller family; the paper corrects at m=4, which is
+        # --- the stricter and pre-registered choice, so the check re-derives it that way. --------
+        ("redraw Bonf 1", "family of four (${v}$,", f"{min(1.0, 4 * I1c['h1_vs_no_graph']['p_value']):.3f}"),
+        ("redraw Bonf 2", ", ${v}$, $1.000$)",      f"{min(1.0, 4 * R2c['h1_vs_no_graph']['p_value']):.3f}"),
+        # --- the gated arm against no graph at n=7 -----------------------------------------------
+        ("gated vs no graph n=7", "leaving the gated arm at ${v}$", f4(N7["h1_vs_no_graph"]["mean"])),
+        # --- B1a's recovered effect, in its own sentence -----------------------------------------
+        ("B1a D3 in prose", "it recovers ${v}$ \\textsc{systema}", f4(B1["contrasts"]["D3"]["mean"])),
+    ]
+    claims = [c for c in claims if c[2] is not None]
+
     for what, tmpl, val in claims:
         ctx = tmpl.replace("{v}", val)
         if ctx not in flat:
