@@ -1,0 +1,11 @@
+{
+  "source": "data/intermediate/replication/FrangiehIzar2021_RNA.DE_stats_v2.h5ad",
+  "seed": 0,
+  "method": "de_amendment2.on_target_qc, extended with the random-gene negative fraction, which on_target_qc computes but discards",
+  "testable_rows": 675,
+  "own_mean": -0.6133235096931458,
+  "own_frac_negative": 0.8992592592592593,
+  "random_mean": -0.002240784466266632,
+  "random_frac_negative": 0.6281481481481481,
+  "paired_p": 0.0
+}

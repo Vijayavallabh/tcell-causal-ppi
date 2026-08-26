@@ -231,16 +231,18 @@ PROSE_DECLARED = {
     "0.0014": "the same for BioPlex; derived as above.",
     "1.47": "the sufficiency scale the audit reports against; a property of that scale.",
     "0.011": "rationale minus random sufficiency; derived from the audit's aggregate.",
-    # --- BIOLOGY QC: A DISCREPANCY, RECORDED RATHER THAN QUIETLY EXEMPTED ----------------------
-    # The paper validates the Frangieh adapter against biology with own-gene log2FC mean -0.632,
-    # 89% negative, against -0.014 and 61% for random genes. NO artifact contains these. The current
-    # FrangiehIzar2021_RNA.DE_stats_v2.qc.json gives own_mean -0.6133, frac_negative 0.899 and
-    # random_mean -0.0022, and carries no random-gene negative fraction at all. Close but not equal
-    # is the signature of numbers computed BEFORE the Amendment-2 rebuild, the same staleness that
-    # left tab:repl reporting superseded counts until 2026-08-21. Flagged for a human: either
-    # recompute them from the v2 QC or state which build they came from.
-    "-0.632": "own-gene log2FC mean. DOES NOT MATCH the v2 QC artifact (-0.6133); see the note above.",
-    "-0.014": "random-gene log2FC mean. DOES NOT MATCH the v2 QC artifact (-0.0022); see above.",
+    # --- biology QC: WAS a discrepancy, now recomputed and anchored above. Kept as a note because
+    # --- the figures in the paper before 2026-08-26 matched no artifact at all.
+    # --- THE IFNGR1 CHECK IS NOT REPRODUCIBLE FROM THIS REPOSITORY, and that is worth stating.
+    # The sentence claims IFNGR1 knockout blunts interferon-stimulated genes by 1.0 to 3.0 log2 units
+    # under IFN-gamma and co-culture but not under control, all within +-0.17. No artifact holds
+    # these, and nothing under src/ mentions IFNGR1 or interferon, so the gene set the claim rests on
+    # is not defined anywhere here. Unlike the own-gene QC beside it, which WAS recomputable and has
+    # been recomputed, this one cannot be re-derived without the missing gene-set definition. It is
+    # declared rather than checked, and a human should either supply the set or drop the clause.
+    "1.0": "lower bound of the IFNGR1 blunting claim; not reproducible from this repository.",
+    "3.0": "upper bound of the same claim; not reproducible from this repository.",
+    "0.17": "the control-condition tolerance of the same claim; not reproducible here.",
     # --- quantities with no persisted artifact --------------------------------------------------
     "+0.011": "rationale minus random sufficiency; derived from the audit aggregate, not stored.",
     "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
@@ -638,6 +640,13 @@ def _prose_headline(tex):
         ("RPE1 p",           "$p{=}{v}$, Bonferroni",     f"{RPE['p_value']:.3f}"),
         ("RPE1 Bonf/Holm",   "Holm both ${v}$ at family", f"{RPE['p_bonferroni']:.3f}"),
         ("RPE1 family size", "at family size {v})",       "two" if RPE["family_size"] == 2 else str(RPE["family_size"])),
+    ]
+    QC = load("data/results/replication/frangieh_on_target_qc.json")
+    claims += [
+        ("Frangieh QC own mean",   "FC mean ${v}$,",        f"{QC['own_mean']:.3f}"),
+        ("Frangieh QC own %neg",   "${v}\\%$ negative,",    f"{QC['own_frac_negative']*100:.0f}"),
+        ("Frangieh QC random mean","against ${v}$ and",     f"{QC['random_mean']:.3f}"),
+        ("Frangieh QC random %neg","and ${v}\\%$ for random", f"{QC['random_frac_negative']*100:.0f}"),
     ]
     claims = [c for c in claims if c[2] is not None]
 
