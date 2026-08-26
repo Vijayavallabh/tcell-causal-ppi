@@ -16,7 +16,10 @@
 \usepackage{amssymb}
 \graphicspath{{../figures/}}
 
-\title{The Regularizer That Switched Off the Experiment:\\ Diagnosing Why a Protein-Interaction Prior\\ Does Not Help T-Cell Perturbation Prediction}
+% AUTO 2026-08-26: the old title asserted the prior "Does Not Help", which this paper's own
+% strongest corrected result contradicts: the untyped arm beats no-graph on the reference T-cell
+% screen at n=7 under both corrections. The claim the paper can defend is about the encoder.
+\title{The Regularizer That Switched Off the Experiment:\\ Why Our Protein-Interaction Null Was\\ About the Encoder, Not the Prior}
 
 \author{Anonymous Author(s) \\ Affiliation \\ Address \\ \texttt{email}}
 
@@ -24,6 +27,9 @@
 \maketitle
 
 \begin{abstract}
+% AUTO 2026-08-26: the abstract ran 450 words and roughly fifteen numeric intervals before the
+% thesis. Every number cut below is stated in full in the body; nothing is withdrawn. The pooled
+% meta-analysis figures live in \S\ref{sec:repl}, the detection-floor detail in App.~\ref{app:floor}.
 Does a typed protein-interaction prior improve prediction of how primary human T cells respond to
 genetic perturbation? We report two failures, and the more useful one is not the one we went looking
 for. The first is an instrument failure that nearly published itself: a textbook edge-sparsity
@@ -33,27 +39,19 @@ $\sim$$10^{-7}$ inside the first epoch, in all five seeds. Training completes an
 score, so a graph-versus-no-graph comparison silently becomes no-graph versus no-graph. The second is
 the null itself. With the gates demonstrably live, the evidence-gated graph is indistinguishable from
 an expression-only baseline ($\Delta\,\textsc{systema}=-0.0009$, $95\%$ CI $[-0.0072,+0.0054]$,
-$n{=}5$, family-wise corrected) and a typed \emph{static} graph is reliably worse; that second,
-seemingly solid finding then failed its own replication, shrinking elevenfold to $-0.0012$ ($p=0.61$)
-on a harder split at the same five seeds, with one seed reversing sign. Rather than stop at the number
-we adjudicate five candidate causes against evidence we can produce: one is refuted, one holds partly,
-three survive, and two of the three are not about biology at all. Our baseline was never graph-free,
-since zeroing its graph-derived features costs $-0.0036$ \textsc{systema} under correction, all of it
-three degree scalars, against the $-0.0009$ that message passing over eight million typed edges is
-worth on the same fold. And the arm we had never run overturned the reading: strip the typing and the
-gating, keep the raw topology, and that plain arm beats the baseline on our own screen ($+0.0043$,
-$95\%$ CI $[+0.0017,+0.0069]$, $n{=}7$, surviving Bonferroni and Holm) and on Replogle RPE1
-($+0.0675$), and \emph{loses} to it on Norman ($-0.0790$). Three of eight datasets clear correction
-in \emph{disagreeing} directions ($I^2{=}87.5\%$, pooled random effects $+0.0091$,
-$[-0.0024,+0.0207]$), while the typed null holds and tightens across seven further screens (pooled
-$+0.0018$, random-effects $95\%$ CI $[-0.0028,+0.0065]$, $I^2{=}39\%$, $Q$ $p{=}0.13$). So the prior is not what fails; the
-encoder we built to exploit it is, and a ``graph versus no graph'' null can be an artifact of the
-graph \emph{encoder} rather than evidence about the graph. Our \emph{best} graph arm clears correction at an
-injected signal of $0.02$ response SDs and clears nothing when the same signal follows a
-scrambled graph. The \emph{gated} arm our null is stated on clears at no injected size up to $0.40$, at
-up to $9\times$ the paired noise, and on the increment isolating the injection neither arm separates
-below $0.40$. That null bounds what this encoder can resolve at four seeds rather than whether the
-prior helps. We close with the checklist we wish we had used.
+$n{=}5$, family-wise corrected), and the typed null holds across seven further Perturb-seq screens.
+The one contrast we were entitled to call significant then failed its own replication on a harder
+split. Of five candidate causes we adjudicate, the two that carry the argument are not about biology.
+Our baseline was never graph-free: zeroing its graph-derived features costs $-0.0036$
+\textsc{systema} under correction, more than the message passing over eight million typed edges we
+set out to measure. And an arm we had never run overturned the reading: strip the typing and gating,
+keep the raw topology, and that plain arm beats the baseline on our own screen ($+0.0043$, $n{=}7$,
+surviving Bonferroni and Holm) and on Replogle RPE1 ($+0.0675$), and \emph{loses} to it on Norman
+($-0.0790$); three of eight datasets clear correction, in \emph{disagreeing} directions. So the prior
+is not what fails but the encoder we built to exploit it, and a ``graph versus no graph'' null can be
+an artifact of the encoder rather than evidence about the graph. The null is also instrument-bound:
+the gated arm it rests on clears at no injected signal up to $0.40$ response SDs, where our best
+graph arm clears at $0.02$. We close with the checklist we wish we had used.
 \end{abstract}
 
 \section{Introduction}
@@ -247,7 +245,7 @@ survives correction.
 The third fold shows the failure is not one thing but two. On the intermediate fold h2a is $-0.0122$,
 within $7\%$ of the frozen $-0.0131$, yet clears no correction ($p=0.23$) because the across-seed
 standard deviation is $0.0169$ there against $0.0049$ on the frozen fold; on the hardest fold the
-estimate itself collapses to $-0.0012$. One replication failed because the noise grew, the other
+estimate itself collapses to $-0.0012$ ($p=0.61$). One replication failed because the noise grew, the other
 because the effect shrank, and only the second says anything about the effect. This is the most
 uncomfortable result in the paper. The parity claim holds across folds, metrics and split difficulty;
 the one \emph{positive} claim we were entitled to make under multiplicity control does not, so
@@ -301,6 +299,20 @@ per-dataset results are the pre-registered ones, and they say something sharper 
 estimate: raw topology has a \emph{real} effect, large enough to clear correction on three separate
 datasets, whose \emph{sign we cannot predict}. Neither cell type nor perturbation direction gives a
 rule that says in advance which way it will go.
+
+% AUTO 2026-08-26: the body quoted only the all-datasets pooling while App.~\ref{app:repl} reports
+% that Amendment 3.1 made the K=128 subset authoritative for this architecture, and that the two
+% disagree. Stating that only in an appendix reads as choosing the pooling that fits the sentence.
+% The claim above is conditioned here, not withdrawn: the confound is real and unresolved in both
+% directions, exactly as the appendix already argues at length.
+\paragraph{The pooling our own registration prefers disagrees with the one we quote.} Amendment 3.1
+fixed in advance that where the all-datasets and $K{=}128$ estimates disagree, it is the subset that
+speaks to the reference architecture. They disagree: over the five datasets at the reference program
+dimension the untyped margin is $+0.0141$ ($[+0.0041,+0.0240]$, $p{=}0.0056$), all five positive,
+against $+0.0091$ ($p{=}0.12$) over all eight. The three screens below $K{=}128$ include the only
+negative one, so the sign disagreement is not cleanly separable from an eightfold cut in program
+capacity, and is not explained by it either (Appendix~\ref{app:repl}). We
+report both and resolve neither, and ``sign we cannot predict'' should be read with that attached.
 
 % AUTO 2026-08-26: this paired the typed arm's I^2 over the SEVEN replication screens with the
 % untyped arm's over EIGHT (reference screen included), while claiming "the same datasets".
@@ -448,7 +460,7 @@ alone.
 correction, and no single fold's upper limit bounds the effect elsewhere (Appendix~\ref{app:power}).
 % AUTO 2026-08-26: "the typed arm's own floor is unmeasured" was true when written and is now false.
 The instrument is not the limit for our best graph arm, but at $n{=}4$ it is for the gated one, which
-clears at no injected size even at $0.40$ response SDs (Appendix~\ref{app:floor}).
+clears at no injected size up to $0.40$, the largest rung we ran (Appendix~\ref{app:floor}).
 
 \textbf{Our own pre-registration nearly prevented the replication.} Under the rules as written, four
 of six candidate datasets fell out. Auditing that decision produced the more useful finding, and it is

@@ -110,8 +110,8 @@ non-anonymous link is a compliance failure, not a cosmetic one.
 
 Upload `main.pdf` at the portal above. Fields you will be asked for:
 
-- **Title**: The Regularizer That Switched Off the Experiment: Diagnosing Why a Protein-Interaction
-  Prior Does Not Help T-Cell Perturbation Prediction
+- **Title**: The Regularizer That Switched Off the Experiment: Why Our Protein-Interaction Null Was
+  About the Encoder, Not the Prior
 - **Abstract**: paste from `abstract_plain.txt` in this directory — LaTeX already stripped, percent
   signs and minus signs intact, 439 words (updated 2026-08-26 when C1's floor entered the abstract). That file is DERIVED from `main.tex`; regenerate it after
   any abstract edit rather than editing it by hand. It had drifted a full campaign behind the paper
