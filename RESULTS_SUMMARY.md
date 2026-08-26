@@ -1,3 +1,63 @@
+# *** C1 CLOSED 2026-08-26. THE TYPED GATED ARM'S FLOOR IS ABOVE THE ENTIRE LADDER. ***
+
+**This is the outcome Amendment 9.8 committed to in writing before the campaign ran, and 9.8 requires
+it to be reported here the same day. It is.** Artifact
+`data/results/c1_ladder/floor_condition_gated.json`. 48 lanes, 0 failures, ~280 GPU-hours over five
+days. Frozen inputs sha256-identical before and after; Amendment 6's landed ladder untouched.
+
+`condition_gated` does not recover an injected graph signal at ANY size tested, up to **0.40 response
+SDs — twenty times the 0.02 at which `untyped_gnn` recovers one**. Same six rungs, same frozen fold,
+same seeds, same injected bytes.
+
+| rung | `untyped_gnn` delta | Bonf | `condition_gated` delta | Bonf |
+|---|---|---|---|---|
+| d020 | **+0.0088** | **0.0029** | -0.0057 | 1.0000 |
+| d050 | **+0.0081** | **0.0175** | -0.0007 | 1.0000 |
+| d100 | **+0.0041** | **0.0198** | -0.0058 | 1.0000 |
+| d200 | **+0.0090** | **0.0033** | -0.0030 | 1.0000 |
+| d400 | **+0.0183** | **0.0225** | +0.0045 | 1.0000 |
+| permuted 0.40 | -0.0001 | 1.000 | -0.0014 | 0.6029 |
+
+**The reading is valid: the permuted control does NOT clear** (Bonferroni 0.6029), so Amendment 9.6's
+absolute veto does not fire. **Every lane's gate stayed live** (minimum 0.0240 over all 24, against a
+1e-3 dead threshold), so Amendment 3.4 never bound and no lane was dropped as undecidable. Every lane
+recorded `lambda_graph=0.0`, so the arm measured is the arm the paper's null is about.
+
+## What this means, stated as precisely as the evidence allows
+
+**The mechanism is VARIANCE, not blindness, and the distinction matters.** The gated arm's per-seed
+paired SD is **4.0x to 9.5x** the untyped arm's on the same rungs (post-hoc,
+`c1_power_posthoc.json`), which is consistent with the 10.8x per-arm seed spread the paper already
+reports in App. `app:power`. Its point estimates are not systematically wrong; they are buried. At the
+largest injection the post-hoc increment is **+0.0053, 95% CI [+0.0007,+0.0099], p=0.035 uncorrected**
+— a hint of dose-response that does not survive m=6.
+
+So the correct claim is NOT "this encoder is intrinsically blind to graph structure". It is:
+**at the seed count this paper uses, the gated arm cannot resolve an injected graph signal of any size
+up to 0.40 response SDs.** Reaching the untyped arm's sensitivity would take roughly **13-16 seeds**
+at most rungs (62 at d100), against the 4-5 this project runs.
+
+**WHY THAT IS STILL THE UNCOMFORTABLE OUTCOME.** The paper's headline null is h1,
+`condition_gated - expression_only` = -0.0009 at n=5, reported as parity. That null is now known to
+have been measured with an instrument that, at that seed count, cannot detect a signal twenty times
+larger than the one its untyped sibling detects. The null therefore does not license "a PPI prior does
+not help for T-cell perturbation prediction". What it supports is narrower and should be said plainly:
+*at this seed budget, this gated encoder cannot resolve whether the prior helps.*
+
+**The existing hedge is no longer a hedge.** The abstract, Limitations and App. `app:floor` each say
+the typed arm's own floor is *unmeasured*. It is measured now, and the answer is worse than the hedge
+implied. Under Amendment 9.8 the paper is CORRECTED rather than hedged, and this correction joins the
+four already on this project's record.
+
+**What is NOT affected.** The untyped arm's result stands untouched: it recovers the injected signal
+at 0.02 SDs, and its own corrected-significant positive on the reference screen is unchanged. Nothing
+here says a PPI prior would help. It says this instrument, at this n, cannot tell.
+
+**Amendment 9.8's reverse commitment does not apply.** That clause governed a LOW floor and forbade
+strengthening any claim on it. This is the other branch.
+
+---
+
 # *** CONTRADICTION STOP FIRED (2026-08-21). Rail 4. Read this before anything else. ***
 
 **The graph HELPS and clears both corrections in a pre-registered analysis that had never been run.**
