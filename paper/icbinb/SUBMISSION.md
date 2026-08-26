@@ -5,6 +5,11 @@ verified; nothing below has to be re-derived.
 
 ## Venue facts
 
+**RE-VERIFIED AGAIN 2026-08-26, three days out: deadline UNCHANGED** at 29 Aug 2026, 11:59 p.m. AoE,
+with the page limit, double-blind requirement and portal all unchanged. It is still listed under
+"Tentative dates" and has not been extended. Checked because the row below says to and because a
+deadline move inside the last week is the one venue fact that cannot be recovered from.
+
 **RE-VERIFIED 2026-08-21** against https://icbinb-bio.github.io/submit/ and https://icbinb-bio.github.io/,
 eight days out. First verified 2026-08-11. **Every fact below is unchanged.** Re-checked because the
 deadline row said to and ten days had passed; an unchecked table that looks checked is the thing to

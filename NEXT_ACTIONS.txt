@@ -78,7 +78,8 @@ item here that can change what the paper concludes.
 THE AUTONOMOUS WORK, in priority order
 =======================================================================
 
---- B1. WHICH COMPONENT of the message form does the damage?  HIGHEST VALUE -------------------
+--- B1. WHICH COMPONENT of the message form does the damage?  *** RESOLVED: B1a CLOSED, B1b-d
+    DECLINED ON POWER. Nothing here is open. *** ----------------------------------------------
 Walk the bridge from typed_static to untyped_gnn one component at a time, each arm removing exactly
 one thing, paired per seed against the LANDED typed_static lanes on the frozen fold. n=4 minimum.
 
@@ -276,7 +277,7 @@ BOTH PREREQUISITES ARE DONE, commit 3b48889, and one of them was NOT what this f
     default argument froze it at import and silently defeated their monkeypatch -- producing not an
     error but a plausible number against the real root. It resolves at call time now.
 
---- C2. Bookkeeping the paper work of 2026-08-20 -----------------------------------------------
+--- C2. Bookkeeping the paper work of 2026-08-20.  *** A RECORD, NOT A TASK. Nothing to do. *** -
 Done in-session and NOT reflected here until now: the devil's advocate pass
 (docs/devils-advocate-2026-08-20.md), the full section-by-section rewrite, the number-drift verifier
 (paper/icbinb/verify_numbers.py plus numbers.snapshot.json, run --check after ANY paper edit), the
@@ -503,7 +504,11 @@ MANDATORY: merge_registry_n7.py before aggregating a fresh screening root, or th
 false "NOT comparable" flag. The reference registry is data/results/experiment_registry.yaml, NOT
 inside data/results/screening/ — a copy step pointed at the latter fails silently.
 
---- SHARED-BOX REALITY (measured 2026-08-12, affects every ETA in this file) -------------------
+--- SHARED-BOX REALITY (measured 2026-08-12; SUPERSEDED for current planning, see below) -------
+*** THESE NUMBERS ARE HISTORICAL. Measured 2026-08-26 after C1b drained: all four cards free
+(78.1/69.6/73.7/54.3 GiB) and load 15, against the 92-120 that actually governed C1b. C1b's own
+measured cost was 14.0h mean per gated lane, range 7.8-21.0h, 43-63 min/epoch. Price new work off
+THOSE numbers, and re-check the cards first: a free card does not stay free. ***
 This machine is shared and the contention is not visible from nvidia-smi alone. Measured while the L4
 lanes ran:
   - `python load_data.py Thyroid` at 5001% CPU (about 50 of 64 cores), load average 123 and rising.
