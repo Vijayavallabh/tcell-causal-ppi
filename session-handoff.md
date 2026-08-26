@@ -1,113 +1,55 @@
 # Session Handoff
 
-## STOP — READ FIRST (2026-08-21): D-series and C1a CLOSED. Rail 4 fired. Only C1b's lanes remain.
+## STOP — READ FIRST (2026-08-26): C1 IS CLOSED. Nothing is running. Everything left needs a human.
 
-**Nothing is running and no card is held by us.** Verified 2026-08-21 00:54, not assumed: no
-`run_screening`, no runner, no finaliser, no monitor. Cards 0, 1 and 3 (CUDA indexing) were free at
-78/78/75 GiB; card 2 was a co-tenant holding 63 GiB and card 4 is the T400. **Load average was 102**
-on 64 cores from other users' CPU jobs. These lanes are CPU-bound on row-by-row subgraph sampling, so
-that is what sets per-epoch time, not the free VRAM. Price any C1b estimate at the slow end of the
-measured 38-90 min/epoch, and RE-CHECK the cards before launching: a free card does not stay free.
+**Verified 2026-08-26, not assumed:** no `run_screening`, no runner, no finaliser. For the first time
+in this project's history all four cards are readable and free (78.1 / 69.6 / 73.7 / 54.3 GiB on CUDA
+0/1/2/3) and load average is 15, against the 92-120 that governed the campaign. Card 2's long-running
+co-tenant has released it.
 
-### *** RAIL 4 FIRED. Read the top block of `RESULTS_SUMMARY.md` before touching the paper. ***
+### The result
 
-D4's amendment audit found that Amendment 3.1 had pre-registered a pooled estimate over the K=128
-subset alongside the all-datasets one, that it was **never computed**, and that the paper nonetheless
-claimed it *was* reported. Running it is free — it re-pools landed numbers. The two disagree:
+`condition_gated` **recovers no injected graph signal at any size up to 0.40 response SDs**, against
+`untyped_gnn`'s measured floor of **0.02** on the identical six rungs, fold, seeds and injected bytes.
+Every rung's Bonferroni is 1.0000. 48 lanes, 0 failures, ~280 GPU-hours, 21 to 26 Aug. Artifact
+`data/results/c1_ladder/floor_condition_gated.json`.
 
-| pool | k | random effects | 95% CI | p |
-|---|---|---|---|---|
-| all datasets (what the paper reports) | 8 | +0.0091 | [-0.0024, +0.0207] | 0.121 |
-| **K=128 subset (the pre-registered second estimate)** | **5** | **+0.0141** | **[+0.0041, +0.0241]** | **0.0056** |
+It is a floor reading rather than a vacuum: the permuted control does **not** clear (0.6029), so
+Amendment 9.6's absolute veto did not fire, and all 24 lanes kept live gates (minimum 0.0240 against
+the 1e-3 threshold), so Amendment 3.4 never bound and nothing was dropped as undecidable. Every lane
+recorded `lambda_graph=0.0`.
 
-All five K=128 datasets are positive, and at m=4 both Bonferroni and Holm give 0.0224. **The graph
-helps in a pre-registered analysis nobody had run.** Snapshotted, flagged, null NOT rewritten around
-it. It does **not** touch the headline null — h1 is unchanged at k=1, +0.0033, p=0.90. It **does**
-undercut the body's "sign we cannot predict" sentence: the only negative anywhere is Norman, and
-Norman ran at K=16, an eight-fold capacity reduction the paper never labelled. Whether the body
-argument changes is a **human** call, not an agent's. Full reasoning: `docs/prereg-audit-2026-08-21.md`.
+**The mechanism is variance, not blindness, and that bounds the claim.** The gated arm's paired SD is
+4.0 to 9.5 times the untyped arm's, matching the 10.8x per-arm seed spread already in `app:power`. At
+the largest injection its post-hoc increment is +0.0053 [+0.0007,+0.0099], p=0.035 uncorrected: a hint
+of dose-response that does not survive m=6. Matching the untyped arm would take ~13 to 16 seeds against
+the four run. So the claim is **not** that the encoder is blind; it is that *at this seed count* it
+cannot resolve an injected signal of any size up to 0.40 SDs.
 
-**The whole D-series is closed** (commits c4c8eb6, 23330d6, 55d3325, 51b4c69, 9a55284). The paper now
-has seven gates instead of five: anonymity over the paper *and* all 245 tracked files (the venue
-blinds linked material), and artifact agreement over all eleven tables instead of three. Two real
-errors were found and fixed — a Bonferroni p that rounded the wrong way, and an appendix table still
-reporting a superseded rule's counts — plus a harness bug in which `check_paper.sh` reported FAIL on
-its most important gate and exited 0 anyway.
+### What it did to the paper
 
-**C1a is closed: Amendment 9 has landed**, so rail 7 no longer blocks C1b. Writing it caught a setting
-that would have voided the campaign: `run_a2_ladder.sh` uses the config-default `LAMBDA_GRAPH=0.01`,
-which is harmless for Amendment 6's arms but suppresses the gate of `condition_gated` — the only arm
-whose gate is live, and the arm the headline null is about. All 24 lanes would have measured a floor
-for a different model and tripped Amendment 3.4's own kill criterion. **Two prerequisites before any
-C1b lane:** `LAMBDA_GRAPH=0` must reach the lane, and `ladder_report.py` must take the arm and
-reference root as parameters, with tests, before the lanes land (Amendment 9.11).
+Amendment 9.8 committed in writing, before any lane ran, that this outcome would be reported the same
+day and the paper CORRECTED rather than hedged. Both happened. Two statements saying the typed arm's
+floor was unmeasured were true when written and are now false; they are fixed. The abstract,
+Limitations, cause C and `app:floor` all carry the result, and cause C's verdict moved from "Survives"
+to "Survives, and it is the encoder". Body stays EXACTLY 8pp; all seven gates pass.
 
-### C1b IS RUNNING (launched 2026-08-21 02:08) (first launch 01:53 was stopped at 02:07 and RESTARTED at 02:08 after editing the runner mid-flight: bash reads a script incrementally by byte offset, so shifting lines under a running shell can garble everything after the current statement. Only three cheap lanes were in flight. The restart also exposed the stale-claim trap now reaped automatically)
+### What is left, all of it human
 
-`run_c1_ladder.sh`, 48 lanes into a FRESH root `data/results/c1_ladder` — 24 `expression_only` and 24
-`condition_gated` over the six existing rungs at seeds 0-3, on cards 0/1/3 (card 2 is a co-tenant
-whose CUDA context could not even be created). Watch `data/logs/c1_ladder.nohup.log`.
+1. **The submission.** Create the anonymous.4open.science mirror, paste the URL over the placeholder in
+   `main.tex`, rebuild, confirm the body still ends on page 8, upload at OpenReview. The anonymity gate
+   ACCEPTS that URL and REJECTS github.com, so `./check_paper.sh` confirms the swap.
+2. **The style-file re-diff.** Two minutes, and do it before the final build: a changed `.sty` moves the
+   page count. Ours has not drifted locally but the upstream diff is unconfirmed since 2026-08-11.
+3. **The rail-4 call.** The K=128 subset pooled estimate disagrees with the all-datasets one, and the
+   pre-registration says the subset is authoritative. Whether the body's "sign we cannot predict"
+   argument changes is a scientific decision, flagged and left as rail 4 requires.
 
-**It is a separate script from `run_a2_ladder.sh` for one reason, and it is the reason Amendment 9.2
-exists.** `config.LAMBDA_GRAPH` is a plain module constant, so `export LAMBDA_GRAPH=0` does
-**nothing**; the override is the CLI flag `--lambda-graph 0`, and `run_a2_ladder.sh` does not pass it.
-`run_screening --help` states the consequence itself: at the default `0.01` "the unnormalised per-edge
-sum is ~103x the response term and annihilates the gates inside epoch 0". `condition_gated` is the
-only arm here with a live gate, so reusing the A2 runner would have spent 180-380 GPU-hours measuring
-a floor for a model the paper's null is not about, and tripped Amendment 3.4's own kill criterion.
-Verified on the live command line after launch.
+Deadline 29 Aug AoE, still marked tentative on the site as of the 2026-08-21 re-check.
 
-**Job order is seed-major, deliberately.** A stopped campaign then holds a *balanced* ladder at
-whatever n landed. Rung-major would leave three rungs at n=4 and three at n=0, which the floor rule
-cannot read at all — the floor is the smallest rung that clears AND is cleared by every larger one.
-Amendment 9.9 anticipates being stopped short; this makes that outcome readable rather than wasted.
+---
 
-**FIRST MEASUREMENTS, 2026-08-21 02:34.** Two things are already verified rather than assumed.
-`lambda_graph = 0.0` is recorded in the landed lane's own parquet, so the flag reached the artifact and
-not merely the command line. And the same rung/seed lane exists in the A2 ladder at `lambda_graph=0.01`:
-the two agree to `+0.000076` against a per-seed spread of `0.003`, i.e. forty times smaller than seed
-noise. That confirms both that lambda genuinely does not touch a graph-free arm and that this campaign
-reproduces the landed lanes correctly.
-
-**MEASURED, 2026-08-21 11:31 — Amendment 9.9's requirement is now discharged.** The first
-`condition_gated` lane, `d020_s0`, ran **03:00:14 to 11:31:44 = 8 h 31 m wall, 8.51 GPU-h**, completing
-12 of 20 epochs on early stopping, `systema` 0.0871. `expression_only` lanes measure ~26 min (0.41
-GPU-h) at load ~95.
-
-**THE GATE STAYED ALIVE: min 0.7027, running 0.7027 -> 0.7442 over 12 epochs, against a dead threshold
-of 1e-3.** That is the empirical validation of the whole Amendment 9.2 decision. At the config default
-`lambda_graph=0.01` the same gate is annihilated inside epoch 0 and collapses toward 1e-7; had this
-campaign reused `run_a2_ladder.sh` it would have burned days measuring a model the paper's null is not
-about, and every lane would have been UNDECIDABLE under Amendment 3.4.
-
-**Per-epoch, which is the comparable measure** (wall time alone confounds contention with how many
-epochs early stopping allowed), across the first three gated lanes:
-
-| lane | wall | epochs | min/epoch | GPU-h |
-|---|---|---|---|---|
-| d020_s0 | 8.53 h | 12/20 | 42.6 | 8.51 |
-| d050_s0 | 10.60 h | 13/20 | 48.9 | 10.58 |
-| d100_s0 | 14.69 h | 14/20 | 63.0 | 14.67 |
-
-Both drivers are benign. Early stopping allowed more epochs each time (12, 13, 14 of 20), and per-epoch
-time rose with contention — all inside the 38-90 min/epoch this box is documented to deliver.
-
-**Schedule, central and pessimistic.** At the observed ~51 min/epoch and ~13 epochs, a gated lane is
-~11 h, so 24 of them over 3 rolling cards plus ~4 h of cheap lanes is **~3.9 days from the 02:08 start,
-finishing around 26 Aug**. The pessimistic bound matters and is written down rather than hoped away: if
-later lanes run the full 20 epochs at the slowest observed 63 min/epoch, a lane is ~21 h and the
-campaign needs **~7 days, i.e. 28 Aug** — inside the 29 Aug deadline but with no margin. So re-check
-against the deadline rather than assuming, and invoke the stop rule (Amendment 9.9, rail 5) rather than
-quietly extending. Load fell from ~95 to ~50 on 21 Aug afternoon, which should help.
-
-Card 2 was re-checked at 18:05 on 21 Aug and is STILL held by its co-tenant, so no fourth worker is
-available; cards 0/1/3 are ours. Workers take the next job as each card frees, so this is a rolling
-pipeline, not lock-step waves.
-
-**If card 2 frees up**, adding a fourth worker takes 8 waves to 6 and cuts roughly a quarter off the
-wall clock. The runner is idempotent and reaps stale claims, so a second invocation with `CARDS=2` is
-safe. Treat it as best-effort only: `run_l4_card2.sh` preflighted card 2 at 78 GiB, started a lane, and
-lost it to a returning co-tenant 2h47m later.
+## The campaign's own record, kept as written during it
 
 ### Recorded 2026-08-22 at n=1, BEFORE any contrast is computable — not a result
 

@@ -27,6 +27,23 @@ why the claim has to be stated in that direction rather than as "the null is bou
 FIXED: abstract, Limitations and `app:floor` now attribute the floor to the best graph
 arm and say the typed arm's own floor is not measured.
 
+**RESOLVED 2026-08-26, and this objection was right in a way the fix above did not settle.**
+Labelling the gap was the correct first move but it left the question open, so C1 measured
+it: the identical six rungs re-read with `condition_gated`, pre-registered as Amendment 9
+before any lane ran, 48 lanes and 0 failures.
+
+**The gated arm recovers nothing at any injected size up to `0.40` response SDs**, twenty
+times the `0.02` at which the untyped arm recovers. The a-fortiori direction 6.5 relied on
+held, and it turned out to be loose by more than an order of magnitude. The mechanism is
+variance rather than blindness: the gated arm's paired SD is 4.0 to 9.5 times the untyped
+arm's, consistent with the 10.8x per-arm seed spread already in `app:power`, and matching
+its sensitivity would take roughly 13 to 16 seeds against the four run.
+
+So this objection did not merely need a label, it needed the measurement, and the
+measurement changed the paper: the abstract, Limitations, cause C and `app:floor` now say
+the headline null bounds what this encoder can resolve at four seeds rather than whether a
+PPI prior helps. Full account at the top of `RESULTS_SUMMARY.md`.
+
 ## IMPORTANT — the injected signal has the encoder's own functional form
 
 Each rung adds `delta` times the mean response of a target's PPI neighbours. That is, up

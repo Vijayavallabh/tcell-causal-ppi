@@ -275,3 +275,34 @@ untouched:
 Left for a human: whether the sign-disagreement argument in the body should change. That is a
 scientific call on the paper's central replication claim eight days from a deadline, and rail 4's
 instruction is to flag and continue, not to rewrite.
+
+
+---
+
+# Appended 2026-08-26: Amendment 9, audited against what was actually done
+
+Amendment 9 did not exist when this audit was written; it was registered the same day, and C1's lanes
+ran 21 to 26 Aug. Its promises are now checkable, so they are checked here on the same terms as the
+other ten. **Verdict: KEPT, including the one that cost something.**
+
+| promised in Amendment 9 | verdict |
+|---|---|
+| 9.1 six existing rungs reused, no new injection, seeds 0-3 | **KEPT** — `inject_sha256.{before,after}.txt` are identical across 12 files; 24 gated + 24 baseline lanes, 0 failures |
+| 9.2 `lambda_graph=0`, and gate health REPORTED not assumed | **KEPT** — every lane's parquet records `lambda_graph=0.0`, and the report reads the trainer's own per-epoch history. Minimum gate mean 0.0240 over all 24 lanes |
+| 9.3 primary = `condition_gated - expression_only`, paired, n=4 | **KEPT** — n=4 on every rung, none dropped |
+| 9.4 family of six, Bonferroni AND Holm, not pooled with Amendment 6's | **KEPT** — `family_size: 6`; the two ladders are reported side by side, each at m=6 |
+| 9.5 zero point from the `lambda_graph=0` root, excluded from the family | **KEPT** — read from `screening_lambda0`, reported as the zero point and not a family member |
+| 9.6 floor rule, monotonicity flag, and the control's absolute veto | **KEPT** — the control did not clear (0.6029), so the veto did not fire and the floor reading is valid rather than vacuous |
+| 9.7 what each outcome means, fixed in advance | **KEPT** — the outcome that occurred is the third bullet, "the floor is above the largest rung tested", which 9.7 routes to 9.8 |
+| **9.8 the uncomfortable outcome, in writing, before the numbers** | **KEPT, and it bound.** Reported at the top of `RESULTS_SUMMARY.md` the same day, as required, and the paper was CORRECTED rather than hedged: two statements that said the typed arm's floor was unmeasured were false and are fixed, and the abstract, Limitations and cause C now carry the result |
+| 9.8's reverse commitment (a low floor licenses nothing) | **NOT TRIGGERED** — that clause governed the other branch |
+| 9.9 re-measure cost on the first lane; stop rather than extend | **KEPT** — measured at 8.51 GPU-h on the first gated lane rather than extrapolated; the campaign finished 26 Aug, three days inside the deadline, so the stop rule was never invoked |
+| 9.10 rails 1 and 2 | **KEPT** — fresh root, `a2_ladder` untouched, sealed split not read |
+| 9.11 parameterise the report BEFORE the lanes land | **KEPT** — landed 21 Aug in commit `3b48889`, before the first lane finished, with tests |
+
+**The point of 9.11 was borne out.** Because the analysis was fixed before the numbers existed, four
+defects found in it during the campaign were fixed against fixtures rather than against a result:
+an empty control passing the veto, a control emptied by dropped lanes passing it, gate health computed
+over lanes the analysis never counted, and a null from missing seeds asserted as a property of the
+pipeline. Each was found by running the report on partial data, and none could have been shaped by the
+outcome, because the outcome did not exist yet.

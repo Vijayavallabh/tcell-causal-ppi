@@ -1093,6 +1093,53 @@ The leakage test is the one that matters and it was watched to **fail** against 
 variant before being trusted; a validation target's injected component must be a function of train
 responses only, or the graph arm detects leakage rather than structure.
 
+#### The same floor for the arm the null is about (C1, Amendment 9)
+
+The ladder above uses `untyped_gnn`, chosen in Amendment 6.5 on cost and sensitivity, so it bounds the
+**pipeline** rather than the gated encoder the paper's null concerns. C1 closes that gap by re-reading
+the identical six rungs with `condition_gated`. No new rungs and no new injection: the built matrices
+are reused byte for byte, and `inject_sha256.{before,after}.txt` in the output root prove it.
+
+```bash
+setsid nohup ./run_c1_ladder.sh > data/logs/c1_ladder.nohup.log 2>&1 &   # 48 lanes, ~280 GPU-h
+PYTHONPATH=src python -m tcell_pipeline.screening.ladder_report \
+    --root data/results/c1_ladder --arm condition_gated \
+    --reference-root data/results/screening_lambda0 \
+    --out data/results/c1_ladder/floor_condition_gated.json
+```
+
+**`run_c1_ladder.sh` is a separate script from `run_a2_ladder.sh` for one reason, and it is not
+cosmetic.** `config.LAMBDA_GRAPH` is a plain module constant, so `export LAMBDA_GRAPH=0` does
+**nothing**; the override is the CLI flag `--lambda-graph 0`, which `run_a2_ladder.sh` does not pass.
+At the config default of `0.01`, `run_screening --help` states the consequence itself: the unnormalised
+per-edge sum is about `103x` the response term and annihilates the gates inside epoch 0. That is
+harmless for `untyped_gnn`, which pins its gate, and fatal for `condition_gated`, which is the only arm
+here with a live one. Every lane's `lambda_graph` is recorded in its own parquet and re-read by the
+report, so the setting is verifiable after the fact rather than assumed.
+
+**Both `--arm` and `--reference-root` matter.** The zero point must come from a root with the same
+configuration as the lanes, which for this ladder is `screening_lambda0` rather than the module
+default. The report records both in its output so one ladder can never be mistaken for the other, and
+its defaults still reproduce Amendment 6's `floor.json` exactly.
+
+The report refuses rather than guesses in four situations, each of which is a test: no permuted control
+rung present, a control present but with too few lanes to test, any real rung below two paired seeds,
+and — for `condition_gated` only — a gate that collapsed below `1e-3`, which drops the lane under
+Amendment 3.4 and shrinks `n`. Short of the pre-registered seed count it reports
+`above_ladder_preliminary` rather than claiming the floor is above the ladder, because "nothing
+cleared" and "the instrument is blind" are different claims and only a complete ladder carries the
+second.
+
+```bash
+PYTHONPATH=src python -m pytest src/tests/test_ladder_report.py -q   # 21 tests incl. all four refusals
+```
+
+**What it found (2026-08-26).** No rung is recovered up to `delta=0.40`, against `untyped_gnn`'s
+measured floor of `0.02`. The control does not clear, so the reading is a floor rather than a vacuum,
+and all 24 lanes kept live gates. The mechanism is variance: the gated arm's paired SD is 4.0 to 9.5
+times the untyped arm's. Full account at the top of `RESULTS_SUMMARY.md`; post-hoc seed requirements in
+`data/results/c1_ladder/c1_power_posthoc.json`.
+
 #### How many seeds / re-draws / datasets would a real effect need? (A2b)
 
 Monte-Carlo over the variance components this project measured (L4), applying the pipeline's own

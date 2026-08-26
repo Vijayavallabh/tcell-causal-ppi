@@ -10,6 +10,16 @@
 #
 #   setsid nohup ./run_c1_ladder.sh > data/logs/c1_ladder.nohup.log 2>&1 &
 #
+# *** THIS CAMPAIGN HAS RUN AND IS CLOSED (21-26 Aug 2026). 48 lanes, 0 failures, ~280 GPU-h. ***
+# RESULT: condition_gated recovers NO injected signal at any size up to 0.40 response SDs, against
+# untyped_gnn's measured 0.02 on the identical rungs. The control did not clear, so the reading is a
+# floor rather than a vacuum, and all 24 lanes kept live gates (min 0.0240). The mechanism is variance:
+# the gated arm's paired SD is 4.0-9.5x the untyped arm's. Full account atop RESULTS_SUMMARY.md;
+# artifact data/results/c1_ladder/floor_condition_gated.json.
+# The script is IDEMPOTENT and reaps stale claims, so re-running it is a no-op that re-verifies the
+# landed lanes rather than retraining them. To add SEEDS instead, set SEEDS="4 5 6 ..." — the post-hoc
+# power note says ~13-16 would be needed to match the untyped arm's sensitivity.
+#
 # *** --lambda-graph 0 IS NOT OPTIONAL AND IS NOT AN ENVIRONMENT VARIABLE. ***
 # config.LAMBDA_GRAPH is a plain module constant, so `export LAMBDA_GRAPH=0` silently does NOTHING.
 # The override is the CLI flag below, and run_a2_ladder.sh does not pass it — which is exactly why
