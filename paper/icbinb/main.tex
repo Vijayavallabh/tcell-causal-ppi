@@ -712,7 +712,7 @@ harder ($0.75/0.15$)  & $+0.0005$ & $[-0.0105,+0.0115]$ & $1.000$ & $-0.0012$ \\
 
 % AUTO 2026-08-19: MOVED here from Limitations for the page budget (rail 3). Both limits remain
 % named in the body; this is the elaboration.
-\paragraph{The two limits that replaced the single-screen one.} Two narrower limits replace the old one. The condition gate needs at least two experimental contexts, and only one qualified dataset has them, so h1 still rests on a single replication; every other dataset can speak only to the static graph. And the two screens that failed on-target quality control, Datlinger and Shifrut, were the pool's only T-cell data, so nothing in the replication replicates the reference \emph{cell type}. A prior that is genuinely T-cell-specific would fail exactly this way, and we cannot rule that out.
+\paragraph{The two limits that replaced the single-screen one.} Two narrower limits replace the old one. The condition gate needs at least two experimental contexts, and only one qualified dataset has them, so h1 still rests on a single replication; every other dataset can speak only to the static graph. And nothing in the replication replicates the reference \emph{cell type}, because the pool's only T-cell screens are the two that failed quality control above. A prior that is genuinely T-cell-specific would fail exactly this way, and we cannot rule that out.
 
 % AUTO 2026-08-20: MOVED here from Section 5 for the page budget (rail 3). The body keeps the
 % surviving contrasts, the sign disagreement and the no-pooled-benefit verdict; this is the detail.
@@ -721,7 +721,7 @@ harder ($0.75/0.15$)  & $+0.0005$ & $[-0.0105,+0.0115]$ & $1.000$ & $-0.0012$ \\
 \paragraph{What the five-dataset version would have said.} We initially had five datasets and all five were positive; training the sixth reversed it decisively, and the genome-wide eighth is positive but not significant ($+0.0069$). Our two activation datasets do not behave alike either ($-0.0790$ and $+0.0226$).
 
 % AUTO 2026-08-20: MOVED here from Section 5 for the page budget (rail 3).
-\paragraph{The genome-wide point estimate, and the one gated replication.} The genome-wide screen is the tightest single point of the seven ($+0.0008$, $[-0.0042,+0.0058]$). On Frangieh, the one dataset where the condition gate has anything to gate, h1 is $+0.0033$ ($95\%$ CI $[-0.0829,+0.0894]$) with every gate demonstrably live throughout training. That interval is wide, and we read it as underpowered rather than as a null.
+\paragraph{The genome-wide point estimate, and the one gated replication.} The genome-wide screen's tightest-of-seven point is $+0.0008$, with interval $[-0.0042,+0.0058]$. On Frangieh, h1 is $+0.0033$ ($95\%$ CI $[-0.0829,+0.0894]$), with every gate demonstrably live throughout training. That interval is wide, and we read it as underpowered rather than as a null.
 
 % AUTO 2026-08-20: MOVED here from Section 5 for the page budget (rail 3).
 \paragraph{The replication panel, and which contrast each dataset can test.} The seven screens are Frangieh melanoma (three conditions), Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide ($9{,}730$ targets), Tian iPSC-neuron CRISPRi, Norman K562 and Tian iPSC-neuron CRISPRa. Which contrast is primary is fixed by condition count in advance: only Frangieh has the two contexts the condition gate needs, so h1 is testable there and nowhere else.
@@ -774,18 +774,20 @@ The degrees-only variant reproduces the full ablation within its interval, so th
 \paragraph{C, the intervals behind the arm ordering.} At $n{=}7$ on the frozen fold, edge typing costs $-0.0120$ \textsc{systema} ($95\%$ CI $[-0.0160,-0.0080]$, Bonferroni and Holm both $0.001$); the condition gate returns $+0.0077$, whose raw interval excludes zero but which does not survive correction (Bonferroni $0.131$); and the untyped arm is $+0.0043$ ($95\%$ CI $[+0.0017,+0.0069]$, paired $p=0.0068$).
 
 \paragraph{D, in full: what the ``no graph'' baseline actually contains.}
-Our \textsc{expression\_only} arm turns the message-passing pathway off, and it is what the field would call the no-graph baseline. But the target is described by a frozen feature vector that already carries graph-derived information: three PPI degree scalars, of which the physical and functional degrees are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), plus a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-contextualized interaction network. So the contrast we and others label ``graph versus no graph'' actually measures \emph{the marginal value of message passing over a node-level graph summary}, and the ablation is blind to that summary by construction.
+The frozen feature vector that arm carries is graph-derived in two places: three PPI degree scalars, whose physical and functional components are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), and a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-contextualized interaction network. So the contrast we and others label ``graph versus no graph'' actually measures \emph{the marginal value of message passing over a node-level graph summary}, and the ablation is blind to that summary by construction.
 
 So the ablation the field should run is a three-way one that also strips graph-derived node features, and we ran it (Appendix~\ref{app:ablate}): zeroing them, leaving dimensionality and parameter count identical so the contrast isolates information rather than capacity, costs $-0.0036$ \textsc{systema} over five paired seeds under family-wise correction ($p=0.0005$). All of it is three degree scalars; PINNACLE alone is worth $+0.000006$, exactly as its $9.2\%$ coverage predicts.
 
-A three-number summary of the network outweighs the topology built on top of it. We do not claim degree is a good predictor in absolute terms; $0.0036$ against a baseline of $0.0857$ is about four percent, and it clears correction largely because the no-graph arm is our lowest-variance one. The claim is comparative and it is about experimental design: an ablation that labels one arm ``no graph'' while feeding it a working graph summary is not measuring what its name says, and what it discards outweighs what it measures. The experiment costs under six GPU-hours, which is the other reason to run it rather than flag it as future work, as an earlier draft of this paper did.
+A three-number summary of the network outweighs the topology built on top of it. We do not claim degree is a good predictor in absolute terms; $0.0036$ against a baseline of $0.0857$ is about four percent, and it clears correction largely because the no-graph arm is our lowest-variance one. The claim is comparative and it is about experimental design: what that ablation discards outweighs what it measures. The experiment costs under six GPU-hours, which is the other reason to run it rather than flag it as future work, as an earlier draft of this paper did.
 
 \section{When a pre-registration freezes a mistake}
 \label{app:prereg}
 
 % AUTO 2026-08-19: moved here from Limitations for the page budget; content unchanged.
-\paragraph{The rule, and what it cost.} We pre-registered a multi-dataset replication and built
-differential-expression matrices for six harmonized public candidates \citep{peidli2024scperturb}. The
+% AUTO 2026-08-26: this opened with the same seven words as App.~\ref{app:repl}. That section
+% establishes the pre-registration; this one is about the clause that froze a mistake.
+\paragraph{The rule, and what it cost.} We built differential-expression matrices for six harmonized
+public candidates \citep{peidli2024scperturb}. The
 pre-registration fixed the differential-expression unit as ``two or more replicate pseudobulks per
 (target, condition)'' at a $25$-cell floor, and specified that a dataset unable to meet it is dropped
 rather than switched to a different test. Four candidates fell out. The clause did what such clauses
