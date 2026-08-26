@@ -76,3 +76,9 @@ catboost_info/
 
 # Session scratch dirs — reproducers belong in src/ as real modules, not here
 scratchpad/
+
+# Working proposals from a parallel session's lane, left untracked on purpose. They were never
+# committed, so this hides them from `git status` without touching history. It also keeps them out of
+# `git ls-files`, which is what the anonymity gate scans and what the anonymous.4open.science mirror
+# would serve — an unreviewed draft is not something to ship with a double-blind submission.
+hyperbolic_*_proposal.md
