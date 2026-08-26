@@ -113,12 +113,100 @@ Upload `main.pdf` at the portal above. Fields you will be asked for:
 - **Title**: The Regularizer That Switched Off the Experiment: Why Our Protein-Interaction Null Was
   About the Encoder, Not the Prior
 - **Abstract**: paste from `abstract_plain.txt` in this directory — LaTeX already stripped, percent
-  signs and minus signs intact, 439 words (updated 2026-08-26 when C1's floor entered the abstract). That file is DERIVED from `main.tex`; regenerate it after
+  signs and minus signs intact, 334 words / 2070 chars (cut from 450 on 2026-08-26; it had run 450
+  words and ~15 numeric intervals before reaching its thesis). That file is DERIVED from `main.tex`; regenerate it after
   any abstract edit rather than editing it by hand. It had drifted a full campaign behind the paper
   once (it still carried the pooled `+0.0031`, `I^2=26%` and the retracted "positive on all five
   datasets"), and since it is the text that gets pasted into the portal, a stale copy submits a claim
   the body of the paper contradicts.
+- **TL;DR**: OpenReview caps this field at 250 characters. Use (244):
+
+  > Testing a protein-interaction prior on T-cell Perturb-seq, we hit two silent failures: a textbook
+  > regularizer switched the graph off mid-experiment, and the null that survived repair belonged to
+  > our encoder, not the prior. The plainest arm won.
+
+  It leads with the biological setting (evaluation criterion 3), says "two silent failures"
+  (criterion 4), and closes on the strong-simple-baseline note the ICBINB initiative statement
+  explicitly asks for. Plain text: the field does not render LaTeX.
+- **Keywords** (comma separated):
+
+  ```
+  negative results, failure modes, perturbation prediction, Perturb-seq, single-cell transcriptomics,
+  protein-protein interaction networks, graph neural networks, biological priors,
+  out-of-distribution generalization, confounded supervision, experimental design, reproducibility
+  ```
+
+  `out-of-distribution generalization`, `confounded supervision` and `experimental design` are lifted
+  VERBATIM from the workshop's own topic list, which is what OpenReview matches reviewers against.
+  `negative results` and `failure modes` lead because they are the workshop's identity. Deliberately
+  omitted: `multiple hypothesis correction` and `ablation study` (accurate, but they recruit
+  methodologists over biologists, and this committee is the latter), and `foundation models`,
+  `benchmarking` and `causal inference` (adjacent enough to attract a reviewer whose first question
+  is one this paper does not answer).
 - **Track**: full paper (8 pages), not the 4-page tiny-paper track.
+
+## How this will be judged — read off the site 2026-08-26
+
+Scraped from https://icbinb-bio.github.io/submit/ and .../reviewer-guidelines/ on 2026-08-26. None of
+this was in this file before; all of it bears on choices already made in the paper.
+
+### The four-part structure is MANDATORY for full papers, and we already match it
+
+Verbatim, a full submission "should contain the following": **Problem**, **Proposed approach**,
+**Observed outcome**, **Reason for failure**. `main.tex` uses those four strings as its actual section
+headings (`\section{Problem}`, `\section{Proposed approach}`, `\section{Observed outcome}`,
+`\section{Reason for failure: five candidate causes}`). Do not rename them to something more
+literary; the match is the compliance.
+
+### Seven evaluation criteria, verbatim from the call
+
+1. Clarity of the problem and claims.
+2. Technical rigour and reproducibility.
+3. Faithfulness to the biological setting.
+4. Depth of failure analysis.
+5. Quality of empirical documentation.
+6. Novelty and significance of the insights.
+7. Quality of discussion of limitations.
+
+The reviewer-guidelines page carries a shorter five-item version that adds an eighth consideration in
+its own words: **alignment with workshop topics**, with the warning that "submissions that primarily
+report improved state-of-the-art performance without meaningful analysis of limitations or failures
+should receive a lower score on workshop alignment." That is the opposite of this paper's risk.
+
+### Two awards, and reviewers are asked to nominate
+
+- **Entropic Award** — most surprising negative result.
+- **Didactic Award** — most well-explained and pedagogical paper.
+
+This paper is a live candidate for both: the untyped-arm overturn for the first, the checklist of
+\S\ref{sec:checklist} for the second. Both the TL;DR and the abstract should keep making that easy to
+see. Reviewers may also nominate for spotlight or contributed talks.
+
+### Reviewers are NOT required to read the appendix
+
+Verbatim: "Authors may include unlimited appendices, but reviewers are not required to read." Two
+consequences, both already acted on. Anything load-bearing must survive inside the eight pages, which
+is why the K=128 subset disagreement was moved into \S\ref{sec:repl} on 2026-08-26 instead of being
+left in App.~D. And the 18 appendix pages are, for review purposes, optional: do not solve a page
+overflow by assuming a reviewer will follow the pointer.
+
+### Who is actually reviewing
+
+The organizing committee is EPFL, Cold Spring Harbor, Columbia and UW: single-cell and multimodal
+models, interpretable and generative genomics, explainable AI, genomic foundation models, scientific
+agents. **No PPI-network or graph-ML specialist among them.** Keyword choice above leans single-cell
+and perturbation accordingly, and the paper should not assume a reader who already believes typed
+message passing is the obvious thing to try.
+
+### Other facts confirmed the same day
+
+- Non-archival, and concurrent submission is explicitly welcome "when they comply with the target
+  venue's policy", with the NeurIPS 2026 main track named as fine. The AAAI dual submission stands.
+- Ineligible only if already ACCEPTED for publication in previous conference proceedings.
+- LLM disclosure remains REQUIRED: "a short paragraph describing their role." Ethics and
+  reproducibility statements are recommended and do not count toward the page limit.
+- The template is still a Google Drive zip, so the two-minute style-file diff above still needs doing.
+- Deadline still 29 Aug 2026 AoE, still marked tentative. Workshop is 11 or 12 Dec 2026, Sydney.
 
 ## Rebuilding
 
