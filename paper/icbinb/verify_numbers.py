@@ -140,6 +140,174 @@ _CONTRAST_OF = {("typed_static", "expression_only"): "h2a",
                 ("condition_gated", "expression_only"): "h1_vs_no_graph"}
 
 
+# Region -> the artifacts that region's numbers are drawn from. Scoping matters and is not cosmetic:
+# checking a value against ALL 514 result artifacts is vacuous, because a random four-decimal effect
+# size lands in that corpus 65% of the time and 91% of the paper's real values still "pass" after
+# being perturbed by one digit. Scoped to the handful of artifacts a section actually uses, the same
+# test admits a random value 3-8% of the time. Measured, not assumed, on 2026-08-26.
+_R = "data/results/"
+PROSE_REGIONS = {
+    "sec:confound": [_R + "screening/robustness_5seed.json", _R + "q4_lambda_sweep_22ep.json",
+                     _R + "q4_lambda_sweep_12ep.json", _R + "screening_lambda0/lambda_sweep_empirical.json"],
+    "sec:null": [_R + "screening_lambda0/robustness_5seed.json",
+                 _R + "screening_lambda0/second_metric_5seed.json",
+                 _R + "screening_c080c10_h1/robustness_5seed.json",
+                 _R + "screening_c075c15_n5/robustness_5seed.json",
+                 _R + "screening/robustness_5seed.json"],
+    "sec:repl": [_R + "replication/pooled_with_reference.json", _R + "replication/pooled.json",
+                 _R + "screening_untyped_n7/robustness_5seed.json",
+                 _R + "replication/pooled_k128_subset.json"],
+    "sec:causes": [_R + "screening_untyped_n7/robustness_5seed.json", _R + "feature_ablation_report.json",
+                   _R + "replication/pooled_with_reference.json", _R + "a2_ladder/floor.json",
+                   _R + "rationale_audit_lambda0/audit_report.json"],
+    "app:floor": [_R + "a2_ladder/floor.json", _R + "c1_ladder/floor_condition_gated.json",
+                  _R + "c1_ladder/c1_power_posthoc.json", _R + "a2_ladder/b3_power.json",
+                  _R + "screening_untyped_n7/robustness_5seed.json"],
+    "app:power": [_R + "a2_power/power_simulation.json", _R + "l4/vardecomp_h2a.json",
+                  _R + "l4/vardecomp_h1_vs_no_graph.json", _R + "a2_power/arch_search_bound.json",
+                  _R + "screening_lambda0/robustness_5seed.json",
+                  _R + "screening_c075c15_n5/robustness_5seed.json",
+                  _R + "screening_c080c10_h1/robustness_5seed.json", _R + "a2_ladder/floor.json"],
+    "app:metrics": [_R + "a3_external/rescored.json", _R + "a3_external/k_sweep.json",
+                    _R + "b2_deciles/deciles.json"],
+    "app:mechanism": [_R + "screening_a1/a1_mechanism.json", _R + "screening_b1/b1_message_form.json",
+                      _R + "a2_power/arch_search_bound.json",
+                      _R + "screening_untyped_n7/robustness_5seed.json"],
+}
+
+# Literals that are NOT results and therefore cannot be re-derived from a results artifact. Every one
+# carries the reason it is exempt. This list is the point of the check: a number nobody has accounted
+# for FAILS, so a new unexplained figure cannot enter the paper unnoticed.
+PROSE_DECLARED = {
+    # --- constants of the method, not results -------------------------------------------------
+    "95": "the confidence level in '95% CI'. A constant of the method.",
+    # --- model architecture, fixed in pre-registration Amendment 4.2, not a results artifact ---
+    "2{,}396{,}160": "typed message parameters; Amendment 4.2 fixes this count.",
+    "599{,}040": "shared-weight message parameters; Amendment 4.2.",
+    "5{,}254{,}884": "total model parameters before the cut; Amendment 4.2.",
+    "3{,}457{,}764": "total model parameters after the cut; Amendment 4.2.",
+    "34": "the parameter cut as a percentage, derived from the two totals above.",
+    # --- properties of the inputs, recorded in build provenance rather than in a results file ---
+    "9{,}730": "targets in the genome-wide screen; from the DE build provenance.",
+    "44": "datasets in the harmonized scPerturb resource; a cited property of that resource.",
+    "86": "share of PPI edges that are functional_assoc; a property of the graph build.",
+    "0.228": "median functional_assoc edge score; a property of the graph build.",
+    "0.57": "mean edge gate after the repair, read from training logs rather than a results JSON.",
+    # --- ratios derived in the sentence that states them; their components ARE gated -----------
+    "103": "ratio of the graph term to the response term, derived in the same sentence.",
+    "79": "D3 divided by the 0.0176 gap. Amendment 7.4 fixes this as DESCRIPTIVE only.",
+    "31.7": "per-arm seed-spread ratio, derived from two gated standard deviations.",
+    "20.6": "per-arm seed-spread ratio, derived as above.",
+    "17.4": "per-arm seed-spread ratio, derived as above.",
+    "5.9": "per-arm seed-spread ratio, derived as above.",
+    # --- B1a SECONDARY contrasts. PROVENANCE GAP, recorded rather than hidden: these were -------
+    # --- computed for the B1a report but never persisted into b1_message_form.json, which -------
+    # --- carries only D3. They live in RESULTS_SUMMARY.md, which is weaker than this project's --
+    # --- own standard of re-deriving every number from a persisted artifact. -------------------
+    "+0.0037": "gcnnorm minus untyped_gnn; in RESULTS_SUMMARY.md, not in b1_message_form.json.",
+    "-0.0047": "CI bound of gcnnorm minus expression_only; same provenance gap.",
+    "+0.0062": "CI bound of gcnnorm minus expression_only; same provenance gap.",
+    "0.71": "p for gcnnorm minus expression_only; same provenance gap.",
+    "0.22": "p for gcnnorm minus untyped_gnn; same provenance gap.",
+    # --- power quantities derived from the measured spreads ------------------------------------
+    "0.0096": "minimum detectable effect at five seeds, derived from the measured spread.",
+    "0.0075": "minimum detectable effect at seven seeds, derived as above.",
+    "0.0185": "minimum detectable effect across re-draws, derived as above.",
+    "21": "seeds needed to detect the whole residual, derived from the MDE in the same sentence.",
+    "77": "seeds needed to detect half of it, derived as above.",
+    "250": "datasets needed against the between-dataset spread, derived as above.",
+    # --- design choices ------------------------------------------------------------------------
+    "24": "gated lanes in the C1 campaign; a design count, six rungs times four seeds.",
+    "101": "rank-interval boundary in the B2 binning; a binning choice, not a measurement.",
+    "251": "rank-interval boundary in the B2 binning; as above.",
+}
+
+
+def _artifact_values(paths) -> set:
+    """Every number in these artifacts, at each precision the paper writes numbers in."""
+    out = set()
+
+    def walk(o):
+        if isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+        elif isinstance(o, bool) or o is None:
+            return
+        elif isinstance(o, (int, float)):
+            x = float(o)
+            for f in (f"{x:+.4f}", f"{x:.4f}", f"{x:+.3f}", f"{x:.3f}", f"{x:.2f}", f"{x:.1f}",
+                      f"{x * 100:.1f}", f"{x * 100:.0f}", f"{x:.0f}", f"{x:.5f}", f"{x:.6f}"):
+                out.add(f)
+            if abs(x) >= 1000 and float(x).is_integer():
+                out.add(f"{int(x):,}".replace(",", "{,}"))
+                out.add(str(int(x)))
+    for rel in paths:
+        p = ROOT / rel
+        if p.exists():
+            walk(json.loads(p.read_text()))
+    return out
+
+
+# Thousands-aware, so $2{,}396{,}160$ is ONE literal. Splitting it into "2{,}396" and "160" made two
+# phantom unmatched values and hid the real one.
+_PROSE_NUM = re.compile(r"[-+]?\d{1,3}(?:\{,\}\d{3})+|[-+]?\d+(?:\.\d+)?")
+
+
+@table("prose:all")
+def _prose_all(tex):
+    """EVERY prose literal in a mapped region, re-derived or explicitly declared.
+
+    The headline check above pins 16 claims to their surrounding words, which is the strongest form
+    but needs a hand-written pattern each. This one is exhaustive instead of deep: it takes every
+    numeric literal in each mapped section and requires it either to appear in that section's own
+    artifacts or to be DECLARED with a reason. It cannot tell whether a value is used for the right
+    claim, only whether the section's artifacts contain it at all, so it is weaker per number and
+    complete across them. The two are meant to be read together.
+
+    HOW WEAK, MEASURED RATHER THAN GUESSED. Perturbing each re-derived decimal literal by one digit,
+    only 40% of those errors are caught: the other 60% land on some other real value in the same
+    section's artifacts, because per-seed deltas and CI bounds make the neighbourhood dense. So this
+    check's guarantee is ACCOUNTING, not correctness. It proves every prose number is either traceable
+    to that section's artifacts or explicitly declared, which is what stops an unexplained figure
+    entering the paper. It does NOT reliably catch a wrong digit. Two other checks do that: the
+    context-anchored headline claims above, which caught the real Holm error and fire on 5 of 5
+    planted ones, and the literal inventory, which catches any number that CHANGES between snapshots.
+    Extending the strong form past 16 claims means writing one context pattern per claim; that is the
+    honest price of stronger coverage and it has not been paid for the remaining literals."""
+    body = re.sub(r"(?m)^%.*", "", tex)
+    body = re.sub(r"\\begin\{tabular\}.*?\\end\{tabular\}", " ", body, flags=re.S)
+    # scientific notation is markup, not a literal: $4.5\times10^{6}$ is one quantity, not 4.5 and 6
+    body = re.sub(r"[\d.]*\\times10\^\{?-?\d+\}?", " ", body)
+    body = re.sub(r"10\^\{?-?\d+\}?", " ", body)
+
+    labs = [(m.start(), m.group(1)) for m in re.finditer(r"\\label\{((?:sec|app):[^}]+)\}", body)]
+    fails, checked, declared = [], 0, 0
+    for i, (pos, lab) in enumerate(labs):
+        if lab not in PROSE_REGIONS:
+            continue
+        end = labs[i + 1][0] if i + 1 < len(labs) else len(body)
+        seg, vals = body[pos:end], _artifact_values(PROSE_REGIONS[lab])
+        for m in re.finditer(r"\$([^$]*)\$", seg):
+            for n in _PROSE_NUM.findall(m.group(1)):
+                if n in list("0123456789"):
+                    continue
+                checked += 1
+                if n in vals:
+                    continue
+                if n in PROSE_DECLARED:
+                    declared += 1
+                    continue
+                ctx = " ".join(seg[max(0, m.start() - 45):m.end() + 10].split())
+                fails.append(f"prose:all {lab} literal {n}: not in that section's artifacts and not "
+                             f"declared. Add it to PROSE_DECLARED with a reason, or fix it. "
+                             f"Context: ...{ctx[-60:]}...")
+    return fails, (f"full: {checked} prose literals across {len(PROSE_REGIONS)} mapped sections, each "
+                   f"re-derived from that section's own artifacts or declared ({declared} declared)")
+
+
 @table("prose:headline")
 def _prose_headline(tex):
     """The load-bearing numbers that live in PROSE, not in any table.
