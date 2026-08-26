@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from collections import Counter
@@ -230,6 +231,21 @@ PROSE_DECLARED = {
     "0.0014": "the same for BioPlex; derived as above.",
     "1.47": "the sufficiency scale the audit reports against; a property of that scale.",
     "0.011": "rationale minus random sufficiency; derived from the audit's aggregate.",
+    # --- BIOLOGY QC: A DISCREPANCY, RECORDED RATHER THAN QUIETLY EXEMPTED ----------------------
+    # The paper validates the Frangieh adapter against biology with own-gene log2FC mean -0.632,
+    # 89% negative, against -0.014 and 61% for random genes. NO artifact contains these. The current
+    # FrangiehIzar2021_RNA.DE_stats_v2.qc.json gives own_mean -0.6133, frac_negative 0.899 and
+    # random_mean -0.0022, and carries no random-gene negative fraction at all. Close but not equal
+    # is the signature of numbers computed BEFORE the Amendment-2 rebuild, the same staleness that
+    # left tab:repl reporting superseded counts until 2026-08-21. Flagged for a human: either
+    # recompute them from the v2 QC or state which build they came from.
+    "-0.632": "own-gene log2FC mean. DOES NOT MATCH the v2 QC artifact (-0.6133); see the note above.",
+    "-0.014": "random-gene log2FC mean. DOES NOT MATCH the v2 QC artifact (-0.0022); see above.",
+    # --- quantities with no persisted artifact --------------------------------------------------
+    "+0.011": "rationale minus random sufficiency; derived from the audit aggregate, not stored.",
+    "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
+    "0.013": "the simulation's false-positive rate under no true effect; not persisted in its JSON.",
+    "0.77": "upper end of the live gate mean after the repair; read from training logs.",
     # --- design choices ------------------------------------------------------------------------
     "24": "gated lanes in the C1 campaign; a design count, six rungs times four seeds.",
     "101": "rank-interval boundary in the B2 binning; a binning choice, not a measurement.",
@@ -289,10 +305,15 @@ def _prose_all(tex):
     entering the paper. It does NOT reliably catch a wrong digit. Two other checks do that: the
     context-anchored headline claims above, which caught the real Holm error and fire on 5 of 5
     planted ones, and the literal inventory, which catches any number that CHANGES between snapshots.
-    That price has since been paid down: the anchored set went from 16 claims to 108, and the share
-    of prose decimals where a one-digit error trips an anchor rose from 35% to 70%. The remainder is
-    16 literals DECLARED as having no persisted artifact and 24 still covered by accounting alone,
-    mostly thresholds, per-arm bands and biology-QC figures."""
+    That price has now been paid in full: 131 anchored claims, up from 16. Measured on the paper by
+    perturbing every prose decimal by one digit, 83% trip an anchor, up from 35%. The other 22 are
+    DECLARED, each with the reason no artifact can supply it, and NOTHING is unaccounted for.
+
+    THE ONE REMAINING HOLE IS MULTI-OCCURRENCE, and it is why the inventory still matters. Where a
+    value appears in several places, changing ONE of them leaves the anchor satisfied by the others:
+    perturbing the body's +0.0675 does not trip it, because the abstract still carries the correct
+    value. The literal inventory catches exactly that case, reporting one dropped and one introduced.
+    Neither check is sufficient alone and both are gated."""
     body = re.sub(r"(?m)^%.*", "", tex)
     body = re.sub(r"\\begin\{tabular\}.*?\\end\{tabular\}", " ", body, flags=re.S)
     # scientific notation is markup, not a literal: $4.5\times10^{6}$ is one quantity, not 4.5 and 6
@@ -562,6 +583,61 @@ def _prose_headline(tex):
         ("gated vs no graph n=7", "leaving the gated arm at ${v}$", f4(N7["h1_vs_no_graph"]["mean"])),
         # --- B1a's recovered effect, in its own sentence -----------------------------------------
         ("B1a D3 in prose", "it recovers ${v}$ \\textsc{systema}", f4(B1["contrasts"]["D3"]["mean"])),
+    ]
+    SPF = load("data/splits/manifest.json")
+    SPH = load("data/results/splits_c075c15/manifest.json")
+    PSIM = load("data/results/a2_power/power_simulation.json")
+    DECI = load("data/results/b2_deciles/deciles.json")["schemes"]["deciles"]["cells"]
+    C1H = C1["gate_health"]
+    L1pc = load("data/results/screening_lambda0/robustness_5seed.json")["per_config"]
+    n7means = sorted(v["mean"] for v in N7pc.values())
+    l5means = sorted(v["mean"] for v in L1pc.values())
+
+    def halfwidth(c):
+        return (c["ci_high"] - c["ci_low"]) / 2
+
+    claims += [
+        # --- split-construction parameters, from the split manifests -----------------------------
+        ("frozen split threshold", "threshold from ${v}$ to", f"{SPF['seq_cosine_threshold']:.2f}"),
+        ("harder split threshold", "to ${v}$ and raising",    f"{SPH['seq_cosine_threshold']:.2f}"),
+        # --- alpha, from the analysis artifact rather than assumed -------------------------------
+        ("nominal alpha",          "not the nominal ${v}$",   f"{PSIM['alpha']:.2f}"),
+        # --- between-dataset spread ---------------------------------------------------------------
+        ("between-dataset tau",    "contrast is ${v}$, five times", f"{PSIM['measured']['promotion_margin']['tau']:.4f}"),
+        # --- the decile dilution and the eight-dataset ordering -----------------------------------
+        ("decile dilution",        "diluted to a positive ${v}$", f4(DECI["d1/promotion_margin"]["mean"])),
+        ("gwps in the ordering",   "genome-wide ${v}$,",          f4(pd8["ReplogleWeissman2022_K562_gwps"]["mean"])),
+        # --- h2b's failure to clear ---------------------------------------------------------------
+        ("h2b Bonferroni n=7",     "correction (Bonferroni ${v}$)", f"{N7['h2b']['p_bonferroni']:.3f}"),
+        # --- the ablation baseline and its magnitude ----------------------------------------------
+        ("ablation baseline mean", "baseline of ${v}$",       f"{L1pc['expression_only']['mean']:.4f}"),
+        ("ablation magnitude",     "absolute terms; ${v}$ against", f"{abs(ng['mean']):.4f}"),
+        # --- the band the four trained arms occupy, read off the per-arm means --------------------
+        # The band is stated to CONTAIN the four arms, so its floor is truncated and its ceiling
+        # rounded up. Demanding ordinary rounding on the floor would reject a correct sentence:
+        # typed_static is 0.0726, and a band starting at 0.073 would not contain it.
+        ("arm band low",           "band from ${v}$ to",      f"{math.floor(l5means[0] * 1000) / 1000:.3f}"),
+        ("arm band high",          "to ${v}$. An independent", f"{l5means[-1]:.3f}"),
+        # --- the largest ladder rung and the C1 gate minimum ---------------------------------------
+        ("largest rung",           "any size up to ${v}$,",   f"{FL['rungs']['d400']['delta']:.2f}"),
+        ("C1 gate minimum",        "minimum mean ${v}$ against", f"{C1H['min_gate_mean']:.4f}"),
+        # --- CI half-widths and interval widths: arithmetic on artifact values, not assertions -----
+        ("n=7 CI half-width",      "half-width from $0.0034$ to ${v}$", f"{halfwidth(pm):.4f}"),
+        ("n=5 CI half-width",      "half-width from ${v}$ to", f"{halfwidth(SCR['promotion_margin']):.4f}"),
+        ("control interval width", "interval of width ${v}$ around",
+         f"{FL['contrasts']['permuted_d400']['ci_high'] - FL['contrasts']['permuted_d400']['ci_low']:.3f}"),
+        ("re-draw baseline spread","\\textsc{systema}, a ${v}$ spread",
+         f"{max(I1['expression_only']['mean'], I2['expression_only']['mean'], I3['expression_only']['mean']) - min(I1['expression_only']['mean'], I2['expression_only']['mean'], I3['expression_only']['mean']):.4f}"),
+    ]
+    RPE = load("data/results/replication/ReplogleWeissman2022_rpe1/robustness_5seed.json")["contrasts"]["promotion_margin"]
+    claims += [
+        ("RPE1 CI low",      "CI $[{v},",                 f4(RPE["ci_low"])),
+        ("RPE1 CI high",     ",{v}]$; per-seed",          f4(RPE["ci_high"])),
+        # written as ONE math block with commas inside, not one $...$ per value
+        ("RPE1 per-seed",    "per-seed {v};",             "$" + ",".join(f"{d:+.3f}" for d in RPE["deltas"]) + "$"),
+        ("RPE1 p",           "$p{=}{v}$, Bonferroni",     f"{RPE['p_value']:.3f}"),
+        ("RPE1 Bonf/Holm",   "Holm both ${v}$ at family", f"{RPE['p_bonferroni']:.3f}"),
+        ("RPE1 family size", "at family size {v})",       "two" if RPE["family_size"] == 2 else str(RPE["family_size"])),
     ]
     claims = [c for c in claims if c[2] is not None]
 
