@@ -108,7 +108,7 @@ Upload `main.pdf` at the portal above. Fields you will be asked for:
 - **Title**: The Regularizer That Switched Off the Experiment: Diagnosing Why a Protein-Interaction
   Prior Does Not Help T-Cell Perturbation Prediction
 - **Abstract**: paste from `abstract_plain.txt` in this directory — LaTeX already stripped, percent
-  signs and minus signs intact, 441 words. That file is DERIVED from `main.tex`; regenerate it after
+  signs and minus signs intact, 439 words (updated 2026-08-26 when C1's floor entered the abstract). That file is DERIVED from `main.tex`; regenerate it after
   any abstract edit rather than editing it by hand. It had drifted a full campaign behind the paper
   once (it still carried the pooled `+0.0031`, `I^2=26%` and the retracted "positive on all five
   datasets"), and since it is the text that gets pasted into the portal, a stale copy submits a claim

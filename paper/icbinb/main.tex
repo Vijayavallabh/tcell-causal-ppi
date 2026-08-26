@@ -50,8 +50,9 @@ $+0.0018$, random-effects $95\%$ CI $[-0.0028,+0.0065]$, $I^2{=}39\%$, $Q$ $p{=}
 encoder we built to exploit it is, and a ``graph versus no graph'' null can be an artifact of the
 graph \emph{encoder} rather than evidence about the graph. Our \emph{best} graph arm recovers an
 injected graph signal at $0.02$ response SDs and recovers nothing when the same signal follows a
-scrambled graph, so the pipeline's sensitivity is measured rather than assumed. We close with the
-checklist we wish we had used.
+scrambled graph. The \emph{gated} arm our null is stated on recovers nothing at any size up to $0.40$,
+its paired noise being $4$ to $9\times$ larger, so that null bounds what this encoder can resolve at
+four seeds rather than whether the prior helps. We close with the checklist we wish we had used.
 \end{abstract}
 
 \section{Introduction}
@@ -331,7 +332,8 @@ Candidate cause & Evidence & Verdict \\
 \midrule
 A. Near-null task regime & Centroid accuracy at floor ($\approx$$0.001$) for \emph{every} arm; all trained arms within $0.072$ to $0.090$; an independent tabular benchmark reports this screen as near-null \citep{royer2026tfm}; and the graph adds $6$ to $32\times$ the seed variance without moving the mean & \textbf{Survives.} Little target-specific signal for any model to route \\
 B. The metric hides it & Replicates under Pearson-delta (less than half the paired SD, so more power) and program cosine & \textbf{Refuted} \\
-C. Architecture is wrong & At $n{=}7$ edge typing is \emph{actively harmful} ($-0.0120$, $7/7$ seeds, survives both) and the gate repairs only part of it, unreliably ($+0.0077$, fails). The untyped arm clears correction on three datasets but \emph{in disagreeing directions} ($+0.0043$, $+0.0675$, $-0.0790$) & \textbf{Survives} \\
+% AUTO 2026-08-26: C1's measured floor is now the strongest evidence for this cause.
+C. Architecture is wrong & At $n{=}7$ edge typing is \emph{actively harmful} ($-0.0120$, $7/7$ seeds, survives both) and the gate repairs only part of it, unreliably ($+0.0077$, fails). The untyped arm clears correction on three datasets but \emph{in disagreeing directions} ($+0.0043$, $+0.0675$, $-0.0790$). The gated arm recovers \emph{no} injected signal up to $0.40$ SDs, where the untyped one recovers at $0.02$ & \textbf{Survives, and it is the encoder} \\
 D. The baseline is not graph-free & Three-way ablation, $n{=}5$: zeroing the graph-derived features costs $-0.0036$ (corrected $p=0.0005$), all of it the degree scalars; PINNACLE is inert & \textbf{Survives, measured.} The discarded channel exceeds h1 itself \\
 E. Graph quality / wrong tier & $86\%$ of edges are functional associations; pruning them \emph{hurts}; rationale sufficiency mass sits almost entirely on that tier; \textsc{typed\_static} is worse on the frozen fold & \textbf{Partly.} The usable signal is in the tier we would have pruned \\
 \bottomrule
