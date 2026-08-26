@@ -665,7 +665,13 @@ Amendment 3.1 requires the pooled estimate over the $K{=}128$ subset alongside t
 % Amendment-2 rebuild, the same staleness that left tab:repl on superseded counts. Recomputed from
 % FrangiehIzar2021_RNA.DE_stats_v2.h5ad with de_amendment2.on_target_qc's own method and seed, and
 % persisted to data/results/replication/frangieh_on_target_qc.json so they are now gated.
-knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.613$, $90\%$ negative, against $-0.002$ and $63\%$ for random genes), and IFNGR1 knockout blunts interferon-stimulated genes by $1.0$ to $3.0$ $\log_2$ units under IFN-$\gamma$ and co-culture but not under control (all within $\pm0.17$), which also confirms the condition axis is correctly assigned.
+knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.613$, $90\%$ negative, against $-0.002$ and $63\%$ for random genes).
+% AUTO 2026-08-26: the IFNGR1 clause is REMOVED, not corrected. It claimed interferon-stimulated
+% genes are blunted by 1.0 to 3.0 log2 units under IFN-gamma and co-culture but not under control,
+% all within +-0.17. No artifact holds those figures and nothing under src/ mentions IFNGR1 or
+% interferon, so the gene set the claim rested on is not defined in this repository and the number
+% could not be re-derived. Dropping it also drops the only support for "the condition axis is
+% correctly assigned", so that assertion goes with it rather than being left standing unsupported.
 
 \begin{table}[h]
 \centering

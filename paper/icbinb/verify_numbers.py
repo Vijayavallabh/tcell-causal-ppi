@@ -233,16 +233,9 @@ PROSE_DECLARED = {
     "0.011": "rationale minus random sufficiency; derived from the audit's aggregate.",
     # --- biology QC: WAS a discrepancy, now recomputed and anchored above. Kept as a note because
     # --- the figures in the paper before 2026-08-26 matched no artifact at all.
-    # --- THE IFNGR1 CHECK IS NOT REPRODUCIBLE FROM THIS REPOSITORY, and that is worth stating.
-    # The sentence claims IFNGR1 knockout blunts interferon-stimulated genes by 1.0 to 3.0 log2 units
-    # under IFN-gamma and co-culture but not under control, all within +-0.17. No artifact holds
-    # these, and nothing under src/ mentions IFNGR1 or interferon, so the gene set the claim rests on
-    # is not defined anywhere here. Unlike the own-gene QC beside it, which WAS recomputable and has
-    # been recomputed, this one cannot be re-derived without the missing gene-set definition. It is
-    # declared rather than checked, and a human should either supply the set or drop the clause.
-    "1.0": "lower bound of the IFNGR1 blunting claim; not reproducible from this repository.",
-    "3.0": "upper bound of the same claim; not reproducible from this repository.",
-    "0.17": "the control-condition tolerance of the same claim; not reproducible here.",
+    # The IFNGR1 clause that used to need declaring here was REMOVED from the paper on 2026-08-26,
+    # because no artifact held its figures and the gene set it rested on is not defined anywhere in
+    # this repository. Its three literals are gone with it, so there is nothing left to exempt.
     # --- quantities with no persisted artifact --------------------------------------------------
     "+0.011": "rationale minus random sufficiency; derived from the audit aggregate, not stored.",
     "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
