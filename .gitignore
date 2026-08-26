@@ -30,7 +30,7 @@ env/
 .dmypy.json
 .coverage
 htmlcov/
-
+hyperbolic_verification/
 # --- Jupyter ---
 .ipynb_checkpoints/
 *.ipynb_checkpoints
