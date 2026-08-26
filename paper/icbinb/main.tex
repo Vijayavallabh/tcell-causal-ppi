@@ -43,7 +43,7 @@ three degree scalars, against the $-0.0009$ that message passing over eight mill
 worth on the same fold. And the arm we had never run overturned the reading: strip the typing and the
 gating, keep the raw topology, and that plain arm beats the baseline on our own screen ($+0.0043$,
 $95\%$ CI $[+0.0017,+0.0069]$, $n{=}7$, surviving Bonferroni and Holm) and on Replogle RPE1
-($+0.0675$), and \emph{loses} to it on Norman ($-0.0790$), three of eight datasets clearing correction
+($+0.0675$), and \emph{loses} to it on Norman ($-0.0790$). Three of eight datasets clear correction
 in \emph{disagreeing} directions ($I^2{=}87.5\%$, pooled random effects $+0.0091$,
 $[-0.0024,+0.0207]$), while the typed null holds and tightens across seven further screens (pooled
 $+0.0018$, random-effects $95\%$ CI $[-0.0028,+0.0065]$, $I^2{=}39\%$, $Q$ $p{=}0.13$). So the prior is not what fails; the
@@ -275,7 +275,7 @@ training fold, four seeds per arm, and the family correction at the size that da
 seven replication datasets the typed static graph is worth $+0.0018$ \textsc{systema} (fixed-effect
 $95\%$ CI $[-0.0005,+0.0040]$; random-effects $+0.0018$, $[-0.0028,+0.0065]$; $I^2{=}39.2\%$, $Q$
 $p{=}0.13$). The absence of significant heterogeneity matters as much as the estimate: four cell
-types, both perturbation directions and a hundredfold range of target counts ($100$ to $9{,}730$)
+types, both perturbation directions and that hundredfold spread of target counts ($100$ to $9{,}730$)
 return the same answer, and the genome-wide screen, where power is highest, is the tightest single
 point of all ($+0.0008$). Frangieh, the one dataset where the condition gate has anything to gate, is
 underpowered rather than null (Appendix~\ref{app:repl}).
@@ -351,8 +351,10 @@ cause as refuted, on a $14$-cell search that left the default gated encoder on t
 wrong shape: every cell varied \emph{how} the typed, gated encoder passes messages and not one removed
 the typing and gating themselves, so it could not have found this. Running the whole family at $n{=}7$ on the frozen
 fold localises the damage instead. Ordered by \textsc{systema}: untyped $0.0904$, expression-only
-$0.0861$, condition-gated $0.0818$, typed-static $0.0740$. Plain topology beats no graph ($+0.0043$, all seven
-seeds positive, Bonferroni $0.027$ and Holm $0.021$); per-relation edge typing does not merely fail
+$0.0861$, condition-gated $0.0818$, typed-static $0.0740$. % AUTO 2026-08-26: the two corrected p-values here duplicated \S\ref{sec:repl} verbatim; that
+% section states them in full and this one needs only the contrast.
+Plain topology beats no graph ($+0.0043$, all seven
+seeds positive, both corrections cleared); per-relation edge typing does not merely fail
 to help but is \emph{actively harmful} ($-0.0120$, seven of seven seeds negative, both corrections
 at $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0077$, which
 does \emph{not} survive correction), leaving the gated arm at $-0.0043$ against no graph at all. The
@@ -420,8 +422,12 @@ change the variance without changing the expectation, and the contrast will not 
 two of ours reach nominal significance and neither survives both corrections.
 \item \textbf{Inject a signal you know is there, with a scrambled control.} A null is a claim about
 your instrument. Ours recovers an injected graph signal at $0.02$ response SDs and recovers nothing
+% AUTO 2026-08-26: this cited our instrument as a clean pass while the arm our null is about fails
+% the same test. A checklist item that overstates its own worked example is worse than no example.
 when the same component follows a \emph{scrambled} graph (Appendix~\ref{app:floor}). The scrambled
-rung is the one people skip, and it separates reading structure from responding to magnitude.
+rung is the one people skip, and it separates reading structure from responding to magnitude. Run it
+on the arm your claim is about: ours passes on the untyped arm and recovers nothing on the gated one,
+at twenty times the size.
 \item \textbf{Slice the metric \emph{disjointly}, and check the resolution.} Cumulative top-$k$ scores
 contain every smaller $k$, so a sign change only bounds where the effect turned. Ours hides a
 $-0.0424$ deficit on twenty genes inside a positive decile of $1{,}028$.
@@ -463,10 +469,11 @@ screens. Our one contrast that cleared multiplicity control then failed its own 
 fold statistic we would have used to explain that failure moved as much under a reseed as across the
 range we varied.
 
-Then the arm we had never run overturned the reading. Strip the typing and the gating, keep the
-topology, and that plain arm beats the no-graph baseline on our own screen and on Replogle RPE1, and
-\emph{loses} to it on Norman: three datasets clearing correction in disagreeing directions. The null
-we measured was never a fact about the prior. It was a fact about our encoder, which flattens a signal
+% AUTO 2026-08-26: this replayed the abstract almost verbatim. The finding is stated there and in
+% full, with numbers, in Section~\ref{sec:repl}; the conclusion's job is the consequence.
+Then one untried arm overturned that reading: untyped, ungated topology clears correction on three
+datasets, in \emph{disagreeing} directions. The null we measured was never a fact about the
+prior. It was a fact about our encoder, which flattens a signal
 whose sign we cannot predict from cell type, perturbation direction, or anything else we can see. Our
 $14$-cell architecture search had refuted the architecture as a cause, but every cell varied \emph{how}
 the typed encoder passes messages and none asked whether the typing belonged.
