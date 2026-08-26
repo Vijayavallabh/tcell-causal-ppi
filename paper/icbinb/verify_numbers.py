@@ -609,7 +609,12 @@ def _bins(tex):
     for cs in cells_of(tex, "tab:bins"):
         if len(cs) != 4:
             continue
-        lab = cs[0].replace("$", "").replace("{,}", "").replace("--", "-")
+        # The label is written "1--20" or "1 to 20" depending on the paper's dash convention, and
+        # BOTH must parse. A prose pass that regularised en dashes to "to" on 2026-08-26 broke this
+        # silently: every row stopped matching, the check reported "full: 0 intervals", and the gate
+        # still passed because zero rows yield zero failures.
+        lab = (cs[0].replace("$", "").replace("{,}", "")
+               .replace("--", "-").replace(" to ", "-").strip())
         if not re.match(r"\d+-\d+$", lab):
             continue
         n += 1
@@ -638,6 +643,13 @@ def artifact_checks() -> tuple[list[str], list[tuple[str, str]]]:
             coverage.append((label, f"ERROR: {type(e).__name__}: {e}"))
             fails.append(f"{label}: check itself failed with {type(e).__name__}: {e}")
             continue
+        # A CHECK THAT MATCHED NO ROWS IS BROKEN, NOT CLEAN. Every row-iterating check reports its
+        # count in its own note, and a count of zero means the parser stopped recognising the table
+        # rather than that the table agrees with its artifact. Without this, breaking a parser looks
+        # exactly like passing: zero rows compared yields zero failures. That happened on 2026-08-26.
+        if re.match(r"(full|partial)[^0-9]*\b0\b", note):
+            fails.append(f"{label}: the check matched 0 rows, so it verified NOTHING. Its note reads "
+                         f"{note!r}. Fix the parser; a zero-row check is broken, not passing.")
         fails.extend(f)
         coverage.append((label, note))
 
