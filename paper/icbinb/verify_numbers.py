@@ -149,8 +149,10 @@ _CONTRAST_OF = {("typed_static", "expression_only"): "h2a",
 # test admits a random value 3-8% of the time. Measured, not assumed, on 2026-08-26.
 _R = "data/results/"
 PROSE_REGIONS = {
+    # screening_lambda0 is here because the repair sentence quotes the live headline beside the
+    # pre-repair one it replaced.
     "sec:confound": [_R + "screening/robustness_5seed.json", _R + "q4_lambda_sweep_22ep.json",
-                     _R + "camera_ready/facts.json",
+                     _R + "camera_ready/facts.json", _R + "screening_lambda0/robustness_5seed.json",
                      _R + "q4_lambda_sweep_12ep.json", _R + "screening_lambda0/lambda_sweep_empirical.json"],
     "sec:null": [_R + "screening_lambda0/robustness_5seed.json",
                  _R + "screening_lambda0/second_metric_5seed.json",
@@ -246,6 +248,17 @@ PROSE_REGIONS = {
                    _R + "splits_c080c10/manifest.json"] +
                   sorted(str(q.relative_to(ROOT)) for q in
                          (ROOT / "data/intermediate/replication").glob("*.provenance.json")),
+    # The fold, re-draw and per-fold-bound material, gathered here from the pre-registration,
+    # feature-ablation and power appendices for the camera-ready; the artifacts it quotes.
+    "app:folds": [_R + "camera_ready/facts.json",
+                  _R + "screening_lambda0/robustness_5seed.json",
+                  _R + "screening_c080c10_h1/robustness_5seed.json",
+                  _R + "screening_c075c15_n5/robustness_5seed.json",
+                  _R + "screening_c080c10_r2/robustness_5seed.json",
+                  _R + "screening_c080c10_r3/robustness_5seed.json",
+                  _R + "l4_v2/vardecomp_h2a.json", _R + "l4_v2/vardecomp_h1_vs_no_graph.json",
+                  "data/splits/manifest.json", _R + "splits_c075c15/manifest.json",
+                  _R + "splits_c080c10/manifest.json", _R + "splits_c070/manifest.json"],
     # AUTO 2026-10-01: App.~K now lists the corrections, so it quotes both sides of each: the live
     # artifacts and the dead-gate / uncorrected ones they replaced.
     "app:repro": [_R + "reproducibility/repro_real_report.json",
@@ -334,11 +347,13 @@ PROSE_DECLARED = {
     "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
     "0.013": "the simulation's false-positive rate under no true effect; not persisted in its JSON.",
     # --- ARCHITECTURE DIMENSIONS. Fixed in the model definition, not produced by any run. --------
-    "128": "PINNACLE embedding width, and the program-basis K. A model/config constant.",
+    "128": "PINNACLE embedding width, the program-basis K, and the validation rows of Figure 1's sweep "
+           "(lambda_sweep.py --n-val). Model and run settings.",
     "1280": "ESM-2 650M embedding width; a property of the pretrained encoder.",
     "1412": "total perturbation-feature width; the sum of the components listed beside it.",
     "256": "hidden width of the intervention and graph vectors; a model constant.",
-    "512": "the neighbourhood sampling cap, NEIGHBORHOOD_CAP; a sampler constant.",
+    "512": "the neighbourhood sampling cap, NEIGHBORHOOD_CAP, and the training rows of Figure 1's sweep "
+           "(lambda_sweep.py --n-train, recorded in data/logs/campaign/q4b_card*.log); run settings.",
     # --- DATASET SIZES. Properties of the inputs, recorded in build provenance not in results. ---
     "33{,}983": "DE rows in the reference screen.",
     "10{,}282": "genes scored per row in the reference screen.",
@@ -347,8 +362,8 @@ PROSE_DECLARED = {
     "248": "targets present in Frangieh's source file, before any rule was applied.",
     "1{,}028": "genes in one decile of 10,282; a binning arithmetic, not a measurement.",
     "1{,}119": "proteins in PINNACLE's CD4 context; a property of that resource.",
-    "7{,}216": "family groups after a re-draw; a split-construction count.",
-    "3{,}632": "family groups before it; a split-construction count.",
+    "7{,}216": "validation rows after a re-draw; a split-construction count.",
+    "3{,}632": "validation rows before it; a split-construction count.",
     # --- BUILD-TIME FEATURE COVERAGE. Computed while assembling the feature stores, never persisted.
     "99.4": "share of DE rows for which ESM-2 resolves; feature-store coverage.",
     "96.5": "share with nonzero physical PPI degree; feature-store coverage.",
@@ -369,6 +384,7 @@ PROSE_DECLARED = {
     # --- DERIVED, and anchored as arithmetic in prose:headline rather than stored anywhere -------
     "0.0026": "half-width of the n=7 CI; prose:headline re-derives it as (ci_high - ci_low) / 2.",
     "0.0034": "half-width of the n=5 CI; re-derived the same way.",
+    "0.0146": "spread of the three re-draws' no-graph means; prose:headline re-derives it as max - min.",
     "0.072": "floor of the band the four arms occupy, TRUNCATED so the band contains typed_static "
              "at 0.0726; prose:headline re-derives it with that truncation.",
     # --- design choices ------------------------------------------------------------------------
@@ -449,7 +465,10 @@ def _prose_all(tex):
     labs = [(m.start(), m.group(1)) for m in re.finditer(r"\\label\{((?:sec|app):[^}]+)\}", body)]
     fails, checked, declared = [], 0, 0
     for i, (pos, lab) in enumerate(labs):
+        # An unmapped section used to be skipped silently, so a new appendix's numbers went unchecked
+        # while the summary still read "nothing unaccounted". Unmapped is a failure, not a pass.
         if lab not in PROSE_REGIONS:
+            fails.append(f"prose:all section {lab} has no PROSE_REGIONS entry, so its numbers are unchecked")
             continue
         end = labs[i + 1][0] if i + 1 < len(labs) else len(body)
         seg, vals = body[pos:end], _artifact_values(PROSE_REGIONS[lab])
@@ -487,33 +506,42 @@ def _prose_assertions(tex):
         if not condition:
             fails.append(f"assertion '{claim}': {detail}")
 
+    def said(phrase):
+        """Each check runs only while the paper makes its claim. A reworded sentence used to switch its
+        check off silently; now the missing phrase fails, naming the trigger to update."""
+        if phrase in flat:
+            return True
+        fails.append(f"assertion trigger '{phrase}' is no longer in the paper; update the trigger "
+                     f"to the new wording, or delete the check if the claim was dropped")
+        return False
+
     n7 = load("data/results/screening_n7_live/robustness_5seed.json")
     pm = n7["contrasts"]["promotion_margin"]
-    if "none dropped" in flat:
+    if said("none dropped"):
         need(not pm["dropped"] and len(pm["seeds_used"]) == 7, "seeds 0 to 6, none dropped",
              f"seeds_used={pm['seeds_used']} dropped={pm['dropped']}")
 
     fold = n7["fold"]
-    if "fold sizes" in flat or "observed fold sizes" in flat:
+    if said("observed fold sizes"):
         need(bool(fold.get("fold_sizes_consistent")), "fold sizes consistent across all seven seeds",
              f"fold_sizes_consistent={fold.get('fold_sizes_consistent')}")
 
     nm = load("data/results/replication/NormanWeissman2019_filtered/robustness_5seed.json")
     nmc = nm["contrasts"]["promotion_margin"]
-    if "not a fragile lane" in flat:
+    if said("all four of its seeds are negative and none was dropped"):
         neg = sum(1 for d in nmc["deltas"] if d < 0)
         need(neg == len(nmc["deltas"]) and not nmc["dropped"],
              "Norman: four of four seeds negative, none dropped",
              f"{neg}/{len(nmc['deltas'])} negative, dropped={nmc['dropped']}")
 
-    if "no failures" in flat:
+    if said("no failures"):
         landed = sum(len(list((ROOT / f"data/results/a2_ladder/{r}/{a}").glob("[0-9].parquet")))
                      for r in ("d020", "d050", "d100", "d200", "d400", "permuted_d400")
                      for a in ("untyped_gnn", "expression_only"))
         need(landed == 48, "48 training runs, no failures", f"{landed} parquets landed, expected 48")
 
     # Frangieh is the one gated replication, and the paper says its gates were live throughout.
-    if "every gate demonstrably live" in flat:
+    if said("every gate live throughout training"):
         mins = []
         for s in range(8):
             h = ROOT / f"data/results/replication/FrangiehIzar2021_RNA/condition_gated/{s}/logs/stage_a_history.json"
@@ -561,7 +589,7 @@ def _prose_style(tex):
 
     # The convention is American, set by the title and abstract and by center(17)/centre(0).
     BRITISH = ["neighbour", "normalis", "localis", "labelled", "modelled", "behaviour", "centre",
-               "summaris", "analyse", "recognis"]
+               "summaris", "analyse", "recognis", "favour", "defence", "generalis", "relabell"]
     for w in BRITISH:
         hits = re.findall(w, prose, re.I)
         if hits:
@@ -773,8 +801,8 @@ def _prose_derived(tex):
     need("energy h1 mean", eh1["mean"], r"h1's $+{V}$ point")
     need("energy h2b raw p", eb["p_value"], r"raw $p{=}{V}$ and")
     need("energy h1 raw p", eh1["p_value"], r"and $p{=}{V}$ and clear")
-    need("energy h2b Bonferroni", eb["p_bonferroni"], r"(Bonferroni ${V}$ and")
-    need("energy h1 Bonferroni", eh1["p_bonferroni"], r"and ${V}$). The reviewed")
+    need("energy h2b Bonferroni", eb["p_bonferroni"], r"(Bonferroni ${V}$ for h2b")
+    need("energy h1 Bonferroni", eh1["p_bonferroni"], r"${V}$ for h1)")
     if surv(eb) or surv(eh1):
         fails.append("derived: an energy-distance h2b or h1 cell now survives BOTH corrections, which "
                      "App.~J says neither does. Rail 4 may fire. Re-read before editing.")
@@ -952,7 +980,7 @@ def _prose_headline(tex):
         ("A1 permuted vs nograph","and ${v}$), so the deficit",    f4(a1c["permuted_vs_nograph"]["mean"])),
         ("arch search spread",    "spans ${v}$ across all",        f"{AB['observed_spread']:.4f}"),
         ("arch search cells",     "across all ${v}$ of its cells", str(AB["n_cells"])),
-        ("B1a gap",               "same fold is ${v}$",            f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
+        ("B1a gap",               "frozen fold is ${v}$",            f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
         ("B1a D3 uncorrected p",  "the uncorrected $p={v}$",       f"{B1['contrasts']['D3']['p_value']:.4f}"),
         # --- app:metrics -----------------------------------------------------------------------
         ("B2 top-20 deficit",     "it is large (${v}$)",           f4(DEC["cells"]["1-20/promotion_margin"]["mean"])),

@@ -27,7 +27,9 @@ def main() -> None:
     pts = sorted((r["lambda_graph"], r["trajectory"][-1]) for r in runs if r["lambda_graph"] > 0)
     lam = [p[0] for p in pts]
 
-    plt.rcParams.update({"font.family": "serif", "font.size": 8})
+    # pdf.fonttype 42 embeds TrueType; the default (3) leaves Type 3 fonts, which some PDF checkers and
+    # print shops reject.
+    plt.rcParams.update({"font.family": "serif", "font.size": 8, "pdf.fonttype": 42})
     fig, ax = plt.subplots(figsize=(3.5, 2.6))
     # Labelled through the legend, not as text on the plot, where a label hides the markers under it.
     ax.axhspan(min(live), max(live), color="tab:green", alpha=0.15, lw=0,
