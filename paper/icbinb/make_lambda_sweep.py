@@ -32,7 +32,7 @@ def main() -> None:
     plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "dejavuserif", "font.size": 8,
                          "pdf.fonttype": 42})
     # Orange is the gated arm in every figure of the paper; these are its gates.
-    fig, (ax, bx) = plt.subplots(1, 2, figsize=(5.5, 2.15), gridspec_kw={"width_ratios": [1.15, 1]})
+    fig, (ax, bx) = plt.subplots(1, 2, figsize=(5.5, 2.0), gridspec_kw={"width_ratios": [1.15, 1]})
     # Labelled through the legend, not as text on the plot, where a label hides the markers under it.
     ax.axhspan(min(live), max(live), color="tab:green", alpha=0.15, lw=0,
                label=f"live campaign: {min(live):.2f} to {max(live):.2f}")

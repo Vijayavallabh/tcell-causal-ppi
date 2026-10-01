@@ -137,9 +137,10 @@ SCREENING_ROOT=<root> REGISTRY_PATH=<root>/experiment_registry.yaml SPLITS_ROOT=
 PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
 ```
 
-Figures 3 and 4 (the folds, the injected-signal ladders and the per-dataset replication) are drawn
-from the files of 4.5, 4.6 and 4.11 by `python paper/icbinb/make_result_figures.py`, which writes
-`paper/figures/folds_floor.pdf` and `paper/figures/replication_forest.pdf`.
+Figures 3 to 5 (the folds and injected-signal ladders, the per-dataset replication, and the evidence
+for causes C and D) are drawn from the files of 4.2, 4.4, 4.5, 4.6, 4.9 and 4.11 by
+`python paper/icbinb/make_result_figures.py`, which writes `paper/figures/folds_floor.pdf`,
+`paper/figures/replication_forest.pdf` and `paper/figures/causes.pdf`.
 
 It checks from the run registry that every lane scored the same fold. For a root assembled from lanes
 run elsewhere, pass `--no-registry` and it checks each lane's recorded `n_train` and `n_val` instead.

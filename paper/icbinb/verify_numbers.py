@@ -295,6 +295,12 @@ PROSE_DECLARED = {
     # from a2_ladder/floor.json and c1_ladder/floor_condition_gated.json and matches the words
     # around it; these entries exist only so prose:all stops reporting them as unaccounted.
     "0.96": "gated/untyped paired sd ratio on the scrambled control; recomputed by prose:derived.",
+    # 2026-10-01: post hoc paired tests the paper now quotes in place of two untested comparisons.
+    # Each is a difference of two artifacts' per-seed deltas, recomputed by prose:derived.
+    "+0.0871": "RPE1 untyped-minus-typed paired difference (Appendix D); recomputed by prose:derived.",
+    "+0.1562": "upper 95% bound of that RPE1 difference; recomputed by prose:derived.",
+    "-0.0012": "lower 95% bound of the features-minus-h1 paired difference (Appendix G); recomputed by "
+               "prose:derived. Elsewhere it is the harder split's h2a, which that region's artifact covers.",
     "4.1": "untyped/gated mean ratio at delta=0.40; recomputed by prose:derived.",
     "0.84": "Bonferroni-over-six p if the gated arm had the untyped sd; recomputed by prose:derived.",
     "63": "seeds to match the untyped se, lowest of the four small rungs; recomputed by prose:derived.",
@@ -912,7 +918,99 @@ def _prose_derived(tex):
     if not (len(unt) == 3 and min(unt) < 0 < max(unt)) or "clears correction on three datasets in disagreeing" not in flat:
         fails.append(f"derived Conclusion: untyped survivors over all eight {unt}, expected three in both directions")
 
-    return fails, ("full: 43 cross-artifact derivations recomputed from a2_ladder/floor.json, "
+    # Comparisons the paper once asserted on two marginal estimates, now quoted as the paired tests
+    # they are. Each pairs two artifacts' per-seed deltas on the SAME seeds and baseline lanes, so the
+    # shared arm cancels seed by seed.
+    def paired(diffs):
+        from scipy import stats
+        n = len(diffs)
+        m = sum(diffs) / n
+        sd = (sum((d - m) ** 2 for d in diffs) / (n - 1)) ** 0.5
+        h = stats.t.ppf(0.975, n - 1) * sd / n ** 0.5
+        return m, m - h, m + h, 2 * stats.t.sf(abs(m / (sd / n ** 0.5)), n - 1)
+
+    def oriented_deltas(c, arm):
+        sg = 1.0 if c["better"] == arm else -1.0
+        return {int(s): sg * d for s, d in zip(c["seeds_used"], c["deltas"])}
+
+    # (i) Cause D: graph-derived features' value (intact - zeroed) against h1 (gated - no graph).
+    # The paper said "worth more than message passing"; paired, the interval crosses zero.
+    h1s = oriented_deltas(load("data/results/screening_lambda0/robustness_5seed.json")
+                          ["contrasts"]["h1_vs_no_graph"], "condition_gated")
+    abl = next(v for v in load("data/results/feature_ablation_report.json") if v["variant"] == "nograph")
+    feat = {int(s): -d for s, d in abl["per_seed"].items()}
+    common = sorted(set(h1s) & set(feat))
+    fd = [feat[s] - h1s[s] for s in common]
+    m, lo, hi, pv = paired(fd)
+    want = f"features' value minus h1 is ${m:+.4f}$ ($95\\%$ CI $[{lo:+.4f},{hi:+.4f}]$, $p{{=}}{pv:.3f}$"
+    if len(common) != 5 or want not in flat:
+        fails.append(f"derived features minus h1: paired over seeds {common}; the paper does not say '{want}'")
+    # Both ways: the sign count the paper states must be the one the data give, so a reworded count
+    # ("four of five") fails as surely as a wrong "all five".
+    if not (len(fd) == 5 and min(fd) > 0) or "positive in all five seeds" not in flat:
+        fails.append(f"derived features minus h1: the paper must say 'positive in all five seeds' exactly "
+                     f"when the data do; differences {[round(d, 5) for d in fd]}")
+    if "comes out ahead in all five seeds, but its interval crosses zero" not in flat or not (min(fd) > 0 and lo < 0 < hi):
+        fails.append(f"derived Section 5.1 D: the body's reading of the paired test no longer matches "
+                     f"(differences {[round(d, 4) for d in fd]}, CI [{lo:+.4f},{hi:+.4f}])")
+    # Each place that sets the two effects side by side (the abstract, Table 3 row D) must carry the
+    # caveat exactly when the paired interval crosses zero. Checked per place: a phrase-anywhere test
+    # let either copy cover for the other's removal (2026-10-01, two planted faults missed).
+    for ctx in ("has no detectable effect (the two do not differ significantly)",
+                "has no detectable effect, and the two do not differ significantly"):
+        if (lo < 0 < hi) != (ctx in flat):
+            fails.append(f"derived features minus h1: '{ctx}' is {'present' if ctx in flat else 'missing'}, "
+                         f"but the paired interval is [{lo:+.4f},{hi:+.4f}]")
+    if lo <= 0:
+        # Not established, so no sentence may assert it, however it is worded: any comparative that
+        # reaches "message passing" fails unless the sentence frames the comparison as open. A fixed
+        # phrase list was beaten by a paraphrase ("matter more than message passing") on 2026-10-01.
+        comparative = re.compile(r"\b(?:more|larger|greater|bigger|stronger|outweighs?|beats?|exceeds?|"
+                                 r"surpass\w*|outperform\w*)\b[^.;:]{0,60}?\b(?:message passing|h1\b)", re.I)
+        hedged = re.compile(r"\b(?:whether|not settled|not established|no detectable|cannot say)\b", re.I)
+        for sentence in re.split(r"(?<=[.;:])\s+", flat):
+            hit = comparative.search(sentence)
+            if hit and not hedged.search(sentence):
+                fails.append(f"derived features minus h1: the paper asserts '{hit.group(0)}', but the paired "
+                             f"interval [{lo:+.4f},{hi:+.4f}] crosses zero")
+        if re.search(r"discards? outweighs", flat):
+            fails.append("derived features minus h1: 'what the ablation discards outweighs what it measures' "
+                         "is the untested comparison again")
+
+    # (ii) Replogle RPE1: untyped against typed, post hoc (Appendix D).
+    rp = load("data/results/replication/ReplogleWeissman2022_rpe1/robustness_5seed.json")["contrasts"]
+    ug, ts = oriented_deltas(rp["promotion_margin"], "untyped_gnn"), oriented_deltas(rp["h2a"], "typed_static")
+    common = sorted(set(ug) & set(ts))
+    m, lo, hi, pv = paired([ug[s] - ts[s] for s in common])
+    fam = sorted([rp["promotion_margin"]["p_value"], rp["h2a"]["p_value"], pv])   # the dataset's two + this one
+    holm = max(min(1.0, (len(fam) - i) * q) for i, q in enumerate(fam) if q <= pv)
+    want = (f"the untyped-minus-typed difference there is ${m:+.4f}$ ($95\\%$ CI $[{lo:+.4f},{hi:+.4f}]$, "
+            f"$p{{=}}{pv:.3f}$), a post hoc test that does not survive correction over the dataset's family "
+            f"(Bonferroni ${min(1.0, len(fam) * pv):.3f}$, Holm ${holm:.3f}$)")
+    if min(1.0, len(fam) * pv) <= 0.05 and holm <= 0.05:
+        fails.append("derived RPE1 untyped minus typed: it now survives both corrections; the paper says it does not")
+    if want not in flat:
+        fails.append(f"derived RPE1 untyped minus typed: the paper does not say '{want}'")
+
+    # (iii) B1a against no graph: "still does not beat no graph" needs an interval that reaches zero.
+    b1 = load("data/results/screening_b1/b1_message_form.json")
+    d3 = dict(zip(b1["contrasts"]["D3"]["seeds_used"], b1["contrasts"]["D3"]["deltas"]))   # gcnnorm - typed
+    tn = dict(zip(b1["context_typed_vs_nograph"]["seeds_used"], b1["context_typed_vs_nograph"]["deltas"]))
+    common = sorted(set(d3) & set(tn))
+    m, lo, hi, pv = paired([d3[s] + tn[s] for s in common])
+    if "still does not beat no graph" not in flat or lo > 0:
+        fails.append(f"derived B1a minus no graph: {m:+.4f} [{lo:+.4f},{hi:+.4f}]; the paper's 'still does "
+                     f"not beat no graph' is missing or false")
+
+    # (iv) h1 at n=7 with its interval, now in Appendix G rather than Table 3.
+    n7h1 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
+    sg = 1.0 if n7h1["better"] == "condition_gated" else -1.0
+    lo7, hi7 = sorted((sg * n7h1["ci_low"], sg * n7h1["ci_high"]))
+    want = f"leaving the gated arm at ${sg * n7h1['mean']:+.4f}$ against no graph ($95\\%$ CI $[{lo7:+.4f},{hi7:+.4f}]$)"
+    if want not in flat:
+        fails.append(f"derived n=7 h1: the paper does not say '{want}'")
+
+    return fails, ("full: 52 cross-artifact derivations recomputed from a2_ladder/floor.json, "
                    "c1_ladder/floor_condition_gated.json, the pooled artifacts, both variance "
                    "decompositions, rescored.json, arch_search_bound.json, b1_message_form.json and "
                    "the 22-epoch lambda sweep")
@@ -964,7 +1062,7 @@ def _prose_headline(tex):
         ("untyped n=7 mean",   "${v}$ \\textsc{systema} at $n{=}7$", f4(pm["mean"])),
         ("untyped Bonferroni", "Bonferroni ${v}$ and Holm",     f"{pm['p_bonferroni']:.3f}"),
         ("untyped Holm",       "and Holm ${v}$",                f"{pm['p_holm']:.3f}"),
-        ("n=7 h2a",            "harmful} (${v}$",               f4(N7["h2a"]["mean"])),
+        ("n=7 h2a",            "encoder costs ${v}$ \\textsc{systema}", f4(N7["h2a"]["mean"])),
         ("n=7 h2b",            "returns ${v}$, whose raw",      f4(N7["h2b"]["mean"])),
         ("Replogle RPE1",      "RPE1 (${v}$)",                  f4(pd8["ReplogleWeissman2022_rpe1"]["mean"])),
         ("Norman",             "Norman (${v}$)",                f4(pd8["NormanWeissman2019_filtered"]["mean"])),
@@ -972,7 +1070,7 @@ def _prose_headline(tex):
         ("pooled I^2",         "I^2{=}{v}\\%",                  f"{p8['I2'] * 100:.1f}"),
         ("typed pooled RE",    "worth ${v}$",                   f4(P7["random_effect"])),
         ("three-way ablation", "costs ${v}$",                   f4(ng["mean"])),
-        ("ablation corrected", "corrected $p={v}$",             f"{ng['p_bonf']:.4f}"),
+        ("ablation corrected", "family-wise correction ($p={v}$)", f"{ng['p_bonf']:.4f}"),
         ("harder-split h2a",   "to ${v}$ ($p=",                 f4(HD["h2a"]["mean"])),
         ("measured floor",     "at ${v}$ response SDs",         f"{FL['floor']:.2f}"),
     ]
@@ -1375,41 +1473,52 @@ def _family(tex):
 
 @table("tab:causes")
 def _causes(tex):
-    """A SUMMARY table: its cells are verdicts in prose, and most of its evidence is quoted from
-    the appendices rather than computed here. What IS re-derivable is checked; the rest is named.
+    """A SUMMARY table: its cells are verdicts in prose. Since 2026-10-01 causes C and D point at
+    Figure 5 instead of repeating its numbers, so what is checked here is each QUALITATIVE claim
+    those cells make, re-derived from the artifacts the figure is drawn from: a cell that says
+    "harmful" or "no detectable effect" fails if the artifact stops saying so.
 
-    NOT CHECKED, and why: cause A's "$\\approx$0.001" centroid floor and "6 to 32x" seed variance,
-    and cause E's "86% functional associations", are graph- and metric-summary quantities with no
-    JSON of their own in this repo. Cause B and E's verdicts are qualitative. Those live or die by
-    Appendix~\\ref{app:causes}, whose own numbers are covered by tab:metrics and tab:ksweep."""
+    NOT CHECKED, and why: cause A's "$\\approx$0.001" centroid floor and cause E's "85% functional
+    associations" are graph- and metric-summary quantities with no JSON of their own in this repo.
+    Cause B and E's verdicts are qualitative. Those live or die by Appendix~\\ref{app:causes}."""
     fails, blk = [], re.search(r"\\label\{tab:causes\}(.*?)\\end\{tabular\}", tex, re.S)
-    body = blk.group(1) if blk else ""
+    body = " ".join((blk.group(1) if blk else "").split())
     n7 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
     pool = load("data/results/replication/pooled_with_reference.json")
-    feat = load("data/results/feature_ablation_report.json")
+    feat = {v["variant"]: v for v in load("data/results/feature_ablation_report.json")}
+    h1 = load("data/results/screening_lambda0/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
 
-    checked = 0
-    for key, label in (("h2a", "n=7 h2a"), ("h2b", "n=7 h2b")):
-        lit = f"{n7[key]['mean']:+.4f}"
-        if lit not in body:
-            fails.append(f"tab:causes cause C: {label} should read {lit} and does not appear")
-        checked += 1
+    def signed(c, arm):
+        return c["mean"] if c["better"] == arm else -c["mean"]
 
-    # The three per-dataset contrasts that clear correction and disagree in sign.
-    surviving = sorted(v["mean"] for v in pool["per_dataset"]["promotion_margin"].values()
-                       if v.get("survives_family_wise"))
-    for v in surviving:
-        if f"{v:+.4f}" not in body:
-            fails.append(f"tab:causes cause C: surviving per-dataset {v:+.4f} does not appear")
-    checked += len(surviving)
-
-    ng = next(v for v in feat if v["variant"] == "nograph")
-    for lit, what in ((f"{ng['mean']:+.4f}", "cause D delta"), (f"{ng['p_bonf']:.4f}", "cause D p")):
-        if lit not in body:
-            fails.append(f"tab:causes cause D: {what} should read {lit} and does not appear")
-    checked += 2
-    return fails, (f"partial: {checked} re-derivable quantities in causes C and D; causes A, B and "
-                   f"E are qualitative verdicts with no JSON of their own (see docstring)")
+    h2a, h2b = signed(n7["h2a"], "typed_static"), signed(n7["h2b"], "condition_gated")
+    surviving = [v["mean"] for v in pool["per_dataset"]["promotion_margin"].values() if v.get("survives_family_wise")]
+    ratio = feat["nodegree"]["mean"] / feat["nograph"]["mean"]
+    claims = [
+        # (phrase in the table, does the artifact support it, what was found)
+        ("typed static encoder is \\emph{harmful}", h2a < 0 and n7["h2a"]["survives_family_wise"],
+         f"n=7 h2a {h2a:+.4f}, survives {n7['h2a']['survives_family_wise']}"),
+        ("the gate's partial repair fails correction", 0 < h2b < -h2a and not n7["h2b"]["survives_family_wise"],
+         f"n=7 h2b {h2b:+.4f} against h2a {h2a:+.4f}, survives {n7['h2b']['survives_family_wise']}"),
+        ("clears correction on three datasets, in disagreeing directions",
+         len(surviving) == 3 and min(surviving) < 0 < max(surviving), f"untyped survivors {surviving}"),
+        ("graph-derived features costs \\textsc{systema} under correction",
+         feat["nograph"]["mean"] < 0 and feat["nograph"]["survives"] == "True",
+         f"nograph {feat['nograph']['mean']:+.4f}, survives {feat['nograph']['survives']}"),
+        ("nearly all of it the degree scalars", 0.9 <= ratio < 1.0, f"degrees-only / all = {ratio:.3f}"),
+        ("the gated graph (h1) has no detectable effect",
+         not h1["survives_family_wise"] and h1["ci_low"] < 0 < h1["ci_high"],
+         f"h1 {signed(h1, 'condition_gated'):+.4f} [{h1['ci_low']:+.4f},{h1['ci_high']:+.4f}]"),
+        ("``no graph'' is not graph-free", feat["nograph"]["survives"] == "True",
+         f"nograph survives {feat['nograph']['survives']}"),
+    ]
+    for phrase, ok, found in claims:
+        if phrase not in body:
+            fails.append(f"tab:causes: the cell no longer says '{phrase}'; update this check with it")
+        elif not ok:
+            fails.append(f"tab:causes: '{phrase}' is not what the artifact says ({found})")
+    return fails, (f"partial: {len(claims)} qualitative claims in causes C and D re-derived from the "
+                   f"artifacts behind Figure 5; causes A, B and E have no JSON of their own (see docstring)")
 
 
 @table("tab:checklist")

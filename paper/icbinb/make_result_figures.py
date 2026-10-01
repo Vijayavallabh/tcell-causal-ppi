@@ -1,7 +1,8 @@
-"""Figures 3 and 4 (paper/figures/folds_floor.pdf, replication_forest.pdf) from their artifacts.
+"""Figures 3 to 5 (paper/figures/folds_floor.pdf, replication_forest.pdf, causes.pdf) from their artifacts.
 
 Figure 3 puts h1 and h2a on the three folds beside both graph arms' injected-signal ladder; Figure 4
-is the per-dataset replication of the typed and untyped contrasts with their pooled estimates.
+is the per-dataset replication of the typed and untyped contrasts with their pooled estimates; Figure 5
+is the evidence for causes C and D.
 Every plotted value is read from the artifact the paper's tables and prose quote, and the dataset
 order and the K labels come from the same DE_stats_v2 provenance and built bases that Table 5's check
 reads, so the figures cannot drift from the text.
@@ -9,6 +10,7 @@ reads, so the figures cannot drift from the text.
     .venv/bin/python paper/icbinb/make_result_figures.py
 """
 import json
+import statistics as st
 from pathlib import Path
 
 import matplotlib
@@ -16,6 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
+from scipy import stats  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RES = ROOT / "data/results"
@@ -174,6 +177,72 @@ def folds_floor() -> None:
           f"{lad['condition_gated']['floor_status']}")
 
 
+def tci(values: list) -> tuple:
+    """Mean and 95% t interval of paired per-seed differences, as the paper's tables compute them."""
+    m, sd, n = st.mean(values), st.stdev(values), len(values)
+    h = stats.t.ppf(0.975, n - 1) * sd / n ** 0.5
+    return m, m - h, m + h
+
+
+def causes() -> None:
+    """Figure 5. (a) the n=7 family on the frozen fold, cause C; (b) cause D: what the graph-derived
+    features inside the "no graph" arm are worth (intact minus zeroed), beside message passing (h1 at
+    n=5, the same five seeds and baseline lanes) and the paired test of the two, which is not a
+    pre-registered contrast and is drawn hollow and grey."""
+    n7 = load("screening_n7_live/robustness_5seed.json")["contrasts"]
+    rows_a = (("typed static $-$ no graph", "h2a", "typed_static"),
+              ("gated $-$ typed static", "h2b", "condition_gated"),
+              ("gated $-$ no graph (h1)", "h1_vs_no_graph", "condition_gated"),
+              ("untyped $-$ no graph", "promotion_margin", "untyped_gnn"))
+    fab = {v["variant"]: v for v in load("feature_ablation_report.json")}
+    h1 = load("screening_lambda0/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
+    h1s = dict(zip(h1["seeds_used"], (d if h1["better"] == "condition_gated" else -d for d in h1["deltas"])))
+    # value of a channel = intact - zeroed; the artifact stores zeroed - intact
+    val = {v: {int(s): -d for s, d in fab[v]["per_seed"].items()} for v in fab}
+    seeds = sorted(set(val["nograph"]) & set(h1s))
+    assert len(seeds) == 5 and seeds == sorted(h1s), f"ablation and h1 seeds differ: {seeds}, {sorted(h1s)}"
+    paired = tci([val["nograph"][s] - h1s[s] for s in seeds])
+    grey = "0.35"
+    rows_b = [("graph features, all", tci(list(val["nograph"].values())), fab["nograph"]["survives"] == "True", grey),
+              ("degree scalars only", tci(list(val["nodegree"].values())), fab["nodegree"]["survives"] == "True", grey),
+              ("PINNACLE only", tci(list(val["nopinnacle"].values())), fab["nopinnacle"]["survives"] == "True", grey),
+              ("gated $-$ no graph (h1)", oriented(h1, "condition_gated"), h1["survives_family_wise"],
+               COL["condition_gated"])]
+
+    fig, (a, b) = plt.subplots(1, 2, figsize=(5.5, 1.5), gridspec_kw={"width_ratios": [1, 1]})
+    for y, (label, key, arm) in enumerate(rows_a):
+        m, lo, hi = oriented(n7[key], arm)
+        point(a, m, y, lo, hi, COL[arm], n7[key]["survives_family_wise"])
+    a.set_yticks(range(len(rows_a)))
+    a.set_yticklabels([r[0] for r in rows_a], fontsize=7)
+    a.set_ylim(len(rows_a) - 0.5, -0.6)
+    a.set_title(r"(a) the $n{=}7$ family, frozen fold", fontsize=8, loc="left")
+    for y, (label, (m, lo, hi), filled, col) in enumerate(rows_b):
+        point(b, m, y, lo, hi, col, filled)
+    yd = len(rows_b) + 0.35
+    point(b, paired[0], yd, paired[1], paired[2], "0.6", False, marker="D")
+    b.axhline(len(rows_b) - 0.33, color="0.8", lw=0.6)
+    b.set_yticks(list(range(len(rows_b))) + [yd])
+    b.set_yticklabels([r[0] for r in rows_b] + ["features $-$ h1, paired"], fontsize=7)
+    b.set_ylim(yd + 0.6, -0.6)
+    b.set_title(r"(b) graph features and h1, $n{=}5$", fontsize=8, loc="left")
+    for ax in (a, b):
+        ax.axvline(0, color="0.45", lw=0.8, ls="--", zorder=0)
+        ax.set_xlabel(r"$\Delta$ SYSTEMA", fontsize=7.5)
+        ax.tick_params(axis="x", labelsize=6.5)
+    fig.tight_layout(w_pad=1.2)
+    # Start each title over its row labels, not over the plot, which the long labels push right.
+    r = fig.canvas.get_renderer()
+    for ax in (a, b):
+        x = ax.transAxes.inverted().transform((ax.yaxis.get_tightbbox(r).x0, 0))[0]
+        ax.set_title(ax.get_title(loc="left"), loc="left", x=x, fontsize=8)
+    out = FIG / "causes.pdf"
+    fig.savefig(out)
+    print(f"wrote {out}: n=7 h2a {oriented(n7['h2a'], 'typed_static')[0]:+.4f}; features worth "
+          f"{rows_b[0][1][0]:+.4f}, h1 {rows_b[3][1][0]:+.4f}, paired {paired[0]:+.4f} "
+          f"[{paired[1]:+.4f},{paired[2]:+.4f}]")
+
+
 def main() -> None:
     # Same settings as Figure 2; pdf.fonttype 42 embeds TrueType rather than Type 3 fonts.
     plt.rcParams.update({"font.family": "serif", "mathtext.fontset": "dejavuserif", "font.size": 8,
@@ -181,6 +250,7 @@ def main() -> None:
     FIG.mkdir(parents=True, exist_ok=True)   # paper/figures/ is not in a fresh clone
     forest()
     folds_floor()
+    causes()
 
 
 if __name__ == "__main__":
