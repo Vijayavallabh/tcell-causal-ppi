@@ -166,11 +166,12 @@ python paper/icbinb/make_lambda_sweep.py   # paper/figures/lambda_sweep.pdf; nee
 ```
 
 What reproduces, measured on 2026-10-01 against the published sweep: the penalized runs match the
-original first-epoch gates to six digits (0.250814 at every weight from 0.003 up) and track the
-published curve within about 10%. The unpenalized run is chaotic. The original runs rose to between 0.72
-and 0.77, and the paper quotes 0.76 from one of them; a replicate fell to 0.37. Its gates are live
-either way (the full-data checkpoints span 0.27 to 0.78), so the figure's claims stand, but its value
-is one run's, and `verify_numbers.py` will flag that number against a fresh sweep.
+original first-epoch gates to six digits (0.250814 at weights 0.003 and 0.01) and, at the three weights
+replicated in full (1e-5, 0.003, 0.01), end within a factor of 0.97 to 1.26 of the published values with
+the same fraction of gates dead. The unpenalized run is chaotic: identical runs already differ by 0.11
+after one epoch, and three replicates ended at 0.37, 0.58 and 0.74 against the published 0.76. Its gates
+are live in every run, as in the full-data checkpoints (0.27 to 0.78), so the figure's claims stand, but
+its value is one run's, and `verify_numbers.py` will flag that number against a fresh sweep.
 
 ### 4.2 The five-seed family (Table 1)
 
