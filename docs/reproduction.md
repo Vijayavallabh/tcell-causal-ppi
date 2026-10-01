@@ -93,8 +93,8 @@ around it. Paths are under `data/results/`.
 
 | In the paper | Result file | Section |
 |---|---|---|
-| Figure 1, the penalty sweep | `q4_lambda_sweep_22ep.json`; the text also cites `q4_lambda_sweep_12ep.json` and the three-epoch `screening_lambda0/lambda_sweep_empirical.json` | 4.1 |
-| Table 1, the five-seed family with live gates | `screening_lambda0/robustness_5seed.json` | 4.2 |
+| Figure 2, the penalty sweep | `q4_lambda_sweep_22ep.json`; the text also cites `q4_lambda_sweep_12ep.json` and the three-epoch `screening_lambda0/lambda_sweep_empirical.json` | 4.1 |
+| Table 2, the five-seed family with live gates | `screening_lambda0/robustness_5seed.json` | 4.2 |
 | the same family at the default penalty | `screening/robustness_5seed.json` | 4.2 |
 | the second metric | `screening_lambda0/second_metric_5seed.json` | 4.3 |
 | every n=7 number | `screening_n7_live/robustness_5seed.json` | 4.4 |
@@ -137,11 +137,15 @@ SCREENING_ROOT=<root> REGISTRY_PATH=<root>/experiment_registry.yaml SPLITS_ROOT=
 PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
 ```
 
+Figures 3 and 4 (the folds, the injected-signal ladders and the per-dataset replication) are drawn
+from the files of 4.5, 4.6 and 4.11 by `python paper/icbinb/make_result_figures.py`, which writes
+`paper/figures/folds_floor.pdf` and `paper/figures/replication_forest.pdf`.
+
 It checks from the run registry that every lane scored the same fold. For a root assembled from lanes
 run elsewhere, pass `--no-registry` and it checks each lane's recorded `n_train` and `n_val` instead.
 Read `family_size` in the output: it must be 4.
 
-### 4.1 Gate collapse and Figure 1
+### 4.1 Gate collapse and Figure 2
 
 The precondition every graph result is read against: the collapse factor of the edge gates against
 initialization. Near 1e-7 the graph is switched off and a graph contrast is undecidable.
@@ -150,8 +154,8 @@ initialization. Near 1e-7 the graph is switched off and a graph contrast is unde
 PYTHONPATH=src python -m tcell_pipeline.probe_graph_gradients --n-max 8 --batch-size 2 --steps 1
 ```
 
-Figure 1 is one seed of `condition_gated` on the first 512 training and 128 validation rows, 22 epochs,
-at nine penalty weights, batch 4. Each weight takes about 0.4 GPU-hours; `--lambdas` splits the weights
+Figure 2 is one seed of `condition_gated` on the first 512 training and 128 validation rows, 22 epochs,
+at nine penalty weights, batch 4; panel (b) plots the same runs epoch by epoch. Each weight takes about 0.4 GPU-hours; `--lambdas` splits the weights
 across cards, and the parts merge by concatenating their `runs` lists.
 
 ```bash
@@ -173,7 +177,7 @@ after one epoch, and three replicates ended at 0.37, 0.58 and 0.74 against the p
 are live in every run, as in the full-data checkpoints (0.27 to 0.78), so the figure's claims stand, but
 its value is one run's, and `verify_numbers.py` will flag that number against a fresh sweep.
 
-### 4.2 The five-seed family (Table 1)
+### 4.2 The five-seed family (Table 2)
 
 The default-penalty campaign, whose gates collapsed (`data/results/screening/`): seed 0 with every arm
 plus the network-propagation reference, then seeds 1 to 4. It uses the default registry,
@@ -185,7 +189,7 @@ plus the network-propagation reference, then seeds 1 to 4. It uses the default r
 PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
 ```
 
-Table 1 re-trains only `condition_gated` at `--lambda-graph 0`. The other three arms have no learnable
+Table 2 re-trains only `condition_gated` at `--lambda-graph 0`. The other three arms have no learnable
 gate (`typed_static` pins it to 1), so the penalty is a constant for them and their lanes are reused.
 
 ```bash

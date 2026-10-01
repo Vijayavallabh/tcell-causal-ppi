@@ -197,6 +197,9 @@ PROSE_REGIONS = {
                   _R + "camera_ready/facts.json",
                   "data/splits/manifest.json"],
     "sec:approach": [_R + "screening_lambda0/robustness_5seed.json"],
+    # Related Work (2026-10-01) quotes no number. Mapped to nothing, so a number added to it later
+    # fails rather than going unchecked.
+    "sec:related": [],
     # sec:outcome carries no numeric literal of its own; mapped anyway so that no section is silently
     # outside the check, which is how 260 literals went unexamined until 2026-08-26.
     "sec:outcome": [_R + "screening_lambda0/robustness_5seed.json"],
@@ -720,10 +723,11 @@ def _prose_derived(tex):
     need("untyped increment over gated at d400", ui / gi,
          r"increment is ${V}\times$ the gated one")
 
-    # The I^2 pair in Section 4.3 must be like-for-like: BOTH over the seven replication screens.
+    # The I^2 pair Appendix D quotes for Section 4.3's comparison must be like-for-like: BOTH over the
+    # seven replication screens.
     p7 = load("data/results/replication/pooled.json")["pooled"]
     need("untyped I2 over the seven replication screens", p7["promotion_margin"]["I2"] * 100,
-         r"against ${V}\%$)")
+         r"against ${V}\%$ (Figure")
     need("typed I2 with the reference screen added",
          load("data/results/replication/pooled_with_reference.json")["pooled"]["h2a"]["I2"] * 100,
          r"raises its $I^2$ from $39.2\%$ to ${V}\%$")
@@ -861,9 +865,57 @@ def _prose_derived(tex):
     need("B1a uncorrected p", b1["p_value"], r"uncorrected $p{=}{V}$")
     need("B1a recovery share", b1["recovery_share"] * 100, r"recovers ${V}\%$ of the untyped gap")
 
-    return fails, ("full: 36 cross-artifact derivations recomputed from a2_ladder/floor.json, "
+    # Figure 2(b)'s caption reads the epoch at which each weight's mean gate first falls below the
+    # dead-gate threshold, and says none recovers. Epochs are 0-indexed in the artifact.
+    ordinal = {1: "second", 2: "third", 3: "fourth", 4: "fifth", 11: "twelfth"}
+    pen = [r for r in load("data/results/q4_lambda_sweep_22ep.json")["runs"] if r["lambda_graph"] > 0]
+
+    def first_dead(r):
+        return next((e["epoch"] for e in r["trajectory"] if e["val_gate"] < GATE_DEAD), None)
+    fd = {r["lambda_graph"]: first_dead(r) for r in pen}
+    hi = {v for k, v in fd.items() if k >= 1e-3}
+    if len(hi) != 1 or f"up are dead from the {ordinal.get(min(hi))} epoch" not in flat:
+        fails.append(f"derived Figure 2 crossing: weights >= 1e-3 first dead at 0-indexed epochs "
+                     f"{sorted(hi)}; the caption does not say so")
+    if f"$10^{{-5}}$ from the {ordinal.get(fd.get(1e-5))}" not in flat:
+        fails.append(f"derived Figure 2 crossing: 1e-5 first dead at 0-indexed epoch {fd.get(1e-5)}; "
+                     f"the caption does not say so")
+    recovers = [k for k, r in ((r["lambda_graph"], r) for r in pen) if fd[k] is None or any(
+        e["val_gate"] >= GATE_DEAD for e in r["trajectory"] if e["epoch"] >= fd[k])]
+    if recovers or "none recovers" not in flat:
+        fails.append(f"derived Figure 2: the caption says no penalized run recovers; weights {recovers} "
+                     f"are live at some epoch after their first dead one")
+
+    # Per-dataset survivor counts, over TWO sets that must not be mixed: Figure 4's caption counts the
+    # reference screen and the seven replication screens apart (both contrasts survive on the
+    # reference; on the replication screens the typed one on none, the untyped one on two, in opposite
+    # directions), while the Conclusion and Table 3 count the untyped arm over all eight (three, in
+    # both directions). An earlier caption put "no replication screen" and "three times" in one
+    # sentence, mixing the two sets.
+    pd = load("data/results/replication/pooled_with_reference.json")["per_dataset"]
+    ref = "reference_screen_n7"
+    rep_screens = [k for k in pd["h2a"] if k != ref]
+    typed_surv = [k for k in rep_screens if pd["h2a"][k]["survives_family_wise"]]
+    unt = [v["mean"] for v in pd["promotion_margin"].values() if v["survives_family_wise"]]
+    unt7 = [pd["promotion_margin"][k]["mean"] for k in rep_screens
+            if pd["promotion_margin"][k]["survives_family_wise"]]
+    ref_both = pd["h2a"][ref]["survives_family_wise"] and pd["promotion_margin"][ref]["survives_family_wise"]
+    if not ref_both or "Both contrasts clear correction on the reference screen" not in flat:
+        fails.append(f"derived Figure 4: on the reference screen h2a survives "
+                     f"{pd['h2a'][ref]['survives_family_wise']}, untyped "
+                     f"{pd['promotion_margin'][ref]['survives_family_wise']}; the caption says both")
+    if typed_surv or "the typed contrast clears it on none" not in flat:
+        fails.append(f"derived Figure 4: typed survivors on replication screens {typed_surv}")
+    if not (len(unt7) == 2 and min(unt7) < 0 < max(unt7)) or "the untyped one on two, in opposite directions" not in flat:
+        fails.append(f"derived Figure 4: untyped survivors on the replication screens {unt7}, "
+                     f"expected two in opposite directions")
+    if not (len(unt) == 3 and min(unt) < 0 < max(unt)) or "clears correction on three datasets in disagreeing" not in flat:
+        fails.append(f"derived Conclusion: untyped survivors over all eight {unt}, expected three in both directions")
+
+    return fails, ("full: 43 cross-artifact derivations recomputed from a2_ladder/floor.json, "
                    "c1_ladder/floor_condition_gated.json, the pooled artifacts, both variance "
-                   "decompositions, rescored.json, arch_search_bound.json and b1_message_form.json")
+                   "decompositions, rescored.json, arch_search_bound.json, b1_message_form.json and "
+                   "the 22-epoch lambda sweep")
 
 
 @table("prose:headline")
@@ -908,12 +960,12 @@ def _prose_headline(tex):
     # (what, context with {v} where the artifact value belongs, artifact value)
     claims = [
         ("h1 headline",        "systema}={v}$",                 f4(L["h1_vs_no_graph"]["mean"])),
-        ("h2a frozen fold",    "worse by ${v}$",                f4(L["h2a"]["mean"])),
+        ("h2a frozen fold",    "of the frozen ${v}$",           f4(L["h2a"]["mean"])),
         ("untyped n=7 mean",   "${v}$ \\textsc{systema} at $n{=}7$", f4(pm["mean"])),
         ("untyped Bonferroni", "Bonferroni ${v}$ and Holm",     f"{pm['p_bonferroni']:.3f}"),
         ("untyped Holm",       "and Holm ${v}$",                f"{pm['p_holm']:.3f}"),
         ("n=7 h2a",            "harmful} (${v}$",               f4(N7["h2a"]["mean"])),
-        ("n=7 h2b",            "(${v}$, which",                 f4(N7["h2b"]["mean"])),
+        ("n=7 h2b",            "returns ${v}$, whose raw",      f4(N7["h2b"]["mean"])),
         ("Replogle RPE1",      "RPE1 (${v}$)",                  f4(pd8["ReplogleWeissman2022_rpe1"]["mean"])),
         ("Norman",             "Norman (${v}$)",                f4(pd8["NormanWeissman2019_filtered"]["mean"])),
         ("pooled RE",          "give ${v}$",                    f4(p8["random_effect"])),
@@ -938,15 +990,12 @@ def _prose_headline(tex):
 
     claims += [
         # --- sec:null -------------------------------------------------------------------------
-        ("h1 p-value",         "$p={v}$); the interval",           f"{L['h1_vs_no_graph']['p_value']:.2f}"),
-        ("h2a p-value",        "(${v}$, $p=",                      f4(L["h2a"]["mean"])),
-        ("h2a p",              "$p={v}$, surviving both",          f"{L['h2a']['p_value']:.4f}"),
-        ("Pearson h1",         "gated graph (${v}$, $p=",          f4(cg_eo_p["mean"]) if cg_eo_p else "?"),
-        ("Pearson h1 p",       "$p={v}$) and a deficit",           f"{cg_eo_p['p_value']:.2f}" if cg_eo_p else "?"),
-        ("Pearson h2a",        "static graph (${v}$)",             f4(ts_eo_p["mean"]) if ts_eo_p else "?"),
+        # 2026-10-01 restructure: the five-seed deltas, p-values and Pearson values moved out of the
+        # prose into Table~\ref{tab:family}, whose check re-derives delta, CI, p, FWER and Pearson for
+        # every row; the three fold estimates are plotted in Figure~\ref{fig:floor}a from the same roots
+        # tab:folds checks. Only what the prose still states is anchored here.
+        ("Pearson h1 p",       "$p={v}$ for the gated graph",      f"{cg_eo_p['p_value']:.2f}" if cg_eo_p else "?"),
         ("prog-cos h1",        "agreeing (${v}$, $p=",             f4(cg_eo_c["mean"]) if cg_eo_c else "?"),
-        ("three folds: frozen","across folds (${v}$,",             f4(L["h1_vs_no_graph"]["mean"])),
-        ("three folds: interm","(${v}$, $+0.0005$)" .replace("+0.0005","{w}"), None),
         ("harder h2a CI low",  "$95\\%$ CI $[{v},",                f4(HD["h2a"]["ci_low"])),
         ("harder h2a CI high", ",{v}]$, $p=",                      f4(HD["h2a"]["ci_high"])),
         ("harder h2a p",       "$p={v}$, clearing neither",        f"{HD['h2a']['p_value']:.2f}"),
@@ -1053,8 +1102,9 @@ def _prose_headline(tex):
         # --- the unrepaired headline, from the pre-repair root -----------------------------------
         ("unrepaired h1",     "moved the headline from ${v}$ to", f4(SCR["h1_vs_no_graph"]["mean"])),
         # --- the genome-wide tightest point -------------------------------------------------------
-        # "tightest single point of all" is the TYPED contrast in that sentence, not the untyped one.
-        ("gwps point",        "single point of all (${v}$)", f4(pdh2a["ReplogleWeissman2022_K562_gwps"]["mean"])),
+        # "tightest" is the TYPED contrast, not the untyped one; the body now points at Figure 4a and
+        # App.~D states the value.
+        ("gwps point",        "the tightest of the seven, is ${v}$", f4(pdh2a["ReplogleWeissman2022_K562_gwps"]["mean"])),
         # --- the full eight-dataset ordering ------------------------------------------------------
         ("Tian CRISPRa",      "Tian CRISPRa ${v}$,",  f4(pd8["TianKampmann2021_CRISPRa"]["mean"])),
         ("Tian CRISPRi",      "Tian CRISPRi ${v}$,",  f4(pd8["TianKampmann2021_CRISPRi"]["mean"])),
@@ -1086,9 +1136,6 @@ def _prose_headline(tex):
     nod = next(v for v in FAB if v["variant"] == "nodegree")
 
     claims += [
-        # --- the three folds, all three values --------------------------------------------------
-        ("three folds: intermediate", "${v}$, $+0.0005$)", f4(I1c["h1_vs_no_graph"]["mean"])),
-        ("three folds: harder",       ", ${v}$), which is why", f4(HD["h1_vs_no_graph"]["mean"])),
         # --- the harder fold's per-seed h1 list (NOT the intermediate one) ----------------------
         ("harder h1 per-seed", "per-seed differences {v}).", dlist(HD["h1_vs_no_graph"])),
         # --- PER-ARM seed spreads. The paper quotes the arm's own sd, not the contrast's. --------
@@ -1267,7 +1314,7 @@ def _family(tex):
     for cs in cells_of(tex, "tab:family"):
         m = re.match(r"\\?t?e?x?t?b?f?\{?(ts|cg|ug|eo)\}?\s*\$?-?\$?\s*\$?-?\$?\s*(ts|cg|ug|eo)",
                      cs[0].replace("\\textbf{", "").replace("$-$", "-"))
-        if not m or len(cs) < 5:
+        if not m or len(cs) < 6:
             continue
         a, b = _FAMILY_KEY[m.group(1)], _FAMILY_KEY[m.group(2)]
         key = _CONTRAST_OF.get((a, b))
@@ -1287,18 +1334,24 @@ def _family(tex):
             if (ci[0], ci[1]) != (f"{lo:+.{nd}f}", f"{hi:+.{nd}f}"):
                 fails.append(f"tab:family {key} CI: paper [{ci[0]},{ci[1]}] artifact "
                              f"[{lo:+.{nd}f},{hi:+.{nd}f}]")
+        # The uncorrected paired p, at the cell's own precision; symmetric, so orientation is moot.
+        pv = re.search(r"(\d\.\d+)", cs[3])
+        if pv is None:
+            fails.append(f"tab:family {key} p: no number in {cs[3]!r}")
+        elif f"{c['p_value']:.{len(pv.group(1).split('.')[1])}f}" != pv.group(1):
+            fails.append(f"tab:family {key} p: paper {pv.group(1)} artifact {c['p_value']:.4f}")
         # FWER column vocabulary, spelled out because it is not a yes/no field: "worse" and
         # "better" CLAIM survival (naming which arm won), "no" and "parity" deny it. Reading
         # anything-but-no as survival turns the headline null's own cell into a false failure.
-        word = cs[3].lower()
+        word = cs[4].lower()
         claims = ("worse" in word or "better" in word) and "no" not in word
         if claims != bool(c["survives_family_wise"]):
-            fails.append(f"tab:family {key} FWER: paper {cs[3]!r} artifact "
+            fails.append(f"tab:family {key} FWER: paper {cs[4]!r} artifact "
                          f"survives={c['survives_family_wise']}")
         pc = pear.get(f"{a} - {b}") or pear.get(f"{b} - {a}")
         if pc is not None:
             psign = 1.0 if pc["A"] == a else -1.0
-            cmp_cell(fails, f"tab:family {key} pearson", cs[4], psign * pc["mean"],
+            cmp_cell(fails, f"tab:family {key} pearson", cs[5], psign * pc["mean"],
                      star=bool(pc.get("survives_both")))
 
     # The per-arm mean footer is a \multicolumn line, so it is not a row; parse it directly.
@@ -1310,9 +1363,14 @@ def _family(tex):
             nd = len(val.split(".")[1])
             if f"{float(val):.{nd}f}" != f"{want:.{nd}f}":
                 fails.append(f"tab:family per-arm {arm}: paper {val} artifact {want:.{nd}f}")
-    return fails, (f"full: 4 contrasts x (delta, CI, FWER, Pearson) + 4 per-arm means, "
-                   f"{seen} rows, vs {_FAMILY_ROOT}/") if seen == 4 else \
-                  (fails, f"PARTIAL: matched {seen} of 4 contrast rows")
+    # A row the parser no longer recognises is a row nobody checked. This used to be a conditional
+    # expression whose precedence returned (fails, (fails, note)) instead of a failure, which crashed
+    # the whole run with a TypeError rather than naming the unchecked rows.
+    if seen != 4:
+        fails.append(f"tab:family: matched {seen} of 4 contrast rows; the rest are unchecked")
+        return fails, f"partial: matched {seen} of 4 contrast rows"
+    return fails, (f"full: 4 contrasts x (delta, CI, p, FWER, Pearson) + 4 per-arm means, "
+                   f"{seen} rows, vs {_FAMILY_ROOT}/")
 
 
 @table("tab:causes")
@@ -1352,6 +1410,45 @@ def _causes(tex):
     checked += 2
     return fails, (f"partial: {checked} re-derivable quantities in causes C and D; causes A, B and "
                    f"E are qualitative verdicts with no JSON of their own (see docstring)")
+
+
+@table("tab:checklist")
+def _checklist(tex):
+    """The checklist's pointer column quotes a few numbers from elsewhere in the paper. A tabular is
+    outside prose:all, so its literals get the same accounting here: each must be in the checklist
+    section's own artifacts or declared."""
+    blk = re.search(r"\\label\{tab:checklist\}(.*?)\\end\{tabular\}", tex, re.S)
+    body = blk.group(1) if blk else ""
+    body = re.sub(r"[\d.]*\\times10\^\{?-?\d+\}?", " ", body)
+    body = re.sub(r"10\^\{?-?\d+\}?", " ", body)
+    vals, fails, n = _artifact_values(PROSE_REGIONS["sec:checklist"]), [], 0
+    for m in re.finditer(r"\$([^$]*)\$", body):
+        for lit in _PROSE_NUM.findall(m.group(1)):
+            if lit in list("0123456789"):
+                continue
+            n += 1
+            if lit not in vals and lit not in PROSE_DECLARED:
+                fails.append(f"tab:checklist literal {lit}: not in sec:checklist's artifacts and not declared")
+    return fails, f"full: {n} literals in the checklist table, each re-derived or declared"
+
+
+@table("floats")
+def _floats(tex):
+    """Every figure and table has a caption and a label and is referenced from the running text, not
+    only from another float. A float nobody points to is one a reader may never look at."""
+    body = re.sub(r"(?m)^%.*", "", tex)
+    envs = list(re.finditer(r"\\begin\{(figure|table)\*?\}(.*?)\\end\{\1\*?\}", body, re.S))
+    text = re.sub(r"\\begin\{(figure|table)\*?\}.*?\\end\{\1\*?\}", " ", body, flags=re.S)
+    fails = []
+    for env in envs:
+        lab = re.search(r"\\label\{([^}]+)\}", env.group(2))
+        if "\\caption{" not in env.group(2):
+            fails.append(f"floats: a {env.group(1)} has no caption")
+        if lab is None:
+            fails.append(f"floats: a {env.group(1)} has no label")
+        elif not re.search(r"\\ref\{" + re.escape(lab.group(1)) + r"\}", text):
+            fails.append(f"floats: {lab.group(1)} is never referenced from the running text")
+    return fails, f"full: {len(envs)} floats, each with a caption, a label and a reference in the text"
 
 
 @table("tab:mechanism")
@@ -1762,7 +1859,7 @@ def artifact_checks() -> tuple[list[str], list[tuple[str, str]]]:
         # count in its own note, and a count of zero means the parser stopped recognising the table
         # rather than that the table agrees with its artifact. Without this, breaking a parser looks
         # exactly like passing: zero rows compared yields zero failures. That happened on 2026-08-26.
-        if re.match(r"(full|partial)[^0-9]*\b0\b", note):
+        if re.match(r"(full|partial)[^0-9]*\b0\b", note, re.I):
             fails.append(f"{label}: the check matched 0 rows, so it verified NOTHING. Its note reads "
                          f"{note!r}. Fix the parser; a zero-row check is broken, not passing.")
         fails.extend(f)
