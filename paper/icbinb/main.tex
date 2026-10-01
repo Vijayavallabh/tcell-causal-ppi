@@ -1,0 +1,1402 @@
+\documentclass{article}
+
+\usepackage[dblblindworkshop, final]{neurips_2026}
+\workshoptitle{I Can't Believe It's Not Better (ICBINB): Failure Modes of AI in Biology}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\graphicspath{{../figures/}}
+
+% AUTO 2026-08-26: the old title asserted the prior "Does Not Help", which this paper's own
+% strongest corrected result contradicts: the untyped arm beats no-graph on the reference T-cell
+% screen at n=7 under both corrections. The claim the paper can defend is about the encoder.
+\title{The Regularizer That Switched Off the Experiment:\\ Why Our Protein-Interaction Null Was\\ About the Encoder, Not the Prior}
+
+\author{Vijayavallabh Jayamanikandan \\ Indian Institute of Technology Madras \\ Chennai, India \\ \texttt{be23b041@smail.iitm.ac.in}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+% AUTO 2026-08-26: the abstract ran 450 words and roughly fifteen numeric intervals before the
+% thesis. Every number cut below is stated in full in the body; nothing is withdrawn. The pooled
+% meta-analysis figures live in \S\ref{sec:repl}, the detection-floor detail in App.~\ref{app:floor}.
+Does a typed protein-interaction prior improve prediction of how primary human T cells respond to
+genetic perturbation? We report two failures, and the more useful one is not the one we went looking
+for. The first is an instrument failure that nearly published itself: a textbook edge-sparsity
+regularizer, written as an unnormalized sum over the edges of each sampled neighborhood, is roughly
+$103\times$ the response term at its default weight and drives every learnable edge gate to
+$\sim$$10^{-7}$ inside the first epoch, in all five seeds. Training completes and reports a plausible
+score, so a graph-versus-no-graph comparison silently becomes no-graph versus no-graph. The second is
+the null itself. With the gates demonstrably live, the evidence-gated graph is indistinguishable from
+an expression-only baseline ($\Delta\,\textsc{systema}=-0.0009$, $95\%$ CI $[-0.0072,+0.0054]$,
+$n{=}5$, family-wise corrected), and the typed null holds across seven further Perturb-seq screens.
+The one contrast in that five-seed family to clear correction then failed its own replication on a
+harder split. Of five candidate causes we adjudicate, the two that carry the argument are not about biology.
+Our baseline was never graph-free: zeroing its graph-derived features costs $-0.0036$
+\textsc{systema} under correction, more than the message passing over eight million typed edges we
+set out to measure. And an arm we had run only as a diagnostic overturned the reading: strip the typing and gating,
+keep the raw topology, and that plain arm beats the baseline on our own screen ($+0.0043$, $n{=}7$,
+surviving Bonferroni and Holm) and on Replogle RPE1 ($+0.0675$), and \emph{loses} to it on Norman
+($-0.0790$); three of eight datasets clear correction, in \emph{disagreeing} directions. So the prior
+is not what fails but the encoder we built to exploit it, and a ``graph versus no graph'' null can be
+an artifact of the encoder rather than evidence about the graph. The null is also instrument-bound:
+the gated arm it rests on clears at no injected signal up to $0.40$ response SDs, where our best
+graph arm clears at $0.02$. We close with the checklist we wish we had used.
+\end{abstract}
+
+\section{Introduction}
+
+Genome-scale Perturb-seq now measures the transcriptional consequence of knocking down essentially
+every expressed gene in primary human cells
+\citep{dixit2016perturbseq,replogle2022genomescale,zhu2025gwperturbseq}, and protein-interaction
+networks encode decades of curated mechanism. Does feeding the network to a model help it predict the
+response to a target it has never seen?
+
+% AUTO 2026-10-01: one more line on page 1 so the Palla et al. citation link does not break across
+% the page and the camera-ready footer: pdfTeX segfaults on that split (\pdfendlink nesting).
+\enlargethispage{\baselineskip}
+The literature does not agree. Careful benchmarks report that deep and foundation models fail to beat
+deliberately simple linear or mean baselines \citep{ahlmanneltze2025linear,wongmoccia2025crispr}, and
+that tabular foundation models match specialized architectures \citep{hollmann2025tabpfn,royer2026tfm}; other work
+reports that graph and foundation models do win, under their own splits and metrics
+\citep{wenkel2026txpert,cole2026foundation}. The disagreement turns on split design and metric choice
+more than on architecture.
+
+We built a model designed to give the graph its best chance, and then spent most of our effort
+discovering that our own measuring instrument was broken. This paper is organized around that
+experience rather than around the architecture.
+
+\paragraph{What we report.}
+\begin{itemize}\itemsep2pt
+\item \textbf{An instrument failure that reads as a result} (\S\ref{sec:confound}). A standard
+structural penalty annihilates the mechanism the study exists to test, inside the first epoch, in
+every seed, while the experiment keeps running and reporting numbers. We give the mechanism, the
+empirical signature, and the one-line fix.
+\item \textbf{A well-controlled null, and a claim of ours that did not replicate} (\S\ref{sec:null}).
+With live gates, paired seeds, a biologically blocked target-out-of-distribution split and family-wise
+error control, our \emph{typed, gated} graph does not help on this screen, and the typed static
+graph's null holds on seven more. The parity survives a second metric and a harder split; our first
+corrected-significant contrast does not.
+\item \textbf{A decomposition of \emph{why}} (\S\ref{sec:causes}). Five candidate causes, each with
+the evidence that speaks to it and an explicit verdict, and one of them, our own architecture,
+overturned by an arm we had been running all along without reading it as evidence.
+\item \textbf{A checklist} (\S\ref{sec:checklist}) for anyone running a gated- or masked-structure
+ablation.
+\end{itemize}
+
+The null itself is uninteresting; nulls in a near-null regime usually are. Three things around it are
+not, and none is specific to graphs or to biology. A conventional regularizer can switch off the
+mechanism under test and leave the run looking healthy. The ablation the field calls ``no graph'' is
+not graph-free, and on our fold what it discards outweighs what it measures. And a null attributed to
+a prior can belong instead to the encoder built to exploit it, which one extra arm would have caught
+at any point in the project.
+
+\section{Problem}
+\label{sec:setup}
+
+\paragraph{Task and data.} For each (perturbation, condition) pair we predict the transcriptional
+response to knocking down a target gene, in a latent program space. The data is the genome-scale
+primary human CD4$^{+}$ T-cell CRISPRi Perturb-seq resource of \citet{zhu2025gwperturbseq} (four
+donors; conditions Rest, Stim8hr, Stim48hr). The supervised target is a differential-expression matrix
+of $33{,}983$ (perturbation $\times$ condition) rows over $10{,}282$ genes, covering $11{,}526$
+distinct gene targets, modeled in a $K{=}128$ sparse-PCA program basis \citep{zou2006sparsepca} fit
+\emph{inside} each training fold.
+
+\paragraph{Metric and split.} The primary endpoint is \textsc{systema}, the perturbation-specific
+delta-correlation of \citet{vinas2025systema}, which asks whether a prediction recovers the
+\emph{correct} perturbation's response profile rather than a generic average treatment effect. The
+headline split is biologically blocked target-OOD: targets are grouped by centered ESM-2 sequence
+similarity (cosine $\geq 0.85$, group size capped at $5\%$), which leaves $24\%$ of validation targets a
+close training paralog against $60\%$ for a naive split (Appendix~\ref{app:prereg}), and every
+response-derived transform is fit inside the training fold.
+Five paired seeds share one frozen fold. Four contrasts are pre-registered and controlled with
+\emph{both} Bonferroni and Holm \citep{holm1979}; a contrast counts only if it clears both. A benefit
+counts only if it is positive and clears both corrections at $n\geq4$ paired seeds, a bar fixed before
+any lane ran. Everything below rests on $379$ training lanes on A100 80GB cards ($0.4$ to $12$
+GPU-hours each in the headline family), up to $20$ epochs at batch size $8$ with early stopping on
+validation loss ($22$ in Figure~\ref{fig:lambda}, $5$ in the architecture search).
+
+\section{Proposed approach}
+\label{sec:approach}
+
+\paragraph{Graph.} Nodes are proteins and protein complexes over $\sim$$8$M typed edges: physical PPI
+\citep{huttlin2021bioplex,luck2020huri,oughtred2021biogrid}, co-complex \citep{tsitsiridis2023corum},
+and functional association \citep{szklarczyk2023string}, each carrying a confidence score (counts in
+Appendix~\ref{app:arch}). Functional associations are $85\%$ of the edge budget, which is exactly the
+tier a skeptic would suspect of adding noise, and \S\ref{sec:causes} returns to that suspicion.
+
+\paragraph{The nested family.} Four arms differ only in how the graph enters, so every contrast is an
+ablation inside one architecture rather than a contest between codebases: \textsc{expression\_only}
+(graph pathway off), \textsc{typed\_static} (typed encoder, condition gate pinned to $1$),
+\textsc{condition\_gated} (the full model, learnable per-edge gates conditioned on culture context),
+and \textsc{untyped\_gnn} (a homogeneous GCN \citep{kipf2017gcn} diagnostic). Architecture detail is
+in Appendix~\ref{app:arch}.
+
+\paragraph{Hypotheses.} The nested family gives three pre-registered contrasts, each isolating one
+step. \textbf{h1} is \textsc{condition\_gated} $-$ \textsc{expression\_only}: does the full model beat
+no graph? \textbf{h2a} is \textsc{typed\_static} $-$ \textsc{expression\_only}: does the typed graph
+beat no graph without the gate? \textbf{h2b} is \textsc{condition\_gated} $-$ \textsc{typed\_static}:
+does conditioning the gate on culture context add anything? A fourth, the promotion margin, is
+\textsc{untyped\_gnn} $-$ \textsc{expression\_only}: does \emph{any} graph beat no graph? h1 is the
+hypothesis the model was built for and the one the headline null is about. The approach works only if
+curated interaction evidence carries co-regulation information that expression alone does not, and if
+the gate can suppress the edges that do not. Both preconditions are testable, and
+\S\ref{sec:confound} shows the second failing silently.
+
+\section{Observed outcome}
+\label{sec:outcome}
+
+\subsection{The instrument was off}
+\label{sec:confound}
+
+Our first multi-seed comparison found the graph inert: edge gates sat near $10^{-7}$ and the graph and
+no-graph arms agreed to within spare parameters. We recorded a clean negative result. A later
+gate-health probe showed the graph had been switched off before it learned anything.
+
+\paragraph{Mechanism.} The training objective carries an edge-sparsity and low-confidence penalty
+\begin{equation}
+\mathcal{L}_{\mathrm{graph}}=\tfrac{1}{n}\sum_{r,b,e}\big(|\alpha^{r}_{b,e}| + (1-\mathrm{conf}^{r}_{b,e})(\alpha^{r}_{b,e})^2\big),
+\label{eq:graphloss}
+\end{equation}
+where $\alpha_e$ is the per-edge gate. The inner sum runs over \emph{every edge of each sampled
+neighborhood}, tens of thousands of them, and is divided only by the batch size $n$, never by the edge
+count. At the default weight $\lambda_{\mathrm{graph}}{=}10^{-2}$ the term is $\approx$$103\times$ the
+mean-reduced response term. AdamW \citep{kingma2015adam,loshchilov2019adamw} rescales each parameter's
+step by its own gradient's running magnitude, so a penalty of that relative size does not merely
+shrink the gates; it plausibly fixes the \emph{direction} of their updates. Sparsity pressure that
+should have been a mild prior becomes the objective.
+
+\paragraph{Signature.} Every gate collapses to $\sim$$10^{-7}$ within the first epoch, in all five
+seeds, and a monotone sweep in $\lambda_{\mathrm{graph}}$ tracks the collapse
+(Figure~\ref{fig:lambda}); a penalty of only $10^{-5}$ already puts the mean gate below $10^{-3}$ with
+nearly every gate dead. The run does not crash, warn, or diverge. It trains to completion and reports
+a plausible \textsc{systema}.
+
+\paragraph{Why it is dangerous.} The comparison this pipeline exists to make is graph versus no-graph.
+With the gates annihilated the graph arm \emph{is} the no-graph arm, so the contrast compares a model
+to itself and returns a small difference with a tight interval: an identity check reported in the
+format of evidence. Worse, it fails silently in the direction we were prepared to believe. We expected
+a null, and the broken instrument produced one.
+
+\paragraph{Fix and precondition.} The fix that worked is one line: set $\lambda_{\mathrm{graph}}{=}0$,
+since the confidence weighting and the top-$k$ rationale already bound reliance on the graph.
+Normalizing the penalty per edge does not rescue the gates, as the direction argument predicts: in a
+pilot $98\%$ were dead after one epoch. Removing it swings the mean gate by $4.5\times10^{6}$, from
+$\sim$$10^{-7}$ to a live $0.27$ to $0.78$ in the checkpoints we scored. We now treat the gate mean as a \emph{precondition, not an output}: below
+a dead-gate threshold ($10^{-3}$) the graph comparison is undecidable by construction, and the run is
+rejected rather than reported. Reading it costs three minutes and decides whether a multi-hour run
+means anything.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{lambda_sweep.pdf}
+\caption{The default edge-sparsity weight silently disables the graph. Each point is \emph{one} run at one seed, twenty-two epochs on the blocked-target-OOD split, reporting the mean edge gate (left, log scale) and the fraction below the dead threshold (right). On why one seed is enough for this particular figure, see Appendix~\ref{app:archsearch}. At $\lambda_{\mathrm{graph}}{=}0$ the gates stay live; a penalty of only $10^{-5}$ already sends the mean gate below $10^{-3}$; the default $10^{-2}$ drives it to $\sim$$10^{-6}$, and the full-data campaign reaches $\sim$$10^{-7}$ at that default.}
+\label{fig:lambda}
+\end{figure}
+
+\subsection{With the instrument working, the graph still does not help}
+\label{sec:null}
+
+Table~\ref{tab:family} reports the corrected five-seed comparison on live gates. The evidence-gated graph is statistically indistinguishable from expression-only ($\Delta\,\textsc{systema}=-0.0009$, $95\%$ CI $[-0.0072,+0.0054]$, $p=0.71$); the interval crosses zero and the contrast clears neither correction. The typed \emph{static} graph is worse than no-graph on this fold ($-0.0131$, $p=0.0036$, surviving both corrections): forcing every typed edge on, without the gate's ability to switch noisy edges off, hurts. It is the only contrast in this family to clear correction, and it does not survive the harder split below.
+
+\begin{table}[htbp]
+\centering
+\caption{Corrected five-seed paired comparison, live gates, biologically blocked target-OOD fold. Arms: eo (expression\_only), cg (condition\_gated), ts (typed\_static), ug (untyped\_gnn). ``FWER'' marks whether a contrast survives \emph{both} Bonferroni and Holm at $\alpha{=}0.05$ over the four simultaneous tests. Failing to survive is not evidence of equivalence: the bold row's parity claim rests on its interval, not on its \emph{no}. $\Delta_{\textsc{pear}}$ is the same contrast under program-space Pearson-delta, where $\star$ marks survival of both corrections.}
+\label{tab:family}
+\vspace{2pt}
+{\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Contrast & $\Delta_{\textsc{sys}}$ & $95\%$ CI & FWER & $\Delta_{\textsc{pear}}$ \\
+\midrule
+ts $-$ eo & $-0.0131$ & $[-0.0190,-0.0072]$ & \textbf{worse} & $-0.0067^{\star}$ \\
+cg $-$ ts & $+0.0122$ & $[+0.0028,+0.0215]$ & no & $+0.0062^{\star}$ \\
+ug $-$ eo & $+0.0045$ & $[+0.0011,+0.0079]$ & no & $+0.0023^{\star}$ \\
+\textbf{cg $-$ eo} & $\mathbf{-0.0009}$ & $\mathbf{[-0.0072,+0.0054]}$ & \textbf{no} & $\mathbf{-0.0005}$ \\
+\midrule
+\multicolumn{5}{@{}l@{}}{\emph{Per-arm} mean \textsc{systema} ($n{=}5$): ug $0.0902$, eo $0.0857$, cg $0.0848$, ts $0.0726$}\\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\paragraph{The null survives a second metric, a harder split and a third fold.} Re-scored under
+program-space Pearson-delta, which does not subtract the training mean, both conclusions hold: parity
+for the gated graph ($-0.0005$, $p=0.64$) and a deficit for the static graph ($-0.0067$), with program
+cosine agreeing ($-0.0005$, $p=0.65$). Pearson-delta carries under half the paired standard deviation
+of \textsc{systema}, so it has \emph{more} power to find a benefit, and for the gated graph finds none.
+It does find two that \textsc{systema} misses at $n{=}5$: the untyped arm ($+0.0023$) and the gate over
+static typing ($+0.0062$) both clear correction under it. Re-drawing the blocked
+split at a stricter threshold, and running a third fold at an intermediate one, return the same
+corrected verdict. The point estimates differ across folds ($-0.0009$, $+0.0082$, $+0.0005$), which is
+why we report a per-fold bound rather than a general one (Appendix~\ref{app:power}).
+
+\paragraph{Our first significant contrast did not replicate.} The harder split is also a replication
+test of h2a, and h2a fails it. On the frozen fold the static graph is worse by $-0.0131$ and survives
+both corrections; on the harder split, at the same $n{=}5$, the deficit is $-0.0012$, $95\%$ CI
+$[-0.0074,+0.0050]$, $p=0.61$, clearing neither. That is an elevenfold shrink. The per-seed
+differences show why: $-0.0010$, $-0.0013$, $-0.0033$, $-0.0070$, $+0.0066$. One seed reverses sign. h2b and the untyped-GCN margin move the same way
+($+0.0122\!\to\!+0.0017$, $+0.0045\!\to\!+0.0028$); on the harder split \emph{nothing} in the family
+survives correction.
+
+% AUTO 2026-10-01: the third fold's numbers MOVED to App.~\ref{app:ablate} for the camera-ready page budget.
+The third fold separates two failures: there the estimate holds but the seed noise more than
+triples, while on the hardest fold the estimate itself collapses (Appendix~\ref{app:ablate}). This is the most
+uncomfortable result in the paper. The parity claim holds across folds, metrics and split difficulty;
+the one \emph{positive} claim we were entitled to make under multiplicity control does not, so
+``typed static graphs hurt'' should be read as a statement about one split.
+
+% AUTO 2026-08-10: new section carrying the multi-dataset replication result.
+\subsection{The null replicates, but the graph is not the thing that fails}
+\label{sec:repl}
+
+We replicated the comparison on seven further Perturb-seq screens \citep{peidli2024scperturb}:
+Frangieh melanoma, three Replogle screens including a genome-wide one ($9{,}730$ targets), Tian
+iPSC-neuron CRISPRi, Norman K562 and Tian CRISPRa. That spans four cell types beyond the reference's
+own, both perturbation directions, and a hundredfold range of target counts. Each dataset gets its own blocked target-OOD split, its own program basis refit inside its own
+training fold, four seeds per arm, and the family correction at the size that dataset can support
+(Appendix~\ref{app:repl}).
+
+\paragraph{The typed null holds, and is now bounded rather than merely unrefuted.} Pooled over the
+seven replication datasets the typed static graph is worth $+0.0018$ \textsc{systema} (fixed-effect
+$95\%$ CI $[-0.0005,+0.0040]$; random-effects $+0.0018$, $[-0.0028,+0.0065]$; $I^2{=}39.2\%$, $Q$
+$p{=}0.13$). The absence of significant heterogeneity matters as much as the estimate: four cell
+types, both perturbation directions and that hundredfold spread of target counts ($100$ to $9{,}730$)
+return the same answer, and the genome-wide screen, where power is highest, is the tightest single
+point of all ($+0.0008$). Frangieh, the one dataset where the condition gate has anything to gate, is
+underpowered rather than null (Appendix~\ref{app:repl}).
+
+\paragraph{The result that breaks the pattern points at us, not at the prior.} On Replogle RPE1 the
+\textsc{untyped\_gnn} arm (the same PPI topology with edge typing and condition gating removed) beats
+the expression-only baseline by $+0.0675$ \textsc{systema} ($95\%$ CI $[+0.0316,+0.1033]$; per-seed
+$+0.036,+0.072,+0.089,+0.073$; $p{=}0.009$, Bonferroni and Holm both $0.019$ at family size two).
+On that same dataset the \emph{typed} arm goes the other way ($-0.0196$). Where the
+graph does help, our typing-and-gating machinery is what discards the benefit.
+
+RPE1 is not an isolated seed, and the decisive case is our own screen. On the reference dataset and
+its frozen fold the untyped arm is $+0.0043$ \textsc{systema} at $n{=}7$ ($95\%$ CI
+% AUTO 2026-08-26: Holm corrected 0.021 -> 0.020. screening_untyped_n7 gives 0.02046976. The claim
+% is unchanged, both corrections still clear, but the digit was wrong.
+$[+0.0017,+0.0069]$, all seven seeds positive, Bonferroni $0.027$ and Holm $0.020$), surviving both
+corrections over the full pre-registered family of four, and registered in advance under the question
+it answers (\emph{does any graph beat no graph?}). Across the eight independent datasets, however, the
+untyped arm does not point one way. Three clear family-wise correction on their own
+pre-registered per-dataset test and \emph{they disagree in sign}: reference $+0.0043$, Replogle
+RPE1 $+0.0675$, Norman $-0.0790$; the full ordering is in Appendix~\ref{app:repl}.
+Norman is not a fragile lane, with four of four seeds negative and none dropped. Pooled over the eight there is \emph{no benefit}: random effects give $+0.0091$
+($[-0.0024,+0.0207]$, $p{=}0.12$) at $I^2{=}87.5\%$, where the random-effects reading governs
+(Appendix~\ref{app:repl}).
+
+That pooled number is \textbf{post-hoc} and at that heterogeneity close to uninformative. The
+per-dataset results are the pre-registered ones, and they say something sharper than any pooled
+estimate: raw topology has a \emph{real} effect, large enough to clear correction on three separate
+datasets, whose \emph{sign we cannot predict}. Neither cell type nor perturbation direction gives a
+rule that says in advance which way it will go.
+
+% AUTO 2026-08-26: the body quoted only the all-datasets pooling while App.~\ref{app:repl} reports
+% that Amendment 3.1 made the K=128 subset authoritative for this architecture, and that the two
+% disagree. Stating that only in an appendix reads as choosing the pooling that fits the sentence.
+% The claim above is conditioned here, not withdrawn: the confound is real and unresolved in both
+% directions, exactly as the appendix already argues at length.
+\paragraph{The pooling our own registration prefers disagrees with the one we quote.} Amendment 3.1
+fixed in advance that where the all-datasets and $K{=}128$ estimates disagree, it is the subset that
+speaks to the reference architecture. They disagree: over the five datasets at the reference program
+dimension the untyped margin is $+0.0141$ ($[+0.0041,+0.0240]$, $p{=}0.0056$), all five positive,
+against $+0.0091$ ($p{=}0.12$) over all eight. Neither survives the small-sample Hartung-Knapp
+adjustment ($p{=}0.24$ and $0.48$; Appendix~\ref{app:repl}). The three screens below $K{=}128$ include the only
+negative one, so the sign disagreement is not cleanly separable from an eightfold cut in program
+capacity, and is not explained by it either (Appendix~\ref{app:repl}). We
+report both and resolve neither, and ``sign we cannot predict'' should be read with that attached.
+
+% AUTO 2026-08-26: this paired the typed arm's I^2 over the SEVEN replication screens with the
+% untyped arm's over EIGHT (reference screen included), while claiming "the same datasets".
+% Like-for-like at seven it is 39.2% against 88.7% and the point stands; at eight it is 87.8%
+% against 87.5% and the point vanishes. Pooled like-for-like; the dependence is stated in App.~D.
+Set that beside the typed arm's tight, homogeneous null over the same seven screens and the comparison
+is direct. Raw topology produces effects large enough to clear correction in both directions; the
+encoder we built to exploit it produces an estimate pinned near zero everywhere ($I^2{=}39.2\%$ against
+$88.7\%$). Our machinery did not fail to find a weak signal, it flattened a strong and inconsistent
+one. The prior is not what failed. This is what flips cause C in \S\ref{sec:causes} from refuted to
+surviving, and why distinguishing an uninformative prior from an encoder that discards it costs
+exactly one extra arm: the same topology with the clever parts switched off.
+
+\section{Reason for failure: five candidate causes}
+\label{sec:causes}
+
+A negative result is only useful if it says something about \emph{why}. We enumerated the causes we could think of, and for each asked what evidence would speak to it and what that evidence says. Table~\ref{tab:causes} summarizes; the text gives the reasoning.
+
+\begin{table}[htbp]
+\centering
+\caption{Candidate causes for the absent graph benefit, the evidence that bears on each, and our verdict. Three survive. We regard D as the most consequential for how the field runs this ablation.}
+\label{tab:causes}
+\vspace{2pt}
+{\small
+\begin{tabular}{@{}p{0.20\linewidth}p{0.46\linewidth}p{0.26\linewidth}@{}}
+\toprule
+Candidate cause & Evidence & Verdict \\
+\midrule
+A. Near-null task regime & Centroid accuracy at floor ($\approx$$0.001$) for \emph{every} arm; all trained arms within $0.072$ to $0.090$; an independent tabular benchmark reports this screen as near-null \citep{royer2026tfm}; and the graph adds $6$ to $32\times$ the seed spread without moving the mean & \textbf{Survives.} Little target-specific signal for any model to route \\
+B. The metric hides it & For h1, replicates under Pearson-delta (less than half the paired SD, so more power) and program cosine; Pearson-delta does clear the untyped arm and the gate & \textbf{Refuted for h1} \\
+% AUTO 2026-08-26: C1's measured floor is now the strongest evidence for this cause.
+C. Architecture is wrong & At $n{=}7$ edge typing is \emph{actively harmful} ($-0.0120$, $7/7$ seeds, survives both) and the gate repairs only part of it, unreliably ($+0.0085$, fails). The untyped arm clears correction on three datasets but \emph{in disagreeing directions} ($+0.0043$, $+0.0675$, $-0.0790$). The gated arm clears at no injected size up to $0.40$ SDs where the untyped one clears at $0.02$, though on the increment neither separates below $0.40$ & \textbf{Survives, and it is the encoder} \\
+D. The baseline is not graph-free & Three-way ablation, $n{=}5$: zeroing the graph-derived features costs $-0.0036$ (corrected $p=0.0005$), all of it the degree scalars; PINNACLE is inert & \textbf{Survives, measured.} The discarded channel exceeds h1 itself \\
+E. Graph quality / wrong tier & $85\%$ of edges are functional associations; pruning them \emph{hurts}; rationale sufficiency mass sits almost entirely on that tier; \textsc{typed\_static} is worse on the frozen fold & \textbf{Partly.} The usable signal is in the tier we would have pruned \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+% AUTO 2026-08-10: verdict flipped by the untyped-arm evidence in Section~\ref{sec:repl}.
+Table~\ref{tab:causes} gives every cause its evidence and verdict. Causes A, B and E are adjudicated
+in Appendix~\ref{app:causes}: the task sits in a near-null regime for every arm, the metric is not
+hiding a gated-graph benefit, and the usable signal is concentrated in the low-confidence tier we would have
+pruned. The two that carry the argument are C and D, and neither is about biology.
+
+\paragraph{C. The architecture is wrong, and this is the cause that survives.} We first recorded this
+cause as refuted, on a $14$-cell search that left the default gated encoder on top. The search was the
+wrong shape: every cell varied \emph{how} the typed, gated encoder passes messages and not one removed
+the typing and gating themselves, so it could not have found this. Running the whole family at $n{=}7$ on the frozen
+fold localizes the damage instead. Ordered by \textsc{systema}: untyped $0.0904$, expression-only
+$0.0861$, condition-gated $0.0825$, typed-static $0.0740$. % AUTO 2026-08-26: the two corrected p-values here duplicated \S\ref{sec:repl} verbatim; that
+% section states them in full and this one needs only the contrast.
+Plain topology beats no graph ($+0.0043$, all seven
+seeds positive, both corrections cleared); per-relation edge typing does not merely fail
+to help but is \emph{actively harmful} ($-0.0120$, seven of seven seeds negative, both corrections
+at $0.001$); and the condition gate recovers only part of that self-inflicted loss ($+0.0085$, which
+does \emph{not} survive correction), leaving the gated arm at $-0.0036$ against no graph at all. The
+gate is not adding signal; it is partly repairing a wound the typing inflicts, and unreliably. Which \emph{part} of the typing costs this is barely
+% AUTO 2026-08-26: "79% of it" read as 79% of the -0.0120 typing cost stated two clauses earlier.
+% It is 79% of the +0.0176 gap to the untyped arm, as App.~\ref{app:mechanism} says. The m=1 caveat
+% that appendix insists on was also missing here.
+the typing at all: normalizing each relation's messages by degree recovers $79\%$ of the untyped gap,
+at one arm and uncorrected $p{=}0.0245$, and still
+beats no graph by nothing, so the deficit looks like an aggregation artifact rather than a statement
+about evidence types. Under the shared stopping rule the typed arms are scored by epoch $3$ and the others at $13$ to $19$,
+so part of the typing cost may be how early those models peak.
+\textbf{Survives}, and it best explains the null. Appendix~\ref{app:causes} gives the arm-by-arm numbers.
+
+\paragraph{D. The baseline was never graph-free.} Our \textsc{expression\_only} arm turns message
+passing off and is what the field calls the no-graph baseline, but the target's frozen feature vector
+already carries graph-derived information: three PPI degree scalars and a $128$-d PINNACLE embedding
+\citep{li2024pinnacle}. Stripping those too costs $-0.0036$ \textsc{systema} over five paired seeds
+under correction ($p=0.0005$), all of it the degree scalars. That is \emph{larger than the effect the paper set out to measure}: h1, the marginal value of
+message passing over roughly eight million typed edges, is $-0.0009$ and survives nothing. An ablation
+that labels one arm ``no graph'' while feeding it a working graph summary is not measuring what its
+name says, and this is the cause we regard as most consequential for how the field runs the
+comparison. \textbf{Survives}; Appendix~\ref{app:causes} carries the rest.
+
+\section{The checklist we wish we had used}
+\label{sec:checklist}
+
+\vspace{2pt}\hrule\vspace{4pt}
+{\small
+\textbf{Before you believe a structure ablation:}
+\begin{enumerate}\itemsep1pt \parskip0pt
+\item \textbf{Log the mechanism's own health every epoch}, not just the loss and the metric. For a
+gated graph that is the mean gate; for a masked module, the mask occupancy. A mechanism can be dead
+while the run is green.
+\item \textbf{Declare a collapse threshold in advance and treat breaching it as \emph{undecidable},
+not as a result.} A disabled mechanism trivially ties the baseline, and that tie will read as your
+hypothesis.
+\item \textbf{Compare every regularization term to the task loss in magnitude, not in hyperparameter
+value.} A weight of $10^{-2}$ sounds small; ours was $103\times$ the response term because the sum was
+unnormalized. Print the ratio.
+\item \textbf{Normalize structural penalties by the structure's size, and still check the mechanism.}
+Sums over sampled neighborhoods scale with the sample, so the effective penalty changes with the
+sampler. Normalized per edge, ours still killed the gates.
+\item \textbf{Check that your headline survives a large change in the offending hyperparameter.} Ours
+moved the gates by $4.5\times10^{6}$ and the answer not at all, which is what let us keep the null.
+\item \textbf{Ask what your baseline actually contains, then ablate it.} Ours received three PPI
+degree scalars; zeroing them cost more than the message passing we were testing. Six GPU-hours settled
+a cause we had written down as future work.
+\item \textbf{Audit feature \emph{coverage}, not the feature list.} Our $128$-d contextual embedding
+is a zero vector for $90.8\%$ of rows, because its cell-type context covers a fraction of the targets.
+A feature present in the schema and absent in the data quietly changes what your ablation means, in
+either direction.
+\item \textbf{Run a structure-only arm beside your clever one.} Strip the typing, gating and
+attention, and keep the raw topology. Across eight datasets that plain arm clears correction three
+times \emph{in disagreeing directions} ($+0.0043$, $+0.0675$, $-0.0790$): raw structure does not
+reliably help either, and the point is that the typed arm alone cannot tell you which. An architecture
+search does not substitute. Ours tried $14$ cells and every one varied \emph{how} the typed encoder
+passes messages, never whether the typing belonged.
+\item \textbf{Redraw your split before you interpret a split sweep.} Regenerate one setting at a
+different partition seed and compare the spread to the range your knob spans. Ours moved the
+difficulty statistic $0.103$ against a designed range of $0.056$, so the sweep was measuring the seed
+more than the knob.
+\item \textbf{Report per-arm variance across seeds, not only the paired contrast.} Our graph arms
+carry $6$ to $32\times$ the seed-to-seed spread of the no-graph arm at the same mean. A component can
+change the spread without changing the expectation, and the paired contrast will not show you that.
+\item \textbf{Pre-register the contrast family and correct for it.} With four simultaneous contrasts,
+three of ours reach nominal significance and only one survives both corrections.
+\item \textbf{Inject a signal you know is there, with a scrambled control.} A null is a claim about
+your instrument. Ours clears correction at an injected signal of $0.02$ response SDs and clears nothing
+% AUTO 2026-08-26: this cited our instrument as a clean pass while the arm our null is about fails
+% the same test. A checklist item that overstates its own worked example is worse than no example.
+when the same component follows a \emph{scrambled} graph (Appendix~\ref{app:floor}). The scrambled
+rung is the one people skip, and it separates reading structure from responding to magnitude. Run it
+on the arm your claim is about: ours clears on the untyped arm and never clears on the gated one,
+at twenty times the size.
+\item \textbf{Slice the metric \emph{disjointly}, and check the resolution.} Cumulative top-$k$ scores
+contain every smaller $k$, so a sign change only bounds where the effect turned. Ours hides a
+$-0.0424$ deficit on twenty genes inside a positive decile of $1{,}028$.
+\item \textbf{Replicate the contrast that \emph{survived}, not only the one that failed.} Effort goes
+into hardening a null. Our first corrected-significant result was the one that did not reproduce on a
+harder split, and we would not have known had we treated that split as a robustness check on the null
+alone.
+\end{enumerate}
+}\vspace{2pt}\hrule\vspace{4pt}
+
+\section{Limitations}
+\label{sec:limits}
+
+\textbf{A bounded null, and the bound is per fold, not general.} No fold yields a benefit surviving
+correction, and no single fold's upper limit bounds the effect elsewhere (Appendix~\ref{app:power}).
+% AUTO 2026-08-26: "the typed arm's own floor is unmeasured" was true when written and is now false.
+The instrument is not the limit for our best graph arm, but at $n{=}4$ it is for the gated one, which
+clears at no injected size up to $0.40$, the largest rung we ran (Appendix~\ref{app:floor}).
+
+\textbf{Our own pre-registration nearly prevented the replication.} Under the rules as written, four
+of six candidate datasets fell out. Auditing that decision produced the more useful finding, and it is
+about pre-registration rather than about this dataset (Appendix~\ref{app:prereg}). The replication has
+since run under the amended rule (\S\ref{sec:repl}), so the null is no longer one screen, but two
+narrower limits replace it: h1 still rests on a single replication, and no dataset replicates the
+reference \emph{cell type} (Appendix~\ref{app:repl}).
+
+\textbf{Scope.} Gains reported elsewhere \citep{wenkel2026txpert,cole2026foundation} use different
+splits and metrics, so our bound constrains this task rather than adjudicating those claims. Re-scored
+under their endpoints our null holds, but the untyped contrast \emph{reverses sign} between TxPert's
+and \textsc{gears}' headline metrics, and sliced by gene rank the gated arm clears correction in the
+graph's favor on the least-moved genes (Appendix~\ref{app:metrics}).
+
+\section{Conclusion}
+
+We set out to test whether a protein-interaction prior helps predict T-cell perturbation responses.
+The harder problem throughout was trusting our own measurement. A conventional regularizer switched
+off the mechanism under test while the pipeline kept reporting plausible numbers, in the direction we
+already expected. Repaired, the typed gated graph gives a bounded null that holds across seven further
+screens. Our first contrast to clear multiplicity control then failed its own replication, and the
+fold statistic we would have used to explain that failure moved as much under a reseed as across the
+range we varied.
+
+% AUTO 2026-08-26: this replayed the abstract almost verbatim. The finding is stated there and in
+% full, with numbers, in Section~\ref{sec:repl}; the conclusion's job is the consequence.
+Then an arm we had run only as a diagnostic overturned that reading: untyped, ungated topology clears correction on three
+datasets, in \emph{disagreeing} directions. The null we measured was never a fact about the
+prior. It was a fact about our encoder, which flattens a signal
+% AUTO 2026-08-26: "or anything else we can see" stopped being defensible once \S\ref{sec:repl}
+% named program capacity as a candidate that does track the sign. Hedging there and not here reads
+% as retreating to the stronger claim once the caveat is out of sight.
+whose sign we cannot predict from cell type or perturbation direction, and cannot cleanly separate
+from program capacity (\S\ref{sec:repl}). Our
+$14$-cell architecture search had refuted the architecture as a cause, but every cell varied \emph{how}
+the typed encoder passes messages and none asked whether the typing belonged.
+
+Two things generalize. The baseline everyone calls ``no graph'' already carries graph-derived
+features, so that ablation does not measure what its name says, in anyone's hands. And a negative
+result about a prior is only as good as the simplest version of that prior you bothered to run. Ours
+cost one arm. Without it we would have published the wrong cause, and, had we stopped at five
+datasets, a sign the sixth reversed.
+
+\begin{ack}
+This work received no external funding. The author has no competing interests to declare.
+\end{ack}
+
+\bibliographystyle{plainnat}
+\bibliography{../references,extra}
+
+% AUTO 2026-08-10: the three statements are free at this venue; placing them AFTER the
+% bibliography removes any question of whether they count against the 8-page body.
+\section*{LLM usage disclosure}
+
+An AI coding agent wrote most of the pipeline and analysis code under author direction and review, and assisted in revising this manuscript. Every reported number was produced by executing that code and re-derived from persisted artifacts; the scientific claims and their interpretation are the author's.
+
+\section*{Ethics statement}
+
+This work uses a public, de-identified genome-scale Perturb-seq resource derived from primary human CD4$^{+}$ T cells and introduces no new human-subjects data. Methods that nominate immune targets can inform both therapies and harmful manipulation of immune function. We mitigate over-claiming by reporting a controlled null with explicit bounds rather than unqualified target predictions, and by making the gate-health and multiplicity safeguards explicit so that downstream users do not mistake a disabled mechanism for a validated one.
+
+\section*{Reproducibility statement}
+
+The pipeline, the pre-registered contrast family, the split generator, and the analysis that produces every table are released at \url{https://github.com/Vijayavallabh/tcell-causal-ppi}. The dataset is public \citep{zhu2025gwperturbseq}. Appendix~\ref{app:repro} says where each number is read from and how it is regenerated, gives the gate-health precondition that gates them, and lists every correction made after review. Replication datasets are the harmonized scPerturb release \citep{peidli2024scperturb} (CC-BY-4.0), with checksums in \texttt{data/manifests/}.
+
+
+\appendix
+
+\section{Model architecture}
+\label{app:arch}
+
+EG-IPG has four modules: a perturbation and context encoder, a typed evidence-gated graph encoder, a program decoder with a graph/expression mixture gate, and a sparse rationale head, in the GNNExplainer lineage \citep{ying2019gnnexplainer}, fitted after the predictor is frozen (Figure~\ref{fig:arch}).
+
+\paragraph{Perturbation and context encoder.} The target protein is represented by frozen features only, with \emph{no} trainable gene-ID embedding, so the model cannot memorize target identity and must generalize to unseen genes: ESM-2 650M ($1280$-d) \citep{lin2023esm2}, PINNACLE ($128$-d) \citep{li2024pinnacle}, three PPI degrees, and control-derived baseline expression, $1412$-d in total. This is fused with a condition embedding and donor context into an intervention vector $h_{\mathrm{do}}\in\mathbb{R}^{256}$. Note that this vector, and therefore the \textsc{expression\_only} arm, contains graph-derived features; see \S\ref{sec:causes}D. Measured coverage over the $33{,}983$ DE rows: ESM-2 resolves for $99.4\%$, physical and functional PPI degree are nonzero for $96.5\%$ and $98.4\%$, complex degree for $29.5\%$, and PINNACLE for $9.2\%$ (the embedding store returns a zero vector on a miss).
+
+\paragraph{Typed evidence-gated graph encoder.} Around each target we sample a $2$-hop neighborhood capped at $512$ nodes and run $L{=}3$ relational message-passing layers \citep{schlichtkrull2018rgcn}. For an edge $u\!\to\!v$ of relation $r$,
+\begin{equation}
+m_{u\to v}^{(l),r}=\tanh\!\big(W^{(l),r}_{\mathrm{sign}}h_u^{(l-1)}\big)\odot\mathrm{ReLU}\!\big(W^{(l),r}_{\mathrm{mag}}h_u^{(l-1)}\big),
+\end{equation}
+a signed message whose $\tanh$ factor encodes activation or inhibition and whose $\mathrm{ReLU}$ factor encodes magnitude. The condition gate
+\begin{equation}
+\alpha_{u\to v}^{r}(c)=\sigma\!\big(w_{\mathrm{gate}}^{r}\cdot[\,h_{\mathrm{cond}}(c)\,\|\,f_e\,]+b_{\mathrm{gate}}^{r}\big)\in[0,1]
+\label{eq:gate}
+\end{equation}
+is applied before aggregation, so the same physical edge can be active in one context and silent in another. Unlike graph attention, this is an independent per-edge sigmoid conditioned on culture context and the edge's provenance features, not a query-key similarity normalized over a neighborhood. Its closest precedent is differentiable edge masking \citep{schlichtkrull2021graphmask}, which also learns a per-edge gate under a sparsity penalty; the confound of \S\ref{sec:confound} is a hazard of that construction generally and not of this model alone. Nodes update residually and a $4$-head cross-attention readout queried by $h_{\mathrm{do}}$ pools node states into $h_{\mathrm{graph}}\in\mathbb{R}^{256}$.
+
+\paragraph{Decoder and mixture gate.} The decoder predicts a program delta from the graph and a parallel expression-only prediction that bypasses it, then mixes them with a learned $\gamma$; setting the graph encoder to null forces $\gamma{=}0$ and recovers the \textsc{expression\_only} member exactly. This is what makes the family a nested ablation rather than a comparison of two code paths.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{eg_ipg_architecture.pdf}
+% AUTO 2026-08-26: this caption named only the boxed term, so the figure could not stand alone.
+\caption{EG-IPG, and where it breaks. Four modules run left to right. The perturbation and context
+encoder fuses the target's frozen features (ESM-2, PINNACLE, three PPI degrees, control baseline
+expression) with condition and donor context into $h_{\mathrm{do}}$. The typed evidence-gated graph
+encoder runs three relational message-passing layers over a sampled $2$-hop neighborhood, scaling each
+edge by the condition gate of Eq.~\ref{eq:gate}. A cross-attention readout pools nodes into
+$h_{\mathrm{graph}}$. The decoder then mixes a graph-derived program delta with a parallel
+expression-only prediction through a learned $\gamma$, so $\gamma{=}0$ recovers the
+\textsc{expression\_only} arm exactly. The boxed edge-sparsity term is Eq.~\ref{eq:graphloss} and the
+locus of the confound analyzed in \S\ref{sec:confound}. It acts on the gate, which is the only thing
+separating the four arms.}
+\label{fig:arch}
+\end{figure}
+
+\section{Architecture search}
+\label{app:archsearch}
+
+% AUTO 2026-08-26: this table had no \label, so nothing could reference it.
+\begin{table}[h]
+\centering
+% AUTO 2026-08-26: this caption stated the search's conclusion as a finding, directly above the
+% paragraph explaining that the search could not resolve anything, and App.~\ref{app:mechanism} later
+% says "refuted within the searched space" was never established for normalization. The ranking is
+% still reported; what it is not is evidence.
+\caption{Representative cells from the $14$-cell architecture search (inner training fold, single seed, five epochs). No cell outranks the default gated encoder, but the paragraph below shows the search could not resolve differences of this size, and Appendix~\ref{app:mechanism} overturns its verdict on normalization. Read the ordering as a record of what we ran, not as a result. Attention cells use GATv2 \citep{brody2022gatv2}. ``gate'' is the mean final edge gate.}
+\vspace{2pt}
+{\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Architecture cell (inner fold) & \textsc{systema} & gate \\
+\midrule
+condition\_gated, add, unpruned (\emph{default}) & $\mathbf{0.0914}$ & $0.73$ \\
+condition\_gated, mean-normalized            & $0.0884$ & $0.12$ \\
+condition\_gated, GCN-normalized             & $0.0881$ & $0.03$ \\
+condition\_gated, prune functional $<0.4$    & $0.0881$ & $0.47$ \\
+untyped\_gnn (pruned) $+$ GATv2 attention    & $0.0869$ & n/a \\
+untyped\_gnn $+$ STRING edge weights         & $0.0869$ & n/a \\
+untyped\_gnn (plain GCN)                     & $0.0874$ & n/a \\
+expression\_only (no graph)                  & $0.0862$ & n/a \\
+condition\_gated, prune functional $<0.7$    & $0.0828$ & $0.30$ \\
+\bottomrule
+\end{tabular}}
+\label{tab:archsearch}
+\end{table}
+
+% AUTO 2026-08-16: the search was also underpowered, which we can now say with a number rather than a worry.
+\paragraph{The search could not have found anything, whatever its shape.} Section~\ref{sec:causes} says every cell varied \emph{how} the typed encoder passes messages and none asked whether the typing belonged, so the search in Table~\ref{tab:archsearch} excluded its own premise. The floor measured in Appendix~\ref{app:power} adds a second and simpler objection. Every cell is one run at one seed, and this paper's own rule emits no $p$-value at $n{=}1$, because a single seed is not a paired result. So no cell was individually decidable, and the question is whether the search as a whole distinguished anything. It did not. Across all $14$ cells the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$; $14$ draws of the \emph{seed noise alone} on this fold ($\mathrm{sd}=0.0043$) would be expected to span $0.0147$. The entire architecture search is therefore narrower than what re-seeding a single configuration produces, and its best cell would need $12$ paired seeds to clear our correction rule at $80\%$ power. % AUTO 2026-08-26: a third objection, and the one a reader reaches first. arch_search_bound.json
+% records epochs_run=[5].
+And a third objection precedes both. Every cell ran \emph{five} epochs. In our full-length lanes the typed arms reach their best validation loss by epoch $3$ and the untyped and no-graph arms not until epochs $13$ to $19$ (Appendix~\ref{app:causes}); if the inner fold trains alike, five epochs sees the typed cells at their best and the rest well short of theirs, a budget that favors exactly the cells that came out on top. Convergence speed and final quality are not the same ordering, and nothing here separates them. We ranked $14$ architectures on differences we had no power to resolve, at a budget that was not the one we report, and then reported the ranking as though it had refuted something. Anyone reading a single-seed architecture table, ours included, should ask what its rows would look like re-seeded.
+
+% AUTO 2026-08-26: MOVED here from Figure~\ref{fig:lambda}'s caption for the page budget (rail 3).
+% The caption keeps the fact that the sweep is single-seed; this is why we accept it there and not here.
+\paragraph{Why Figure~\ref{fig:lambda} is allowed to be single-seed and this table is not.} The
+$\lambda$ sweep behind Figure~\ref{fig:lambda} is also one run per point, so the objection above
+applies to it on its face. We accept it there for a reason that does not transfer here. That figure
+measures a gate collapsing across seven orders of magnitude, from $0.76$ to $\sim$$10^{-7}$, and the
+largest seed-to-seed spread we measure anywhere in this paper is a factor of two on a quantity of order
+$10^{-2}$. No amount of re-seeding turns that into the observed curve. The architecture search, by
+contrast, is resolving differences of $0.0089$ against a seed spread of $0.0043$, which is precisely
+the regime where one seed decides the ranking. The test is not whether a sweep is single-seed but
+whether its effect clears its own noise by a margin re-seeding cannot close, and only one of ours does.
+
+% AUTO 2026-08-18: A1 landed. Two diagnostic arms, pre-registered before they ran, 83 GPU-hours.
+\section{Which part of the typing does the damage?}
+\label{app:mechanism}
+
+\S\ref{sec:causes} localizes the deficit to edge typing: $-0.0120$ \textsc{systema} at $n{=}7$, seven of
+seven seeds, surviving both corrections. It does not say what about typing costs that. Two explanations
+are confounded inside the number. The relation partition may be the wrong inductive bias; or typed
+message passing simply carries four times the message parameters over the same edges, in which case the
+damage is capacity and has nothing to do with evidence types. Two arms separate them (Table~\ref{tab:mechanism}), both registered
+with their decision rule before either was trained.
+
+\textsc{typed\_shared} ties one message module across all four relations instead of one each, cutting
+$2{,}396{,}160$ message parameters to $599{,}040$ and the model's total parameters by $34\%$ ($5{,}254{,}884$ to $3{,}457{,}764$), and changing nothing
+else. \textsc{typed\_permuted} keeps the per-relation modules and reassigns every protein-protein edge's
+relation label at random, preserving each relation's edge count exactly. The relabelling happens
+\emph{after} neighborhood sampling, because the sampler ranks candidate neighbors by relation, so
+permuting the stored graph would have changed which neighbors enter the subgraph rather than only which
+weights process them.
+
+\begin{table}[h]
+\centering\small
+\caption{The two diagnostic contrasts, $n{=}5$ paired seeds on the frozen fold, corrected as their own
+family of two with Bonferroni and Holm both required. Positive means the intervention improved on the
+typed encoder. Neither clears.}
+\label{tab:mechanism}
+\begin{tabular}{llrrr}
+\toprule
+contrast & what it removes & mean & $95\%$ CI & $p_{\mathrm{Bonf}}$ \\
+\midrule
+$D_1$ shared $-$ static   & the per-relation parameters & $+0.0004$ & $[-0.0048,+0.0057]$ & $1.000$ \\
+$D_2$ permuted $-$ static & the typing's information    & $+0.0065$ & $[-0.0017,+0.0147]$ & $0.182$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Neither route is it. Cutting the message parameters by a factor of four, a third of the whole model, moves the primary
+endpoint by $+0.0004$; if the deficit were capacity or overfitting, that is the intervention that would have fixed
+it. Replacing the true relation partition with a random one of identical sizes moves it by $+0.0065$,
+which does not clear correction. That second point estimate is \emph{positive}, so if anything the
+curated partition is slightly worse than a random one, but we report it as the null our rule makes it
+and not as the finding it would be nice to have.
+
+What remains is what all three typed arms share and the untyped one does not. Both diagnostic arms sit
+well below the untyped \textsc{gcn} ($-0.0172$ and $-0.0111$) and below the no-graph baseline ($-0.0126$
+and $-0.0065$), so the deficit survives both interventions intact. The candidates left are the form of
+the message rather than its routing: signed messages, the per-edge feature term, the complex-membership
+node type, the residual feed-forward block, and summing a relation's messages instead of normalizing
+them by degree.
+
+That last one deserves a note, because we previously reported it as refuted. The architecture search
+that refuted it spans $0.0089$ across all $14$ of its cells, while the untyped-minus-typed gap we measure
+at $n{=}5$ on the same fold is $0.0176$. A search whose whole range is half the size of the difference
+under study was not resolving these arms at all, so ``refuted within the searched space'' was never
+established for normalization either, which is the same lesson as \S\ref{sec:causes} arriving one level
+further down.
+
+% AUTO 2026-08-20: B1a. Pre-registered as Amendment 7 before the arm was trained.
+\paragraph{So we ran it, and it is most of the deficit.} \textsc{typed\_gcnnorm} is the static typed
+encoder with each relation's messages weighted by $1/\sqrt{d_i d_j}$ instead of summed. Nothing else
+changes, and deliberately not one parameter, since A1 had already excluded capacity. Against the
+landed \textsc{typed\_static} lanes at the same five seeds it recovers $+0.0139$ \textsc{systema}
+($95\%$ CI $[+0.0029,+0.0248]$, five of five seeds positive), or $79\%$ of the $+0.0176$ gap to the
+untyped arm. The deficit is therefore mostly not the typing: it is the unnormalized sum, where a
+relation's contribution scales with its degree, so \textsc{functional\_assoc} ($85\%$ of all edges,
+median score $0.209$) dominates the node update by count.
+
+\textbf{Two things keep this from being a graph result.} First, repairing the encoder buys no benefit:
+against the expression-only baseline \textsc{typed\_gcnnorm} is $+0.0008$ ($[-0.0047,+0.0062]$,
+$p=0.71$, three of five seeds), and it cannot be told apart from the plain untyped arm ($-0.0037$,
+$p=0.22$). Fixing the aggregation removes the damage and reveals nothing underneath: the same null of
+\S\ref{sec:null}, with one fewer artifact in front of it. Second, this is a family of \emph{one}, where
+Bonferroni and Holm are the identity, so ``clears both corrections'' means only the uncorrected
+$p=0.0245$; the remaining three message-form arms would put $m{=}4$, where it does not clear. What
+survives the multiplicity is the sign agreement and the size of the share.
+
+\textbf{Why we stopped at one arm.} The residual the other three would partition is
+$\textsc{untyped\_gnn}-\textsc{typed\_gcnnorm}=+0.0037$, against a minimum detectable effect of
+$0.0096$ at five seeds: $2.6\times$ the whole residual, before each arm's share of it. Detecting the
+residual needs about $21$ seeds, half of it about $77$. Three more arms at five seeds would have been
+underpowered by construction. Stopping also preserves the $p$ above; the reason is the power
+calculation, not the $p$.
+
+\section{Replication protocol and dataset survey}
+\label{app:repl}
+
+We pre-registered a multi-dataset replication before running it: the contrast family and its correction, the seed count, the primary contrast per dataset, kill criteria, and integration rules. Two points from the accompanying dataset survey bear on how any such replication should be read.
+
+% AUTO 2026-08-26: this survey predated the genome-wide screen and called Replogle RPE1 "the largest"
+% at 2,393, which Table~\ref{tab:repl} contradicts with a 9,730-target Replogle screen from the same
+% pool and Section~\ref{sec:repl} contradicts again by calling that screen the tightest of the seven.
+% Its counts were raw file counts while the table reports built ones; both now report built counts,
+% and the "no public alternative" conclusion is narrowed to what the data supports.
+First, the \emph{target} axis mostly collapses. The reference screen has $11{,}526$ gene targets. One harmonized public alternative \citep{peidli2024scperturb} is comparable, the Replogle K562 genome-wide screen at $9{,}730$ built targets, and it returns the tightest interval of the seven (\S\ref{sec:repl}). The rest are far smaller: the largest is Replogle RPE1 at $2{,}122$, the largest with more than one experimental condition is Frangieh melanoma at $238$ over three conditions, and the two T-cell candidates, Shifrut in primary cells and Datlinger in the Jurkat line, yield $20$ and $30$. Since the split holds out sequence-similarity families, target count sets how many families exist to hold out, so outside the genome-wide screen a replication is a weaker measurement wearing the same name.
+
+Second, target count and condition count are anti-correlated across candidates. Everything with enough targets for a well-powered split is single-condition, and on single-condition data \textsc{condition\_gated} degenerates to \textsc{typed\_static} because its condition embedding is indexed by a constant. There, h1 is not defined and the primary contrast must be h2a; assigning that per dataset in advance, rather than after seeing results, is part of the pre-registration.
+
+\paragraph{Reference-screen untyped arm at $n{=}7$.} Per-seed \textsc{systema} deltas for \textsc{untyped\_gnn} $-$ \textsc{expression\_only} on the frozen fold, seeds $0$ to $6$, none dropped: $+0.0090$, $+0.0050$, $+0.0022$, $+0.0031$, $+0.0033$, $+0.0066$, $+0.0008$. Mean $+0.0043$, sd $0.0028$, se $0.0011$, paired $p=0.0068$ before correction. At $n{=}5$ (seeds $0$ to $4$) the same contrast was $+0.0045$, $95\%$ CI $[+0.0011,+0.0079]$, Holm $0.062$ and Bonferroni $0.083$, clearing neither. Adding seeds $5$ and $6$ left the estimate essentially unchanged and cut the CI half-width from $0.0034$ to $0.0026$. Fold comparability is verified from the run registry and the recorded fold sizes: one split, observed fold sizes $[21262, 4400]$ on every lane that records them.
+
+\paragraph{Measured outcome.} We built the DE matrices and applied the rules. Table~\ref{tab:repl} is what survived.
+% AUTO 2026-08-10: the replication has now run; the old "measurement returned two" is superseded.
+% AUTO 2026-08-26: ten were built and eight passed QC; Papalexi passes QC and is not trained.
+Eight of ten candidates passed on-target quality control and seven were trained to completion: Frangieh melanoma, Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide, Norman K562, and Tian iPSC-neuron CRISPRi and CRISPRa. Two decisions were forced by measurement and pre-registered before the first lane ran. First, the program dimension is not portable: $K$ cannot exceed the training fold's row count, and a replication dataset has one row per (target, condition), so the reference $K{=}128$ does not hold everywhere: Tian CRISPRi runs at $K{=}32$, and Tian CRISPRa and Norman at $K{=}16$, each a labeled deviation (Table~\ref{tab:repl}).
+% AUTO 2026-08-21: this sentence previously asserted that the K=128 subset estimate was reported. It
+% was not: pool.py had no such option and no artifact contained it. The pre-registered analysis has now
+% been run (data/results/replication/pooled_k128_subset.json) and the two estimates disagree, which is
+% the case Amendment 3.1 legislated for. Reported here, and flagged rather than resolved: rail 4.
+Amendment 3.1 requires the pooled estimate over the $K{=}128$ subset alongside the one over all datasets, and fixes in advance that if the two disagree it is the subset that speaks to the reference architecture. They do disagree. Over all eight datasets the untyped margin is $+0.0091$ ($[-0.0024,+0.0207]$, $p{=}0.12$); over the five $K{=}128$ datasets it is $+0.0141$ ($[+0.0041,+0.0240]$, $p{=}0.0056$), with all five positive and no disagreement in sign. % AUTO 2026-08-26: this named the K confound and stopped, which reads as though capacity explains the
+% sign. It does not: the other two sub-128 datasets carry the second and third largest POSITIVE
+% effects. Stating the counter-evidence alongside, since a one-sided caveat is its own overclaim.
+Heterogeneity stays high in the subset ($I^2{=}87.7\%$), and the only negative dataset anywhere, Norman, is one of the three that ran below $K{=}128$, so the sign disagreement we report above is not cleanly separable from an eight-fold reduction in program capacity. It is not explained by it either. The other two sub-$128$ datasets carry the second and third largest positive effects (Tian CRISPRi $+0.0281$, CRISPRa $+0.0226$), and one negative in three against none in five is what capacity alone would produce by chance ($p{=}0.375$, Fisher exact). Nor is either estimate robust to the small-sample Hartung-Knapp adjustment, which the registration did not specify and we report only as a sensitivity: it widens the five-dataset interval to $[-0.0139,+0.0421]$ ($p{=}0.24$), the eight-dataset one to $[-0.0201,+0.0384]$ ($p{=}0.48$), and the typed arm's seven-screen random-effects bound of \S\ref{sec:repl} to $[-0.0053,+0.0089]$. We report both estimates and resolve neither. Second, the two screens that failed quality control, Datlinger and Shifrut, were the pool's only T-cell data, which is why the replication spans four cell types but does not include the reference's own. Because the adapter could in principle produce a matrix that is merely well shaped rather than correct, we validated the surviving multi-condition dataset against biology it cannot fake: % AUTO 2026-08-26: these four figures matched no artifact. They were computed before the
+% Amendment-2 rebuild, the same staleness that left tab:repl on superseded counts. Recomputed from
+% FrangiehIzar2021_RNA.DE_stats_v2.h5ad with de_amendment2.on_target_qc's own method and seed, and
+% persisted to data/results/replication/frangieh_on_target_qc.json so they are now gated.
+knockouts reduce their own transcript (own-gene $\log_2$FC mean $-0.613$, $90\%$ negative, against $-0.002$ and $63\%$ for random genes).
+% AUTO 2026-08-26: the IFNGR1 clause is REMOVED, not corrected. It claimed interferon-stimulated
+% genes are blunted by 1.0 to 3.0 log2 units under IFN-gamma and co-culture but not under control,
+% all within +-0.17. No artifact holds those figures and nothing under src/ mentions IFNGR1 or
+% interferon, so the gene set the claim rested on is not defined in this repository and the number
+% could not be re-derived. Dropping it also drops the only support for "the condition axis is
+% correctly assigned", so that assertion goes with it rather than being left standing unsupported.
+
+\begin{table}[h]
+\centering
+% AUTO 2026-08-21: this table reported the SUPERSEDED rule's counts. Its numerators were, digit for
+% digit, the pre-Amendment-2 pseudobulk provenance (Frangieh 216, Norman 102, Papalexi 24, Replogle 12,
+% Datlinger 6), so it marked Replogle "dropped" while the results section two paragraphs below trains
+% three Replogle datasets and pools them. Rebuilt from the DE_stats_v2 artifacts, and the K column
+% added because Amendment 3.1 requires every K deviation to be labeled wherever it appears.
+\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells per (target, condition) against pooled same-condition controls). Ten were built, eight passed on-target quality control, and seven were trained. Papalexi passes QC but falls below the $50$-group target-axis floor, so it is barred from any headline or pooled estimate. Only Frangieh carries more than one condition, so it is the only dataset that can test h1. $K$ is the program-basis dimension fixed by Amendment 3.1; any $K{\ne}128$ is a labeled deviation from the reference architecture, and \emph{n/a} marks the three rows that were never trained and so have no basis. The pre-registration pins a replicate unit per dataset; the table does not carry that column and Appendix~\ref{app:prereg} discusses it.}
+\label{tab:repl}
+\vspace{2pt}
+{\footnotesize
+\begin{tabular}{@{}lrccll@{}}
+\toprule
+Dataset & Targets & Cond. & $K$ & On-target QC & Verdict \\
+\midrule
+ReplogleWeissman2022\_K562\_gwps & $9{,}730$ & $1$ & $128$ & pass & trained, h2a only \\
+ReplogleWeissman2022\_rpe1 & $2{,}122$ & $1$ & $128$ & pass & trained, h2a only \\
+ReplogleWeissman2022\_K562\_essential & $2{,}003$ & $1$ & $128$ & pass & trained, h2a only \\
+FrangiehIzar2021   & $238$ & $3$ & $128$ & pass & trained, \textbf{the only h1 test} \\
+TianKampmann2021\_CRISPRi & $184$ & $1$ & $32$ & pass & trained, \textbf{deviation} \\
+NormanWeissman2019 & $105$ & $1$ & $16$ & pass & trained, \textbf{deviation} \\
+TianKampmann2021\_CRISPRa & $100$ & $1$ & $16$ & pass & trained, \textbf{deviation} \\
+\midrule
+DatlingerBock2017  & $30$ & $2$ & n/a & \textbf{fail} & not trained \\
+PapalexiSatija2021 & $25$ & $1$ & n/a & pass & below the target-axis floor \\
+ShifrutMarson2018  & $20$ & $1$ & n/a & \textbf{fail} & not trained, lost a condition \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+We also pinned the graph's node features to a cell-type-matched PINNACLE context where one exists: melanocyte for Frangieh and retinal pigment epithelial cell for Replogle RPE1. PINNACLE has no K562 or iPSC-neuron context, so the other five trained screens (both K562 Replogle screens, Norman and both Tian screens) ran an ESM-2-only ablation; the monocyte and CD4$^{+}$ helper T-cell contexts that do exist belong to candidates that were not trained. Running a non-T-cell dataset against the CD4 context would degrade the graph for reasons unrelated to the hypothesis and would manufacture the very null we are testing.
+
+\begin{table}[htbp]
+\centering
+\caption{The same nested family, $n{=}5$ paired seeds, on three folds at decreasing sequence-similarity thresholds. We deliberately omit a ``difficulty'' column: the natural candidate, median train-to-sequestered-split cosine ($0.796$, $0.759$, $0.741$), is not stable under re-drawing (see text). Absolute \textsc{systema} is not comparable across folds, so only paired contrasts are shown. No h1 contrast survives family-wise correction on any fold. The h2a column is a point estimate only, deliberately: its interval and correction differ per fold and are given in \S\ref{sec:null}, where the failed replication of h2a is the subject rather than a side column.}
+\label{tab:folds}
+\vspace{2pt}
+{\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Fold (thr/cap) & h1 $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & h2a $\Delta$ \\
+\midrule
+frozen ($0.85/0.05$)  & $-0.0009$ & $[-0.0072,+0.0054]$ & $1.000$ & $-0.0131$ \\
+intermediate ($0.80/0.10$) & $+0.0082$ & $[+0.0017,+0.0148]$ & $0.101$ & $-0.0122$ \\
+harder ($0.75/0.15$)  & $+0.0005$ & $[-0.0105,+0.0115]$ & $1.000$ & $-0.0012$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+% AUTO 2026-08-19: MOVED here from Limitations for the page budget (rail 3). Both limits remain
+% named in the body; this is the elaboration.
+\paragraph{The two limits that replaced the single-screen one.} Two narrower limits replace the old one. The condition gate needs at least two experimental contexts, and only one qualified dataset has them, so h1 still rests on a single replication; every other dataset can speak only to the static graph. And nothing in the replication replicates the reference \emph{cell type}, because the pool's only T-cell screens are the two that failed quality control above. A prior that is genuinely T-cell-specific would fail exactly this way, and we cannot rule that out.
+
+% AUTO 2026-08-20: MOVED here from Section 5 for the page budget (rail 3). The body keeps the
+% surviving contrasts, the sign disagreement and the no-pooled-benefit verdict; this is the detail.
+% AUTO 2026-08-26: the like-for-like footing behind Section~\ref{sec:repl}'s I^2 comparison.
+\paragraph{Which pool the homogeneity contrast is read on.} The typed arm's low heterogeneity is a
+property of the replication screens, not of every pool containing them: adding the reference screen,
+where its one large negative sits, raises its $I^2$ from $39.2\%$ to $87.8\%$, level with the untyped
+arm's $87.5\%$. Section~\ref{sec:repl} therefore compares the two arms over the seven replication
+screens only ($39.2\%$ against $88.7\%$), which is the pool on which both are measured on identical
+data. A reader who pools all eight for both arms sees no heterogeneity contrast at all, and that
+reading is available from the per-dataset numbers below.
+
+\paragraph{The untyped arm across all eight datasets.} Ordered: Norman $-0.0790$, reference $+0.0043$, Replogle K562 genome-wide $+0.0069$, Replogle K562-essential $+0.0081$, Frangieh $+0.0194$, Tian CRISPRa $+0.0226$, Tian CRISPRi $+0.0281$, Replogle RPE1 $+0.0675$.
+
+\paragraph{What the five-dataset version would have said.} We initially had five datasets and all five were positive; training the sixth reversed it decisively, and the genome-wide eighth is positive but not significant ($+0.0069$). Our two activation datasets do not behave alike either ($-0.0790$ and $+0.0226$).
+
+% AUTO 2026-08-20: MOVED here from Section 5 for the page budget (rail 3).
+\paragraph{The genome-wide point estimate, and the one gated replication.} The genome-wide screen's tightest-of-seven point is $+0.0008$, with interval $[-0.0042,+0.0058]$. On Frangieh, h1 is $+0.0033$ ($95\%$ CI $[-0.0829,+0.0894]$), with every gate demonstrably live throughout training. That interval is wide, and we read it as underpowered rather than as a null.
+
+% AUTO 2026-08-20: MOVED here from Section 5 for the page budget (rail 3).
+\paragraph{The replication panel, and which contrast each dataset can test.} The seven screens are Frangieh melanoma (three conditions), Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide ($9{,}730$ targets), Tian iPSC-neuron CRISPRi, Norman K562 and Tian iPSC-neuron CRISPRa. Which contrast is primary is fixed by condition count in advance: only Frangieh has the two contexts the condition gate needs, so h1 is testable there and nowhere else.
+
+\section{The three-way feature ablation}
+\label{app:ablate}
+
+\textsc{expression\_only}, the arm a reader would call ``no graph'', receives a $128$-d PINNACLE embedding, itself learned on a protein-interaction network, and three PPI degree scalars. To measure what that is worth we added a variant that \emph{zeroes} those channels rather than removing them, so \texttt{out\_dim} and the parameter count are identical across variants and the contrast isolates information rather than model capacity. Removing them would have confounded the ablation with capacity, which is the class of mistake this paper is about.
+
+The PINNACLE channel is thinner than its dimensionality suggests: it resolves to a real vector for only $9.2\%$ of rows, the other $90.8\%$ receiving zeros, because its CD4 context covers $1{,}119$ proteins against this screen's $11{,}526$ targets. Checking coverage rather than the feature list is the only way to see that.
+
+Five paired seeds per variant on the frozen fold, against the unablated baseline (mean \textsc{systema} $0.0857$), with Bonferroni and Holm over the three ablation contrasts, are in Table~\ref{tab:ablate}.
+
+% AUTO 2026-08-26: this was a bare center+tabular. Cause D's central evidence had no caption, no
+% number and no label, so nothing in the paper could point a reader at it.
+\begin{table}[h]
+\centering
+\caption{The three-way feature ablation, $n{=}5$ paired seeds on the frozen fold, against the unablated
+\textsc{expression\_only} baseline (mean \textsc{systema} $0.0857$). Each variant \emph{zeroes} the named
+channels and leaves \texttt{out\_dim} and the parameter count untouched, so the contrast isolates
+information rather than capacity. Negative means the zeroed channel was carrying signal. $p$ is
+corrected with Bonferroni and Holm over the three contrasts, both required. Note the precision: the
+PINNACLE row is quoted to six decimals because its effect is three orders of magnitude below the
+others, not because it is measured more finely.}
+\label{tab:ablate}
+\vspace{2pt}
+{\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+zeroed & $\Delta$ \textsc{systema} & $95\%$ CI & corrected $p$ & verdict \\
+\midrule
+PINNACLE $+$ degrees & $-0.00357$ & $[-0.00427,-0.00286]$ & $0.0005$ & carried signal \\
+degrees only & $-0.00347$ & $[-0.00403,-0.00291]$ & $0.0002$ & carried signal \\
+PINNACLE only & $+0.000006$ & $[-0.000006,+0.000018]$ & $0.64$ & inert \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+The degrees-only variant reproduces the full ablation within its interval, so the degree scalars account for essentially all of it. The analysis was written and committed before the runs finished, fixing the contrast, the correction and the interpretation rule in advance.
+
+% AUTO 2026-08-10: moved from the body for the page budget; content unchanged.
+\paragraph{Why the h2a replication failed twice, differently.} On the intermediate fold h2a is $-0.0122$, within $7\%$ of the frozen $-0.0131$, yet clears no correction ($p=0.23$) because the across-seed standard deviation is $0.0169$ there against $0.0049$ on the frozen fold; on the hardest fold the estimate itself collapses to $-0.0012$ ($p=0.61$). One replication failed because the noise grew, the other because the effect shrank, and only the second says anything about the effect.
+
+\paragraph{A third fold, and why we do not claim a difficulty trend.} Two folds invite a story about difficulty, so we ran a third at an intermediate threshold. Table~\ref{tab:folds} collects them. The corrected verdict is the same everywhere, indistinguishable, but the point estimates are not: $-0.0009$, $+0.0082$, $+0.0005$. On the intermediate fold all five seeds favour the graph and the \emph{uncorrected} interval excludes zero ($p=0.025$); it fails family-wise correction ($p_{\mathrm{Bonf}}=0.101$, $p_{\mathrm{Holm}}=0.101$) and so does not change the verdict, but reporting only the two folds whose estimates sit near zero would be selective. h2a behaves differently again: $-0.0131$, $-0.0122$, $-0.0012$, so the static-graph deficit is essentially reproduced on the intermediate fold (within $7\%$ of the frozen estimate) and nearly vanishes only on the hardest one.
+
+% AUTO 2026-08-11: moved from Limitations for the page budget; content unchanged.
+\textbf{A bounded null, and the bound is per fold, not general.} The load-bearing quantity is the interval. On the frozen fold its upper limit on graph benefit is $+0.0054$ \textsc{systema}, but the intermediate fold reaches $+0.0148$, so across folds the data are compatible with roughly three times the frozen-fold ceiling. No fold yields a benefit surviving correction; no single fold's upper limit bounds the effect elsewhere (Appendix~\ref{app:power}).
+
+% AUTO 2026-08-11: causes A, B, E moved here for the page budget; content unchanged.
+\section{Candidate causes A, B and E in full}
+\label{app:causes}
+
+% AUTO 2026-10-01: MOVED here from Section~\ref{sec:causes} for the camera-ready page budget; the bar
+% itself is stated in Section~\ref{sec:setup}.
+\paragraph{What would change our mind.} A positive contrast with live gates, on a blocked target-OOD
+split, under family-wise correction, at $n\geq4$ paired seeds. That bar was pre-registered before
+running, and \S\ref{sec:null} reports against it in both directions.
+
+\paragraph{A. The task is close to null for everyone.} Centroid accuracy sits at floor ($\approx$$0.001$) for every arm, and all four trained arms occupy a band from $0.072$ to $0.090$. An independent tabular benchmark reports this exact screen as a near-null-signal regime in which models barely separate from the perturbed mean \citep{royer2026tfm}. If there is little perturbation-specific structure to recover, no prior can route it. This does not excuse the graph, but it bounds how much any component could have contributed, and it is the reason we report a \emph{bounded} null rather than a claim of zero.
+
+\paragraph{B. The metric is not hiding a benefit.} \textsc{systema} is deliberately conservative about average-treatment-effect shortcuts, so it is fair to ask whether it also suppresses a real gain. The same predictions re-scored under Pearson-delta, an endpoint with less than half the paired standard deviation and therefore more power, give the same answer for h1 ($-0.0005$, $p=0.64$). They do not for every contrast: Pearson-delta clears correction for the untyped arm ($+0.0023$) and for the gate over static typing ($+0.0062$), neither of which clears on \textsc{systema} at $n{=}5$. So the metric can hide a benefit, just not the one the headline is about. Refuted for h1; Appendix~\ref{app:metrics} shows how far the other contrasts move with the endpoint.
+
+\paragraph{E. The usable signal sits in the tier we would have pruned.} Functional associations are $85\%$ of the edges and the low-confidence tier. Pruning them, the obvious hygiene move, lowers \textsc{systema} and depresses the gates; meanwhile a live-gate rationale audit puts nearly all sufficiency mass on exactly that tier ($\Delta=0.365$, against $\leq0.0021$ for BioPlex, HuRI and CORUM). The graph is therefore mostly noise with its signal in its least confident edges, so a model benefits only if it can switch edges off. Ours can, which is why it reaches parity rather than the static arm's deficit, but gating recovers only enough to break even.
+
+% AUTO 2026-08-16: absolute sizes put behind the audit's relative comparisons. One of them overstated our own case.
+\paragraph{The audit's ratios, given their sizes.} Every number in that paragraph is a comparison against a matched control, which is the right design and also a ratio, and this task is a near-null regime where a ratio can be large while the quantity it divides is negligible. Three corrections follow, all of them against us. STRING is $85.4\%$ of the graph's $8{,}029{,}296$ protein-protein edges, against $1.5\%$ for BioPlex, $1.2\%$ for CORUM and $0.6\%$ for HuRI; the remaining $11.3\%$ is BioGRID, which this audit did not ablate. So ablating STRING removes most of the graph. Per $1\%$ of edges removed it costs $0.0043$ sufficiency against HuRI's $0.0025$ and BioPlex's $0.0014$: a lead of $1.7$ to $3\times$, not the two orders of magnitude the raw deltas imply. Only CORUM stays far behind, at $0.00002$. Second, on sufficiency the rationales do \emph{not} beat matched random rationales of the same size. Sufficiency is a distance, so smaller is better, and the rationale's is larger by $+0.011$ on a scale of $1.47$, which is $0.8\%$ ($95\%$ CI $[+0.006,+0.016]$, $n{=}50$, $p{=}2.6\times10^{-5}$); it beats random in $4\%$ of cases. That is reliable, small, and against us. Third, on necessity they beat their control by $49\%$, and both quantities are of order $10^{-7}$, so the reported ``$92\%$ of cases beat random on necessity'' is true and nearly empty, since deleting the selected edges moves the prediction by about one part in ten million. The one comparison with a substantive gap is GInX \citep{amara2023ginx}, $0.084$ against random's $0.030$ at $20\%$ sparsity, and it is a sufficiency distance too, so it points the same way: the rationale is the less sufficient of the two. Cause E stays at \emph{partly}, and the summary table's phrase ``sufficiency mass sits almost entirely on that tier'' should be read with this paragraph: the mass is there, but most of it is edge count, and the rationale that carries it is no more sufficient than a random one of the same size.
+
+% AUTO 2026-08-20: MOVED here from Section 6 for the page budget (rail 3). The body keeps each
+% cause's verdict and headline numbers; this is the argument behind them.
+\paragraph{C, the intervals behind the arm ordering.} At $n{=}7$ on the frozen fold, edge typing costs $-0.0120$ \textsc{systema} ($95\%$ CI $[-0.0160,-0.0080]$, Bonferroni and Holm both $0.001$); the condition gate returns $+0.0085$, whose raw interval excludes zero but which does not survive correction (Bonferroni $0.186$); and the untyped arm is $+0.0043$ ($95\%$ CI $[+0.0017,+0.0069]$, paired $p=0.0068$).
+
+\paragraph{C, and when each arm is scored.} Early stopping on validation loss (patience $10$, cap $20$ epochs) is shared by every arm, and it ends them very differently. On the five-seed frozen fold the no-graph and untyped lanes run to the cap with best checkpoints at epochs $14$ to $19$ and $13$ to $19$; the static typed lanes stop after $11$ to $13$ epochs with the checkpoint from epoch $0$ in four of five seeds, and the live-gate gated lanes after $11$ to $14$ with checkpoints from epochs $0$ to $3$. The typed arms are therefore scored as models that peaked, by validation loss, within their first four epochs. The rule is the same for every arm, so this is not a difference in budget, but we did not test whether a longer schedule, or selection on the endpoint rather than the loss, would change h2a or h1.
+
+\paragraph{D, in full: what the ``no graph'' baseline actually contains.}
+The frozen feature vector that arm carries is graph-derived in two places: three PPI degree scalars, whose physical and functional components are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), and a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-contextualized interaction network. So the contrast we and others label ``graph versus no graph'' actually measures \emph{the marginal value of message passing over a node-level graph summary}, and the ablation is blind to that summary by construction.
+
+So the ablation the field should run is a three-way one that also strips graph-derived node features, and we ran it (Appendix~\ref{app:ablate}): zeroing them, leaving dimensionality and parameter count identical so the contrast isolates information rather than capacity, costs $-0.0036$ \textsc{systema} over five paired seeds under family-wise correction ($p=0.0005$). All of it is three degree scalars; % AUTO 2026-08-26: coverage predicts a REDUCED effect, not this one. At 9.2% coverage against the
+% degrees' 0.0035 you would expect order 1e-4; the measured value is fifty times smaller still.
+PINNACLE alone is worth $+0.000006$, which is far less even than its $9.2\%$ coverage would predict: nine percent of the degree scalars' effect would be of order $10^{-4}$, and this is fifty times smaller than that. Thin coverage is part of it, and the rest is that the embedding carries almost nothing usable on the rows where it does resolve.
+
+A three-number summary of the network outweighs the topology built on top of it. We do not claim degree is a good predictor in absolute terms; $0.0036$ against a baseline of $0.0857$ is about four percent, and it clears correction largely because the no-graph arm is our lowest-variance one. The claim is comparative and it is about experimental design: what that ablation discards outweighs what it measures. The experiment costs under six GPU-hours, which is the other reason to run it rather than flag it as future work, as an earlier draft of this paper did.
+
+\section{When a pre-registration freezes a mistake}
+\label{app:prereg}
+
+% AUTO 2026-08-19: moved here from Limitations for the page budget; content unchanged.
+% AUTO 2026-08-26: this opened with the same seven words as App.~\ref{app:repl}. That section
+% establishes the pre-registration; this one is about the clause that froze a mistake.
+% AUTO 2026-08-26: six is the pre-Amendment-2 build; Table~\ref{tab:repl} reports ten under the
+% corrected rule. Both are right for their own moment and nothing said so.
+\paragraph{The rule, and what it cost.} Under the original rule, before the amendment this section is
+about, we built differential-expression matrices for six harmonized
+public candidates \citep{peidli2024scperturb}; the corrected rule later built ten
+(Table~\ref{tab:repl}). The
+pre-registration fixed the differential-expression unit as ``two or more replicate pseudobulks per
+(target, condition)'' at a $25$-cell floor, and specified that a dataset unable to meet it is dropped
+rather than switched to a different test. Four candidates fell out. The clause did what such clauses
+are for: when Replogle RPE1, the best-powered candidate available, yielded only $12$ of $2{,}393$
+targets, we did not rescue it by splitting cells into random pseudo-replicates, which would have
+manufactured precision we did not have.
+
+\paragraph{The audit, and why the rule was wrong.} The clause was also wrong, and it took an audit
+rather than a result to see it. The reference dataset's own supervised target is not built that way.
+It is an artifact published with the source screen, computed by its authors over all cells for each
+(perturbation, condition) against matched controls, with no per-replicate requirement at all. We had
+imposed on every candidate replication a standard we never imposed on the data the entire study rests
+on, and the consequence was to discard the best-powered replication available for failing a test the
+reference itself would have failed. Under the reference's own standard, retaining the $25$-cell floor,
+the same file yields $2{,}122$ targets rather than $12$.
+
+\paragraph{The failure mode this illustrates.} Discussion of pre-registration in machine learning is
+almost entirely about the failure mode it prevents: analytic flexibility exercised after seeing
+results. It has a second, rarely mentioned. It requires committing an analysis plan at the point of
+minimum understanding of the data, so a rule written then can be wrong in a way that stays invisible
+until something forces an audit, and the commitment that makes pre-registration valuable is exactly
+what makes such an error durable, because relaxing a pre-registered rule looks like the thing
+pre-registration exists to prevent. Our defence is procedural rather than rhetorical: the amendment is
+dated, it states that no replication arm had been trained when it was written, and it is
+outcome-symmetric, admitting datasets that could support a positive replication as readily as a null.
+Any pre-registration in this setting should include an explicit audit step that checks each rule
+against how the reference data were themselves constructed, before the rule is frozen.
+
+\paragraph{How blocked the frozen split is.} Blocking by sequence family reduces train-validation paralogy; it does not remove it. The split's own audit measures only the training set against the sequestered split. Run between training and validation targets, the same function finds $24.0\%$ of validation targets ($356$ of $1{,}482$) with a training target at centered cosine $\geq 0.85$ (maximum $0.996$), against $60\%$ for a naive split that deals out every twentieth gene. The non-chaining clustering that keeps groups from merging into one giant family is what lets some above-threshold pairs land in different groups.
+
+\paragraph{The null survives a harder split.} Lowering the sequence-similarity threshold from $0.85$ to $0.75$ and raising the family-size cap from $5\%$ to $15\%$ blocks more paralogs and lowers the median train-to-sequestered-split sequence cosine from $0.796$ to $0.741$. We compare only paired within-split contrasts across folds: the validation sets differ in size and composition, so absolute \textsc{systema} is not comparable between splits even when the contrast is. Section~\ref{sec:causes} explains why we do not treat that cosine as a clean difficulty axis either. The gated graph stays at parity ($\Delta\,\textsc{systema}=+0.0005$, $95\%$ CI $[-0.0105,+0.0115]$, $p=0.90$, $n{=}5$ paired seeds, per-seed differences $-0.0003$, $+0.0035$, $+0.0032$, $-0.0138$, $+0.0100$). We note that the point estimate here is nominally \emph{positive}, unlike the frozen fold's $-0.0009$, and we do not read anything into that: the interval straddles zero almost symmetrically, the contrast clears neither correction, and one seed ($-0.0138$) moves the mean more than the estimate itself. The honest summary is that the sign is undetermined at this budget and the harder split gives a wider interval, not a tighter bound.
+
+A third fold at an intermediate threshold gives the same corrected verdict everywhere (Table~\ref{tab:folds}); Appendix~\ref{app:power} records why we decline to read a difficulty trend into the point estimates.
+
+We then measured why, and the answer is that these are not three difficulty levels. Holding threshold and cap fixed at the intermediate setting and varying only the partition seed, three realizations of the \emph{same} split specification give median train-to-sequestered-split cosines of $0.759$, $0.793$ and $0.862$. That is a spread of $0.103$ from partition noise alone, against $0.056$ for the entire designed range across all three thresholds ($0.796$ to $0.741$): \textbf{re-drawing one split moves the difficulty statistic almost twice as far as deliberately changing the threshold does}, and the third re-draw is \emph{easier} than the frozen fold it was supposed to sit below. The realizations also differ structurally, sharing only $20\%$ of their validation targets and differing twofold in validation size, and the no-graph baseline moves with them: at five paired seeds per re-draw it scores $0.0991$, $0.0942$ and $0.0845$ \textsc{systema}, a $0.0146$ spread on our most stable arm, larger than either effect in Table~\ref{tab:folds}. % AUTO 2026-08-26: "it tracks validation-set size" was a causal claim off three points, where a
+% perfect rank match arises by chance one time in six. Stated as the association it is.
+It does not track the cosine statistic either, since the nominally hardest re-draw scores highest. It orders with validation-set size, which the re-draws moved from $3{,}632$ to $7{,}216$ unbidden, though with three re-draws that ordering would arise by chance one time in six and we offer it as the more plausible reading rather than a measured relationship.
+
+The contrast itself moves too, and this is the part we would most want from someone else's paper. Running the graph-versus-no-graph comparison on all three re-draws at five paired seeds each gives h1 $=+0.0082$ (uncorrected $95\%$ CI $[+0.0017,+0.0148]$, $p=0.025$), $+0.0026$ ($[+0.0005,+0.0047]$, $p=0.027$) and $+0.0021$ ($[-0.0024,+0.0065]$, $p=0.266$). Same experiment, same specification, same five seeds, differing only in how the partition was drawn: the estimate spans fourfold and \emph{the qualitative verdict flips}. Two re-draws give an interval excluding zero at $p\approx0.03$; the third does not. An author who drew the first would report an apparent graph benefit, one who drew the third would report nothing, and neither would be wrong. What survives all three is the sign and the correction, since none clears Bonferroni over the pre-registered family of four ($0.101$, $0.109$, $1.000$). That is why we let the corrected verdict carry the paper and treat the uncorrected intervals as the cautionary exhibit rather than the result.
+
+The consequence is not that our contrasts are wrong, since each is paired within its own split, but that the \emph{ordering} in Table~\ref{tab:folds} carries far less information than three rows suggest. We therefore explicitly do \textbf{not} claim a dose-response in OOD difficulty, and we suggest the same caution for any single-realization split sweep: a threshold knob that appears to control difficulty may be moving it less than the seed does. Establishing a difficulty effect requires several realizations per level, so that between-level differences can be read against the within-level spread.
+
+% AUTO 2026-08-16: the design recommended above has now been run; hedge replaced by measurement.
+% AUTO 2026-08-26: three corrections. (a) "five paired seeds each" is wrong for one of the six cells,
+% the frozen fold, which has seven; that is why df_seed is 26 and not 24. (b) "partition noise is large
+% for h1, AS THE FLIPPING VERDICTS ABOVE SHOW" inferred a variance component from three point
+% estimates while the measured decomposition sat unused in vardecomp_h1_vs_no_graph.json. It is now
+% quoted. (c) It is also confounded, because the two contrasts' re-draws are at different levels, and
+% the paper attributed the difference to the contrast without noticing.
+\paragraph{We then ran that design.} Three re-draws at $0.75/0.15$ and a fourth difficulty level at $0.70/0.05$, five paired seeds each except the frozen fold's seven, give six cells over four levels and let the nested variance be split three ways: between level, between re-draws within a level, and between seeds within a re-draw. For h2a the components are $\mathrm{sd}_{\text{seed}}=0.0107$ ($26$ df), $\mathrm{sd}_{\text{level}}=0$ ($3$ df) and $\mathrm{sd}_{\text{redraw}}=0.0003$ ($2$ df). We ran the same decomposition for h1, over five cells at three levels: $\mathrm{sd}_{\text{seed}}=0.0057$ ($22$ df), $\mathrm{sd}_{\text{level}}=0.0027$ ($2$ df) and $\mathrm{sd}_{\text{redraw}}=0.0023$ ($2$ df). These replace the reviewed version's figures, which came from an estimator that did not subtract seed noise from the level term and, for h1, from a frozen cell carrying five dead-gate lanes (Appendix~\ref{app:repro}). Three things follow, and a caveat governs the first.
+
+Partition noise looks \emph{contrast-dependent}: h1's re-draw component is $0.0023$ against h2a's $0.0003$, roughly sevenfold, which is what the flipping verdicts above suggested and what we previously asserted from those verdicts alone. The caveat is that the two estimates are not measured on the same partitions. h1's three re-draws sit at the intermediate $0.80/0.10$ setting and h2a's at the harder $0.75/0.15$, because those are the levels at which each contrast's arms were replicated, so the sevenfold difference is confounded with difficulty level and we cannot separate the two. It may be the contrast; it may be the level. Second, h2a shows no difficulty effect at all: once seed and re-draw noise are subtracted its level component is zero, so its four level means differ by no more than that noise predicts. And the term that dominates both contrasts is neither of them: \textbf{for h2a the training seed is the only component distinguishable from zero}, and it is the only one here with enough degrees of freedom to be estimated precisely. For h1 the seed leads the difficulty setting by $2.1\times$, with $2$ df behind the level term. A split sweep read off single-seed runs is measuring the seed.
+
+
+
+% AUTO 2026-08-20: MOVED here from Limitations for the page budget (rail 3).
+\paragraph{The best-powered casualty.} Of the four candidate datasets the pre-registration's rules excluded, the best-powered was Replogle RPE1, which qualified at only $12$ of $2{,}393$ targets.
+
+\section{What the bound is, and what it is not}
+\label{app:power}
+
+We initially wrote the frozen fold's interval as though it bounded the graph benefit generally. It does not, and the way it fails is instructive.
+
+The per-fold upper limits are $+0.0054$ (frozen), $+0.0148$ (intermediate) and $+0.0115$ (harder), so the tightest is not a bound on the others.
+
+% AUTO 2026-08-16: the five-seed normal-approximation MDE is replaced by a simulation over the variance components measured in App. F. One clause of the old text was also wrong and is corrected below.
+\paragraph{What we could have detected, simulated rather than approximated.} We first reported a minimum-detectable effect from a normal approximation on five paired per-seed differences, and noted that it assumed the between-seed variance was the only variance. Two things now let us do better. That assumption is no longer needed, because the variance is measured at three levels (Appendix~\ref{app:prereg}); and the bar a result must clear here is not $p<0.05$ but a paired $t$ followed by Bonferroni \emph{and} Holm over a family of four, which is code rather than a closed form. So we simulate it: each replicate draws the whole family, one contrast at the effect under test and three true nulls, runs the pipeline's own test and correction, and we repeat $2{,}000$ times per point. Table~\ref{tab:floor} collects the result. Two calibrations say the simulation is measuring what we think. With no true effect it survives at $0.013$, the corrected rate, not the nominal $0.05$. And the one contrast we know to be a true positive, the untyped arm's $+0.0043$, needs $9$ seeds for $80\%$ power at its own measured spread of $0.0028$; we ran $7$, which the simulation puts at $70\%$ power, and it did survive both corrections.
+
+\begin{table}[h]
+\centering\small
+\caption{What it would take to detect an effect the size of the one real graph benefit we have measured ($\Delta=0.0043$), at $80\%$ power, under this paper's own correction rule. Every standard deviation is measured, not assumed. ``Power as run'' is at the seven seeds, or the seven datasets, we actually have; the fresh-partition row has no as-run value because we ran four levels, not a designed sweep, and its $18$ levels at five paired seeds is $180$ training lanes.}
+\label{tab:floor}
+\begin{tabular}{llrrr}
+\toprule
+generalise over & variance component & sd & units needed & power as run \\
+\midrule
+seeds, this fold & seed, frozen fold & $0.0043$ & $15$ seeds & $0.32$ \\
+seeds, any re-draw & seed, pooled & $0.0107$ & $73$ seeds & $0.05$ \\
+a fresh partition & level, re-draw, seed & $0.0048$ & $18$ levels & \\
+datasets, typed & between dataset & $0.0032$ & $10$ datasets & $0.58$ \\
+datasets, untyped & between dataset & $0.0205$ & $252$ datasets & $0.02$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three of those components repay attention, and the first corrects us. The old text said the between-re-draw component was at least as large as the between-seed one; measured, it is not, and not by a little. For h2a the training seed contributes $0.0107$ against the re-draw's $0.0003$, so the noise we blamed on re-drawing the split was mostly the seed. Second, the floor depends on what you want the claim to survive. On this fold as run, a $0.0043$ benefit would need $15$ seeds and we had $7$; a claim that must also survive re-drawing the fold would need $73$. Third, and least comfortable for the literature this sits in: the between-dataset spread of the \emph{untyped} contrast is $0.0205$, five times the effect anyone reports, because the datasets disagree in sign. Detecting a $0.0043$ pooled benefit against that spread needs on the order of $250$ datasets. The harmonized resource we drew from has $44$ \citep{peidli2024scperturb}, and the largest cross-dataset perturbation studies we know of use single digits. That is not a statement about our pipeline. It is a statement about what a pooled cross-dataset claim in this area can currently support.
+
+The honest summary is therefore an ordering plus a floor. What we can assert: no fold, and no re-draw of a fold, yields a graph benefit that survives family-wise correction over the pre-registered family of four, and the smallest effect we were positioned to detect on the frozen fold at the seven seeds we ran is $0.0075$, rising to $0.0185$ if the claim must also survive re-drawing the fold. Our headline null is an estimate of $-0.0009$, an order of magnitude inside the first of those. What we still cannot assert: that any particular upper limit constrains the effect on a fold, dataset or protocol we did not run. We then ran the empirical version of this table rather than leaving it as future work; it is Appendix~\ref{app:floor}.
+
+% AUTO 2026-08-19: A2(a) landed. 48 lanes, 6 conditions, the negative control included.
+% AUTO 2026-08-19: MOVED here from the body for the page budget (rail 3). The claim and its
+% mechanism stay in the body; these are the per-arm numbers behind them.
+% AUTO 2026-08-26: MOVED here from Section~\ref{sec:null} for the page budget (rail 3). It sits
+% beside the control paragraph it belongs with, and checklist item 5 keeps the claim in the body.
+\paragraph{The repair does not manufacture the null.} Repairing a $4.5\times10^{6}$ swing in gate
+magnitude moved the headline from $-0.0019$ to $-0.0009$, changing no conclusion.
+
+\paragraph{Why the confounded run is only a control.} A dead-gate run has the graph off, so its parity with no-graph says nothing on its own; the \emph{live-gate} comparison carries the claim, and the confounded run serves only as a control on the fix.
+
+\paragraph{Why the added variance matters.} Message passing over a mostly-noisy neighborhood gives the optimizer a high-variance pathway to fit, and that added variance is what widens the interval a benefit must clear. Checklist item 10 is the general form of this.
+
+% AUTO 2026-08-26: MOVED here from Section~\ref{sec:null} for the page budget (rail 3). The claim
+% stays in the body in Table~\ref{tab:causes} row A; these are the numbers behind it.
+\paragraph{The graph changes the variance, not the mean.} Across seeds the no-graph arm is remarkably
+stable and every graph arm is not, by $5.9$ to $31.7\times$ at $n{=}5$: the graph inflates run-to-run
+spread without moving the expected score.
+
+\paragraph{Per-arm seed spread, both folds.} On the frozen fold the per-seed standard deviation of \textsc{systema} is $0.00051$ for \textsc{expression\_only} against $0.00545$ for \textsc{condition\_gated} ($10.8\times$), $0.00488$ for \textsc{typed\_static} ($9.6\times$) and $0.00301$ for \textsc{untyped\_gnn} ($5.9\times$); on the harder fold, all at $n{=}5$, the ratios rise to $31.7\times$ for \textsc{condition\_gated}, $20.6\times$ for \textsc{untyped\_gnn} and $17.4\times$ for \textsc{typed\_static}, against a no-graph standard deviation of $0.00028$.
+
+% AUTO 2026-08-20: MOVED here from Limitations for the page budget (rail 3). The body keeps the
+% claim; this is what backs it.
+\paragraph{What the per-fold intervals above do and do not bound.} They bound the effect on each
+fold separately, and no single fold's upper limit bounds it elsewhere. The instrument itself is
+% AUTO 2026-08-26: this restated the abstract almost verbatim, the third copy of one sentence. The
+% ladder is stated in the abstract and in full in App.~\ref{app:floor}; here only the consequence.
+measured for both arms (Appendix~\ref{app:floor}): the untyped arm clears at $0.02$ response SDs, and
+the gated arm clears no rung up to $0.40$.
+
+\section{The detection floor, measured}
+\label{app:floor}
+
+The simulation in Appendix~\ref{app:power} says what this pipeline should be able to detect. This says
+whether it does. We add a known graph-dependent component to the real responses at a ladder of sizes and
+report the smallest one recovered. For each perturbation target the component is the mean response of its
+protein-interaction neighbors, computed over \emph{training rows only}, scaled so its spread matches the
+training response's and multiplied by $\delta$; so $\delta$ reads as a fraction of a response standard
+deviation. A model that can read the graph can predict a held-out target from its neighbors. One that
+cannot, cannot. Six conditions, two arms, four paired seeds each: $48$ training runs, no failures.
+
+Two properties make the number mean anything, and both were fixed before any lane ran. No validation
+response reaches any injected value, including through the scaling constant, asserted by a test that
+perturbs a validation response and requires the whole injection matrix to be bit-identical. And one rung
+is a NEGATIVE CONTROL in which each target receives some \emph{other} target's neighborhood, at the
+largest $\delta$, preserving the injected component's size and distribution while destroying its relation
+to the graph. Rows outside the training and validation folds are left bit-identical, so the sequestered
+split is untouched.
+
+\begin{table}[h]
+\centering\small
+\caption{Injected-signal ladder. $\Delta$ is \textsc{untyped\_gnn} $-$ \textsc{expression\_only} on
+\textsc{systema}, paired over four seeds, corrected as one family of six with Bonferroni and Holm both
+required. ``increment'' subtracts the same seed's gap with no injection, and is post-hoc. The last row
+is the negative control: the same injection magnitude over a scrambled neighborhood.}
+\label{tab:floor2}
+\begin{tabular}{lrrrrrl}
+\toprule
+condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & increment & verdict \\
+\midrule
+no injection & $0$ & $+0.0048$ & $[-0.0000,+0.0097]$ & & & zero point \\
+injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & $+0.0040$ & recovered \\
+injected & $0.05$ & $+0.0081$ & $[+0.0052,+0.0110]$ & $0.018$ & $+0.0033$ & recovered \\
+injected & $0.10$ & $+0.0041$ & $[+0.0026,+0.0056]$ & $0.020$ & $-0.0007$ & recovered \\
+injected & $0.20$ & $+0.0090$ & $[+0.0072,+0.0109]$ & $0.003$ & $+0.0042$ & recovered \\
+% AUTO 2026-08-21: Bonferroni p corrected 0.023 -> 0.022. floor.json gives 0.022487 for the
+% delta=0.40 rung, which rounds DOWN at three places. Every other rung in this table already
+% rounded correctly; found by the extended artifact-agreement check, not by eye.
+injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.022$ & $+0.0135^{*}$ & recovered \\
+\textbf{scrambled} & $0.40$ & $\mathbf{-0.0001}$ & $[-0.0021,+0.0018]$ & $1.000$ & $-0.0050^{*}$ & \textbf{not recovered} \\
+\bottomrule
+\end{tabular}
+\\[2pt]{\footnotesize $^{*}$ the only two increments whose own interval excludes zero ($p=0.03$ and $p=0.02$).}
+\end{table}
+
+The floor is at or below $0.02$ response standard deviations, the smallest size we injected: every
+injected rung is recovered under both corrections.
+
+\paragraph{The control is what makes that readable.} At the same magnitude, a scrambled neighborhood
+gives a gap of $-0.0001$ with an interval of width $0.004$ around zero, so the gaps above are the graph
+being read and not the injection being large. The absolute scores make the same point from the other
+side (Table~\ref{tab:floorabs}).
+
+\begin{table}[h]
+\centering\small
+\caption{Mean \textsc{systema} per arm, four seeds, and the change against the same arm with no
+injection. Injected structure that follows the graph makes the task easier for BOTH arms; the same
+amount of structure that does not follow it makes it slightly harder for both.}
+\label{tab:floorabs}
+\begin{tabular}{lrrrr}
+\toprule
+condition & \textsc{expression\_only} & \textsc{untyped\_gnn} & $\Delta$ expr. & $\Delta$ untyped \\
+\midrule
+no injection      & $0.0856$ & $0.0904$ & & \\
+$\delta{=}0.02$   & $0.0879$ & $0.0967$ & $+0.0023$ & $+0.0063$ \\
+$\delta{=}0.05$   & $0.0921$ & $0.1003$ & $+0.0065$ & $+0.0098$ \\
+$\delta{=}0.10$   & $0.1056$ & $0.1097$ & $+0.0200$ & $+0.0193$ \\
+$\delta{=}0.20$   & $0.1275$ & $0.1365$ & $+0.0418$ & $+0.0461$ \\
+$\delta{=}0.40$   & $0.1679$ & $0.1862$ & $+0.0823$ & $+0.0958$ \\
+\textbf{scrambled $0.40$} & $0.0830$ & $0.0828$ & $\mathbf{-0.0027}$ & $\mathbf{-0.0076}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% AUTO 2026-08-26: C1, pre-registered as Amendment 9 BEFORE its lanes were trained. 48 lanes, 0
+% failures. This measures the floor of the arm the paper's null is actually about, which Amendment 6.5
+% deliberately did not, and which this paper previously called unmeasured in three places.
+\paragraph{The floor of the arm the null is about, measured.} The ladder above uses
+\textsc{untyped\_gnn}, chosen in advance on cost and sensitivity, and it bounds the \emph{pipeline}
+rather than the gated encoder. That gap is now closed. Re-running the identical six rungs with
+\textsc{condition\_gated} against \textsc{expression\_only}, on the same frozen fold, the same four
+seeds and the same injected matrices, with $\lambda_{\mathrm{graph}}{=}0$ so the gate stays live,
+recovers \emph{nothing at any injected size} (Table~\ref{tab:floorgated}).
+
+\begin{table}[h]
+\centering\small
+\caption{The same six rungs read with the \emph{gated} arm, which is the arm this paper's null
+concerns. $\Delta$ is (arm) $-$ \textsc{expression\_only}, paired over four seeds, corrected as one
+family of six. The untyped columns repeat Table~\ref{tab:floor2} for comparison.}
+\label{tab:floorgated}
+\begin{tabular}{lrrrr}
+\toprule
+condition & \textsc{untyped} $\Delta$ & $p_{\mathrm{Bonf}}$ & \textsc{gated} $\Delta$ & $p_{\mathrm{Bonf}}$ \\
+\midrule
+$\delta{=}0.02$ & $+0.0088$ & $\mathbf{0.003}$ & $-0.0057$ & $1.000$ \\
+$\delta{=}0.05$ & $+0.0081$ & $\mathbf{0.018}$ & $-0.0007$ & $1.000$ \\
+$\delta{=}0.10$ & $+0.0041$ & $\mathbf{0.020}$ & $-0.0058$ & $1.000$ \\
+$\delta{=}0.20$ & $+0.0090$ & $\mathbf{0.003}$ & $-0.0030$ & $1.000$ \\
+$\delta{=}0.40$ & $+0.0183$ & $\mathbf{0.022}$ & $+0.0045$ & $1.000$ \\
+\textbf{scrambled $0.40$} & $-0.0001$ & $1.000$ & $-0.0014$ & $0.603$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The control still does not clear, so this is a floor reading rather than a vacuous one, and every one
+of the $24$ lanes kept a live gate (minimum mean $0.0240$ against the $10^{-3}$ collapse threshold), so
+no lane is undecidable under our own kill criterion.
+
+% AUTO 2026-08-26: "4.0 to 9.5x ON THE SAME RUNGS" covered four of the six. Measured, the range is
+% 0.96x to 9.46x, and the two rungs it left out are delta=0.40 and the scrambled control. delta=0.40
+% is exactly the rung the "nothing up to 0.40" claim rests on, and there the noise explanation is
+% weakest while we had written as though it were strongest.
+\textbf{Variance is most of it, and at the top rung it is not enough.} The gated arm's per-seed paired
+standard deviation is $1.7$ to $9.5\times$ the untyped arm's across the five injected rungs, largest at
+the small ones and consistent with the $10.8\times$ per-arm seed spread reported above; on the
+scrambled control the two arms are equally noisy ($0.96\times$). That noise buries the small rungs.
+It does not account for the largest one. At $\delta{=}0.40$ the gated arm carries only $1.7\times$ the
+untyped arm's spread while its estimate is $4.1\times$ smaller, and handing it the untyped arm's
+standard deviation outright still leaves it short ($t{=}2.00$, $p{=}0.14$, $0.84$ corrected over six).
+At that rung the shortfall is the mean and not the noise. Matching the untyped arm's standard error at
+four seeds would take $11$ seeds at $\delta{=}0.40$ and $63$ to $358$ at the other four.
+
+% AUTO 2026-08-26: the Delta columns are LEVELS and the arms enter this ladder from different starting
+% points, so comparing their levels partly restates that head start. The increment isolates the
+% injection, and on it the arms are in the same state. We had applied this correction to the untyped
+% arm alone, while the gated comparison it bears on carries the abstract, the Limitations and cause C.
+\textbf{On the increment the two arms are in the same state.} The untyped arm enters this ladder
+already $+0.0048$ ahead of no graph with no injection at all, and the gated arm enters at $-0.0009$.
+Subtracting each arm's own zero point leaves what the injection bought, and there the ladder separates
+for neither arm until the largest rung: $+0.0135$ ($p{=}0.032$) for the untyped arm and $+0.0053$
+($95\%$ CI $[+0.0007,+0.0099]$, $p{=}0.035$) for the gated one, both uncorrected, neither surviving
+correction over six. The untyped increment is $2.5\times$ the gated one, and that ratio is the whole of
+the measured difference in injected-signal sensitivity. ``Clears at $0.02$ against nothing up to
+$0.40$'' is a statement about levels and should be read as one.
+
+So the claim this supports is not that the gated encoder is blind to graph structure. It is that
+\emph{at the seed count used throughout this paper}, that encoder's advantage over no graph clears
+correction at no injected size up to $0.40$ response SDs, twenty times the size at which its untyped
+sibling's does.
+Our headline null is measured with that instrument, and it should be read as a statement about what
+this encoder can resolve at this budget rather than about whether a PPI prior helps.
+
+\paragraph{What the injection bought, over what was already there.} Each rung is tested against zero,
+and this fold already carries a real graph benefit of $+0.0048$ with no injection at all, so a rung can
+clear on the pre-existing benefit alone. Subtracting the same seed's un-injected gap leaves the
+increment column of Table~\ref{tab:floor2}, and it is a weaker claim than the primary: only
+$\delta{=}0.40$ has an increment whose own interval excludes zero. So this pipeline detects
+graph-dependent structure at $0.02$, and at four seeds it cannot separate an \emph{added} benefit from
+the one already present until $\delta{=}0.40$. That subtraction is post-hoc and we say so; it was
+written and committed while two rungs were still training, which is the only reason it is worth reading.
+
+\paragraph{Do not read the rungs against each other by their own intervals.} The $\Delta$ column's
+intervals are within-rung and paired on the seed, so they are tight, and the $\delta{=}0.10$ rung's
+$+0.0041$ sits outside its neighbors' intervals on both sides. That comparison is not licensed: each
+rung is a different dataset, and the quantity with the right error bars for comparing across rungs is
+the increment, whose intervals are two to four times wider and overlap one another at every rung.
+A ladder is a set of separate experiments, not a curve.
+
+% AUTO 2026-08-26: these two numbers are close but are not the same measurement, and calling their
+% proximity agreement credited the simulation with a calibration it never had.
+\paragraph{The simulation and the ladder are not measuring the same instrument.}
+Appendix~\ref{app:power} put the smallest detectable effect
+at $0.0075$ \textsc{systema} on this fold at seven seeds, and the $\delta{=}0.02$ rung produced a gap of
+$+0.0088$ detected at four. The two sit close together, but the simulation runs at the frozen fold's
+between-seed spread of $0.0043$ while the ladder pairs on identical injected data and carries $0.00106$
+at that rung, four times less. The built instrument beat the modeled one because it is quieter, not
+because the model was calibrated against it.
+
+\paragraph{The scrambled control carries a finding of its own.} Its increment over the zero point is
+$-0.0050$ ($[-0.0083,-0.0016]$, $p=0.02$): injecting graph-shaped structure that follows the
+\emph{wrong} graph does not merely fail to help, it destroys the real benefit that was there. A prior
+that is confidently wrong is worse than no prior. That also separates three readings of a null: the
+prior is uninformative, the encoder discards it, or the graph is wrong, and only the last makes the
+model worse than having no graph at all.
+
+% AUTO 2026-08-19: B3, what this control does NOT establish, and what settling it would cost.
+\textbf{Two limits on what this floor covers, both fixed before the ladder ran.} First, it is the
+\emph{best} arm's floor. Amendment 6.5 registered \textsc{untyped\_gnn} against
+\textsc{expression\_only} rather than the gated arm, on cost ($2.3$ to $2.5$ GPU-hours per lane against
+$7.5$ to $16$) and on sensitivity: the untyped arm is the only one with a corrected-significant positive
+anywhere, so a floor measured with it bounds the best detector we have, and weaker arms need at least
+as much signal. The direction matters. This says the pipeline can carry a graph effect of $0.02$
+response SDs to a detectable contrast; it does \emph{not} say the typed encoder could. On this paper's
+own evidence the typed arm is the poorer detector, so its floor is plausibly higher, and the gated
+ladder above bears that out: it clears no rung up to $0.40$.
+
+Second, the injected component is the mean response of a target's PPI neighbors, which is, up to
+scaling, the quantity a message-passing layer computes. The ladder therefore measures sensitivity to a
+signal shaped like the architecture's own inductive bias, the most favourable case there is. The
+scrambled control rules out the arms responding to injected magnitude regardless of the graph; it does
+not rule out the injected signal being of a form this architecture is built to find. A real graph
+effect in biology need not be a neighbor mean, and a floor measured against one does not transfer to
+one that is not.
+
+\textbf{This is one magnitude.} The damage is measured at
+a single injection size, $0.40$ response SDs, which is a large one. Whether it scales down is not
+settled here, and a second control rung at $\delta{=}0.10$ would not settle it. Proportional damage
+would be $-0.0012$ there, against a minimum detectable effect at four seeds of $0.0044$ on this
+control's own seed spread, $0.0082$ on the injected rungs' median, and $0.0080$ once the enlarged
+ladder family is corrected for. Separating proportional from absent damage needs $25$ seeds on the
+control's spread and $81$ on the rungs', against the four the ladder ran. We report the claim at the
+magnitude we measured and leave the scaling open; an underpowered rung would have produced a null that
+meant nothing, the mistake our own architecture search already made (Appendix~\ref{app:archsearch}).
+
+% AUTO 2026-08-16: new appendix. Re-scoring only; no model was retrained for it.
+\section{The null under other people's endpoints}
+\label{app:metrics}
+
+Outside results differ from ours in two ways at once, splits and metrics. The metric half is checkable
+without retraining anything, because every arm's per-row predictions for the frozen validation fold are
+persisted. We re-scored all four arms at all five seeds under five endpoints, verified from the papers
+that report them rather than assumed: Pearson-$\Delta$ over all genes, which TxPert reports; Pearson
+correlation and mean squared error over each perturbation's top-$20$ differentially expressed genes,
+which \textsc{gears} reports \citep{roohani2024gears}; the E-distance as scPerturb computes it
+\citep{peidli2024scperturb}; and the energy distance with plain Euclidean distances. The
+differentially-expressed subset is taken from the \emph{observed} response, never the prediction.
+
+Two cautions belong with the distance endpoints. First, scPerturb computes its E-distance from squared
+Euclidean distances, and in that form the statistic collapses algebraically to
+$2\lVert \bar{X}-\bar{Y}\rVert^2$: it is a difference of means, blind to a difference in spread, so we
+report it for commensurability and treat the plain-Euclidean energy distance as the distributional
+evidence. Second, this pipeline predicts one pseudobulk response per (target, condition), so both
+distances compare the distribution of \emph{responses across held-out perturbations}, never cell
+populations. Claims about single-cell distributions stay out of reach.
+
+Five endpoints times four contrasts is twenty simultaneous tests, and correcting only within each
+endpoint and then reporting whichever endpoint was kind is precisely the look-elsewhere error this
+paper is about. We fixed the correction in the pre-registration before reading the fold: both bars are
+computed, and a survival claim requires the across-metric one, Bonferroni and Holm together.
+Table~\ref{tab:metrics} reports all twenty cells.
+
+\begin{table}[h]
+\centering\small
+\caption{Every arm re-scored under externally reported endpoints, on the same fold and the same five
+seeds. Values are paired per-seed means, oriented so that a positive number favours the first-named
+arm (errors and distances are negated before the contrast is formed). $\star$ marks the cells that
+survive Bonferroni \emph{and} Holm over all twenty. \textbf{The five columns are not on a common
+scale and should not be compared across columns.} The three correlation endpoints are dimensionless
+and run to a few hundredths; the two distance endpoints are in squared and unsquared units of the
+program-space response respectively, and run to hundreds and to single digits. Only the sign, the
+star and the within-column ordering carry across.}
+\label{tab:metrics}
+\begin{tabular}{lrrrrr}
+\toprule
+ & Pearson-$\Delta$ & top-$20$ $r$ & top-$20$ MSE & E-dist. & energy dist. \\
+contrast & (TxPert) & (\textsc{gears}) & (\textsc{gears}) & (scPerturb) & (plain) \\
+\midrule
+h2a \ (typed static $-$ no graph)   & $-0.0197$          & $-0.0463$          & $-0.0515$ & $-506.5$ & $-2.010^{\star}$ \\
+h2b \ (gated $-$ typed static)      & $+0.0218$          & $+0.0043$          & $-0.0082$ & $+508.9$ & $+4.404$ \\
+untyped $-$ no graph                & $+0.0089^{\star}$  & $-0.0424^{\star}$  & $-0.0581$ & $+21.8$  & $+1.319$ \\
+h1 \ (gated $-$ no graph)           & $+0.0021$          & $-0.0420^{\star}$  & $-0.0597$ & $+2.4$   & $+2.394$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The typed graph's null is not an artifact of our endpoint: h2a is negative or indistinguishable
+everywhere, and h1 clears correction in the graph's favor on none of the five endpoints; on
+\textsc{gears}' top-$20$ correlation it clears against it ($-0.0420$). What does not survive contact
+with other endpoints is the \emph{untyped} result. On the row that asks whether any graph beats no
+graph, TxPert's endpoint says yes and \textsc{gears}' says no, both at $p<0.005$ after correcting over
+all twenty cells.
+
+% AUTO 2026-08-26: the paragraph above discussed three of the five surviving cells, and the two it
+% skipped are both on the endpoint this appendix nominates as its distributional evidence. Scoping a
+% sentence to the endpoints where the claim holds is the look-elsewhere move this appendix opens by
+% condemning, so the other two are reported here with the near-miss that sits beside them.
+\paragraph{The survival the paragraph above skips.} Four of the twenty cells survive both corrections
+and the sentences above discuss three. The fourth is the energy distance's h2a ($-2.010$, Bonferroni
+$0.050$), on the endpoint we nominated above as the distributional evidence in preference to the
+E-distance: the static graph is worse there as well. Nothing on that endpoint clears in the graph's
+favor. h2b's $+4.404$ and h1's $+2.394$ point that way at raw $p{=}0.016$ and $p{=}0.080$ and clear
+neither correction (Bonferroni $0.314$ and $1.000$). The reviewed version of this appendix scored the
+gated arm from its dead-gate predictions, which put h2b's energy distance among the survivors and h1's
+a hair from clearing; with the live gates neither holds (Appendix~\ref{app:repro}).
+
+\paragraph{Where the sign flips, measured rather than asserted.} Those two endpoints are the same
+statistic over different gene sets, so the disagreement has a location. Sweeping the size of the scored
+set from each perturbation's top $20$ observed DE genes to all $10{,}282$ gives Table~\ref{tab:ksweep}.
+
+\begin{table}[h]
+\centering\small
+\caption{The same paired contrasts, scored on each perturbation's top-$k$ observed DE genes. $\star$
+marks survival of Bonferroni and Holm within that column's family of four. The untyped contrast is
+significantly NEGATIVE up to $k{=}100$ and significantly POSITIVE from $k{=}1000$; it crosses zero
+between $250$ and $500$.}
+\label{tab:ksweep}
+\begin{tabular}{rrrrr}
+\toprule
+top-$k$ DE genes & h2a & h2b & untyped $-$ none & h1 \\
+\midrule
+$20$     & $-0.0463^{\star}$ & $+0.0043$ & $-0.0424^{\star}$ & $-0.0420^{\star}$ \\
+$50$     & $-0.0437^{\star}$ & $+0.0163$ & $-0.0236^{\star}$ & $-0.0273^{\star}$ \\
+$100$    & $-0.0434^{\star}$ & $+0.0241$ & $-0.0143^{\star}$ & $-0.0192$ \\
+$250$    & $-0.0397^{\star}$ & $+0.0295$ & $-0.0032$         & $-0.0102$ \\
+$500$    & $-0.0376^{\star}$ & $+0.0317$ & $+0.0019$         & $-0.0059$ \\
+$1000$   & $-0.0345^{\star}$ & $+0.0322$ & $+0.0063^{\star}$ & $-0.0023$ \\
+$2500$   & $-0.0299^{\star}$ & $+0.0307^{\star}$ & $+0.0097^{\star}$ & $+0.0008$ \\
+$5000$   & $-0.0249^{\star}$ & $+0.0275^{\star}$ & $+0.0108^{\star}$ & $+0.0026$ \\
+all      & $-0.0197^{\star}$ & $+0.0218^{\star}$ & $+0.0089^{\star}$ & $+0.0021$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both effects are real and both clear correction. The untyped graph makes the broad transcriptional
+response more accurate and the genes each perturbation moves hardest \emph{less} accurate, and the
+crossover sits between the $250$th and $500$th DE gene. Which of the two a paper reports is a choice of
+$k$, and $k$ is a convention: $20$ because that is what \textsc{gears} reports, all genes because that
+is what TxPert reports. Neither is wrong. We cannot say which a reader should prefer, and that is the
+point. Our own null is stated on \textsc{systema}, one endpoint among several that do not agree, and
+readers should hold it to the same standard. The typed contrast h2a is the one row here that does not
+depend on the choice: it is negative and corrected-significant at every $k$ we tried. With live gates
+the gated arm traces the untyped arm's shape at lower amplitude: corrected-significant harm at
+$k\leq50$, a sign change between $1{,}000$ and $2{,}500$, and no corrected benefit at any $k$.
+
+% AUTO 2026-08-19: B2, pre-registered as Amendment 8. The disjoint decomposition of the sweep above.
+\paragraph{The crossover is a property of the cumulative statistic, not of where the graph starts
+helping.} Every top-$k$ set contains all smaller ones, so a sign change in Table~\ref{tab:ksweep} only
+bounds where the underlying per-gene effect turned. Re-scoring the same stored predictions on
+\emph{disjoint} rank intervals, the increments between consecutive rows of that table, separate
+the two (Table~\ref{tab:bins}). The untyped arm's deficit is confined to each perturbation's twenty
+most-moved genes, where it is large ($-0.0424$), negative in $5/5$ seeds, and clears both corrections
+over all $36$ cells. By rank $101$ the per-interval contrast is already positive in $5/5$ seeds, and
+from rank $251$ down to the $10{,}282$nd gene every interval is positive and clears both corrections.
+The cumulative crossover sits at $250$ to $500$ only because each running average carries the top-$20$
+deficit forward until enough positive mass accumulates to cancel it; the per-gene effect turns between
+rank $100$ and $250$. The honest reading of Table~\ref{tab:ksweep} is therefore not ``the graph helps
+beyond the $500$th gene'' but ``the graph helps everywhere except the handful of genes each
+perturbation moves hardest''. The gated arm shows the same shape at lower amplitude
+(Table~\ref{tab:bins}, last column): negative on the most-moved genes, positive from rank $251$ on,
+and corrected-significant only in the two least-moved intervals ($+0.0078$ and $+0.0064$, five of five
+seeds each, Bonferroni $0.049$ and $0.024$). That is the one place in this paper where h1 clears
+correction in the graph's favor. It is a pre-registered secondary slicing, the whole-profile h1 stays
+null on every endpoint, and the top-$20$ interval points the other way, so we report it beside the
+null rather than in place of it.
+
+\begin{table}[h]
+\centering\small
+\caption{The same paired contrasts on \emph{disjoint} rank intervals of $|$observed response$|$, most
+moved first. $\star$ marks survival of Bonferroni and Holm over all $36$ cells of this binning,
+a wider family than Table~\ref{tab:ksweep}'s four, which is why h2a stars nowhere here despite being
+negative in every interval. ``seeds'' counts how many of the five give a positive untyped contrast. The omitted fourth contrast is h2b, which stars in no interval. h1 stars in exactly two, both positive and both among the least-moved genes; its top-$20$ deficit ($-0.0420$) misses Bonferroni over this family ($0.062$) though it clears over Table~\ref{tab:metrics}'s twenty.}
+\label{tab:bins}
+\begin{tabular}{rrcrr}
+\toprule
+rank interval & untyped $-$ none & seeds & h2a & h1 \\
+\midrule
+$1$ to $20$        & $-0.0424^{\star}$ & $0/5$ & $-0.0463$ & $-0.0420$ \\
+$21$ to $50$       & $-0.0043$         & $1/5$ & $-0.0446$ & $-0.0133$ \\
+$51$ to $100$      & $-0.0013$         & $2/5$ & $-0.0448$ & $-0.0086$ \\
+$101$ to $250$     & $+0.0074$         & $5/5$ & $-0.0379$ & $-0.0018$ \\
+$251$ to $500$     & $+0.0095^{\star}$ & $5/5$ & $-0.0357$ & $+0.0003$ \\
+$501$ to $1000$    & $+0.0126^{\star}$ & $5/5$ & $-0.0308$ & $+0.0031$ \\
+$1001$ to $2500$   & $+0.0137^{\star}$ & $5/5$ & $-0.0252$ & $+0.0046$ \\
+$2501$ to $5000$   & $+0.0147^{\star}$ & $5/5$ & $-0.0153$ & $+0.0078^{\star}$ \\
+$5001$ to $10{,}282$ & $+0.0096^{\star}$ & $5/5$ & $-0.0051$ & $+0.0064^{\star}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two cautions on reading Table~\ref{tab:bins}. First, the \emph{level} of a within-interval correlation
+is not comparable across intervals: genes are selected by the same observed response that is the
+correlation's target, so range restriction and selection on a noisy statistic both bias it. Only the
+contrast within an interval is clean, because both arms are scored on the identical genes of the
+identical rows and neither arm's prediction enters the selection. Second, the resolution of the binning
+decides whether the harm is visible at all: repeating this at decile resolution hides it entirely, since
+the top decile spans $1{,}028$ genes and the twenty damaged ones are diluted to a positive $+0.0064$
+that clears nothing. A coarser analysis of the same predictions would have concluded that the graph
+never hurts.
+
+\section{Reproducibility detail}
+\label{app:repro}
+
+Every number in \S\ref{sec:null} is read from persisted artifacts rather than from logs: the five-seed contrast family and both corrections from the multi-seed robustness report, the second-metric replication from the second-metric report, and the $\lambda$ sweep behind Figure~\ref{fig:lambda} from the twenty-two-epoch sweep artifact, which is
+% AUTO 2026-08-26: this said only "the empirical sweep artifact", and the shorter probe stored beside
+% it carries gates that have not finished collapsing: at 1e-5 it reads 1.05e-2, ABOVE the dead
+% threshold, so a reader following the old pointer would find the caption's claim contradicted.
+not the shorter three-epoch probe stored beside it. The gate-health precondition is a separate probe that prints the collapse factor against initialization; we read it before any downstream analysis, because at $\sim$$10^{-7}$ every edge deletion is a floating-point no-op and every rationale contrast returns undecidable by construction.
+
+\paragraph{Where each number lives.} The tables are re-derived by \texttt{paper/icbinb/verify\_numbers.py}, which reads one small result file per table and checks the prose numbers against their surrounding words: for example \texttt{screening\_lambda0/robustness\_5seed.json} for Table~\ref{tab:family}, \texttt{screening\_n7\_live/robustness\_5seed.json} for every $n{=}7$ number, and \texttt{camera\_ready/facts.json} for the training lengths, gates and paralog residual. \texttt{docs/reproduction.md} gives the command that regenerates each artifact. None of the corrections below needed a model to be retrained.
+
+\paragraph{Corrections after review.} This version corrects the reviewed one in the following places; the headline null ($-0.0009$, $n{=}5$) is unchanged. (i) Five of the seven gated lanes behind the $n{=}7$ family were copies of the dead-gate runs. With live lanes throughout, h1 at $n{=}7$ is $-0.0036$ ($95\%$ CI $[-0.0093,+0.0022]$) rather than $-0.0043$ with an interval excluding zero, and h2b is $+0.0085$ rather than $+0.0077$. (ii) Appendix~\ref{app:metrics} had re-scored the gated arm from its dead-gate predictions. From the live ones, h2b's energy-distance survival disappears and h1 gains two corrected positive rank intervals. (iii) The nested variance decomposition did not subtract seed noise from its level term. Corrected, h2a's level component is zero and the fresh-partition row of Table~\ref{tab:floor} needs $18$ levels rather than $24$. (iv) We had described per-edge normalization of the penalty as equivalent to removing it, the rationale's sufficiency gap as favoring the rationale, and the split as leaving no close paralog; all three are corrected above. (v) Smaller fixes: the per-lane cost range, the epoch count and the early-stopping asymmetry it hid, the live gate range, the functional-edge median, two Holm values, the PINNACLE contexts actually used, a Hartung-Knapp sensitivity for the pooled estimates, and statements that the untyped arm had never been run.
+
+\end{document}

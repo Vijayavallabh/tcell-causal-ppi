@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+# data and results are regenerated (docs/reproduction.md); only the frozen split and manifests are tracked
+data/*
+!data/manifests/
+!data/splits/
+# LaTeX build products and the generated figure
+paper/figures/
+paper/icbinb/*.aux
+paper/icbinb/*.bbl
+paper/icbinb/*.blg
+paper/icbinb/*.log
+paper/icbinb/*.out
+paper/icbinb/*.pdf

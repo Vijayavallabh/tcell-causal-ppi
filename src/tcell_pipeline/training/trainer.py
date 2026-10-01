@@ -1,0 +1,188 @@
+"""Trainer: Stage A optimisation of the EG-IPG H1 predictor (Module 1 + 2 + 3) (§8.1-8.2).
+
+AdamW over the model AND the loss's own parameters (the DE head lives on ``StageALoss``); the frozen
+basis B is a decoder buffer, so it never enters the optimiser. Early stopping on validation total,
+gradient clipping, atomic best/last checkpoints, and per-epoch loss components written to the logs dir.
+"""
+from __future__ import annotations
+
+import contextlib
+import json
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+
+from tcell_pipeline import config
+from tcell_pipeline.training.dataset import PerturbationDataset, sample_donor_variants
+from tcell_pipeline.training.losses import StageALoss
+
+
+@contextlib.contextmanager
+def seeded_init(seed: int):
+    """Seed the GLOBAL torch RNG for reproducible module weight initialisation (nn.Linear / nn.Embedding
+    draw their init from it), then restore the prior state on exit so nothing leaks to the caller. The
+    Trainer's own seeded generators cover only data shuffling + donor resampling — NOT the model
+    construction that happens before a Trainer exists — so a run is only fully reproducible from ``seed`` if
+    its model is *built inside* this context. Restores even if construction raises."""
+    state = torch.random.get_rng_state()
+    torch.manual_seed(int(seed))
+    try:
+        yield
+    finally:
+        torch.random.set_rng_state(state)
+
+
+def _resolve_donor_pool(dataset):
+    """(donor_pool, donor_mean) for ``dataset``, unwrapping Subset/wrapper chains via ``.dataset`` so a
+    wrapped training set doesn't silently disable donor invariance. Empty pool if none is found."""
+    seen: set = set()
+    ds = dataset
+    while ds is not None and id(ds) not in seen:
+        seen.add(id(ds))
+        pool = getattr(ds, "donor_pool", None)
+        if pool is not None:
+            return pool, getattr(ds, "donor_mean", None)
+        ds = getattr(ds, "dataset", None)
+    return {}, None
+
+
+class Trainer:
+    def __init__(
+        self,
+        model,
+        train_ds,
+        val_ds=None,
+        loss: StageALoss | None = None,
+        lr: float = config.LR,
+        weight_decay: float = config.WEIGHT_DECAY,
+        max_epochs: int = config.MAX_EPOCHS,
+        patience: int = config.EARLY_STOP_PATIENCE,
+        batch_size: int = config.BATCH_SIZE,
+        grad_clip: float = config.GRAD_CLIP,
+        device: str = "cpu",
+        ckpt_dir: Path = config.CHECKPOINTS_ROOT,
+        log_dir: Path = config.LOGS_ROOT,
+        seed: int = 0,
+        donor_invariance: bool = config.DONOR_INVARIANCE,
+        donor_samples: int = config.DONOR_INVARIANCE_SAMPLES,
+    ) -> None:
+        if len(train_ds) == 0:  # a clear message instead of an opaque RandomSampler / KeyError('total')
+            raise ValueError("training dataset is empty (0 examples) — check the split role / n_max")
+        self.device = device
+        self.model = model.to(device)
+        dec = model.decoder
+        # size the DE head to the WRAPPED encoder's real h_do width, not the global config default,
+        # so a reduced-width encoder ablation doesn't feed a mis-sized head
+        self.loss = (loss or StageALoss(dec.gene_dim, dec.program_dim, h_do_dim=dec.h_do_dim)).to(device)
+        self.params = list(self.model.parameters()) + list(self.loss.parameters())
+        self.opt = torch.optim.AdamW(self.params, lr=lr, weight_decay=weight_decay)
+        self.max_epochs, self.patience, self.grad_clip = max_epochs, patience, grad_clip
+        self.ckpt_dir, self.log_dir = Path(ckpt_dir), Path(log_dir)
+        # Donor invariance re-runs the encoder under the real per-donor control profiles (train_ds owns
+        # the pool; the vectors are split-independent). Off when the pool is empty or <2 samples.
+        self.donor_samples = donor_samples
+        self.donor_pool, self.donor_mean = _resolve_donor_pool(train_ds)  # unwraps Subset/wrapper chains
+        self._donor_on = bool(donor_invariance and donor_samples >= 2 and self.donor_pool)
+        # dedicated generators (donor resampling + a seeded DataLoader shuffle) rather than a process-global
+        # torch.manual_seed, so constructing a Trainer never reseeds the caller's global RNG
+        self._gen = torch.Generator().manual_seed(seed)
+        loader_gen = torch.Generator().manual_seed(seed)
+        collate = PerturbationDataset.collate
+        self.train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                                       collate_fn=collate, generator=loader_gen)
+        self.val_loader = (
+            DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate) if val_ds else None
+        )
+
+    def _donor_variants(self, batch: dict, targets, conditions) -> list:
+        """Δz under `donor_samples` distinct REAL donor PC vectors for each row's condition, forwarded
+        with the encoder in eval so DropEdge doesn't contaminate the donor signal (grads still flow).
+        ponytail: each variant re-runs the (donor-independent) graph message passing; cache node states +
+        re-run only readout+decoder per donor if Stage A throughput becomes graph-bound."""
+        pcs = sample_donor_variants(self.donor_pool, self.donor_mean, conditions, self.donor_samples, self._gen)
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            variants = []
+            for pc in pcs:
+                vbatch = dict(batch)
+                vbatch["donor_pc"] = pc.to(self.device)
+                variants.append(self.model(vbatch, targets, conditions)["delta_z"])
+            return variants
+        finally:
+            self.model.train(was_training)
+
+    def _epoch(self, loader, train: bool) -> dict:
+        self.model.train(train)
+        self.loss.train(train)
+        agg: dict = {}
+        n = 0
+        # Edge-gate monitoring, accumulated on-device and synced once per epoch. The 5-seed campaign's
+        # gates were annihilated by L_graph inside epoch 0 and NOTHING recorded it, so the whole family
+        # was screened with its message passing switched off. `None` means the arm emits no gates at
+        # all — absence of gates must never render as a collapsed gate (see AGENTS.md).
+        g_sum = g_dead = None
+        g_n = 0
+        with torch.set_grad_enabled(train):
+            for batch, targets, conditions, dz_true, dx_true, _ in loader:
+                dz_true, dx_true = dz_true.to(self.device), dx_true.to(self.device)
+                out = self.model(batch, targets, conditions)
+                alphas = [a.detach() for per in (out.get("edge_gates") or {}).values()
+                          for a in per if a.numel()]
+                if alphas:
+                    a = torch.cat(alphas).float()
+                    s, d = a.sum(), (a < config.GATE_DEAD).sum()
+                    g_sum, g_dead = (s, d) if g_sum is None else (g_sum + s, g_dead + d)
+                    g_n += a.numel()
+                # donor variants are a stochastic resample — TRAIN only, so the val total stays
+                # deterministic for frozen weights and early-stopping/best-checkpoint aren't RNG-driven
+                dz_variants = self._donor_variants(batch, targets, conditions) if (self._donor_on and train) else None
+                comps = self.loss(out, dz_true, dx_true, dz_variants=dz_variants,
+                                  edge_confidences=out.get("edge_confidences"))
+                if train:
+                    self.opt.zero_grad()
+                    comps["total"].backward()
+                    torch.nn.utils.clip_grad_norm_(self.params, self.grad_clip)
+                    self.opt.step()
+                for k, v in comps.items():
+                    agg[k] = agg.get(k, 0.0) + float(v.detach())
+                n += 1
+        metrics = {k: v / max(n, 1) for k, v in agg.items()}
+        # per EDGE, not per batch — the loss components above are per-batch means
+        metrics["gate_mean"] = float(g_sum) / g_n if g_n else None
+        metrics["gate_frac_dead"] = float(g_dead) / g_n if g_n else None
+        return metrics
+
+    def _save_ckpt(self, tag: str, epoch: int, metrics: dict) -> Path:
+        config.ensure_dir(self.ckpt_dir)
+        path = self.ckpt_dir / f"stage_a_{tag}.pt"
+        tmp = path.with_suffix(".pt.tmp")
+        torch.save(
+            {"model": self.model.state_dict(), "loss": self.loss.state_dict(),
+             "optimizer": self.opt.state_dict(), "epoch": epoch, "metrics": metrics},
+            tmp,
+        )
+        tmp.replace(path)
+        return path
+
+    def _log(self, history: list) -> None:
+        config.write_text_atomic(json.dumps(history, indent=2), self.log_dir / "stage_a_history.json")
+
+    def run(self) -> dict:
+        best_val, best_path, wait, history = float("inf"), None, 0, []
+        for epoch in range(self.max_epochs):
+            train_m = self._epoch(self.train_loader, train=True)
+            val_m = self._epoch(self.val_loader, train=False) if self.val_loader else train_m
+            history.append({"epoch": epoch, "train": train_m, "val": val_m})
+            self._log(history)
+            self._save_ckpt("last", epoch, val_m)
+            if val_m["total"] < best_val - 1e-6:
+                best_val, wait = val_m["total"], 0
+                best_path = self._save_ckpt("best", epoch, val_m)
+            else:
+                wait += 1
+                if wait >= self.patience:
+                    break
+        return {"best_ckpt": str(best_path) if best_path else None,
+                "best_val": best_val, "epochs_run": len(history), "history": history}

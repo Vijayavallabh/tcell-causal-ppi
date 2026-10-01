@@ -1,0 +1,875 @@
+# Pre-registration — multi-dataset replication of the EG-IPG null
+
+**Frozen 2026-08-03, before any replication lane was launched. This file is not edited after the
+first lane lands.** Corrections, if a genuine error is found, are appended as dated
+`AMENDMENT (YYYY-MM-DD)` blocks at the bottom, never by editing the text above them. The dataset
+evidence this rests on is `docs/replication-dataset-survey.md`, written the same day.
+
+The point of pre-registering a *negative* result is narrow and specific: a null is cheap to
+manufacture. Every knob left open until after the numbers are visible (which DE test, which seeds
+count, which contrast is "the" contrast, whether a collapsed-gate run is a result) is a knob that can
+be turned toward the answer already written in the paper. This document closes them.
+
+---
+
+## 1. Hypotheses and the contrast family
+
+The family is the four pre-registered contrasts already implemented in
+`screening/multiseed.py:CONTRASTS`, on the primary endpoint `systema`, paired by seed:
+
+| Key | Contrast | Question |
+|---|---|---|
+| `h1_vs_no_graph` | `condition_gated` - `expression_only` | does the evidence-gated graph beat no graph? |
+| `h2a` | `typed_static` - `expression_only` | does a typed static graph beat no graph? |
+| `h2b` | `condition_gated` - `typed_static` | does condition gating beat static? |
+| `promotion_margin` | `untyped_gnn` - `expression_only` | does *any* graph beat no graph? |
+
+Statistic: one-sample two-sided t on the per-seed differences, df = n-1, 95% CI = mean +/- t*se.
+Multiplicity: **both Bonferroni and Holm over the family of four, both always reported**, and
+`survives_family_wise` requires BOTH. Choosing whichever correction rescues a claim after seeing the
+numbers is the look-elsewhere effect; recording both makes it unavailable.
+
+**Primary contrast is fixed per dataset by design, not by outcome:**
+
+- Datasets with **>= 2 experimental conditions** (`perturbation_2` present): primary is
+  `h1_vs_no_graph`. Currently Frangieh (3), Shifrut (2), Datlinger (2).
+- Datasets with **1 condition**: `condition_gated` degenerates to `typed_static`, because its
+  condition embedding is indexed by a constant. h1 is **not defined** there and will not be reported
+  as if it were. Primary is **`h2a`**. Currently Replogle, Norman, Papalexi.
+
+This assignment is made now, from the survey table, before any model has been trained.
+
+## 2. Design held fixed across every dataset
+
+1. **Program basis refit INSIDE the train fold.** No basis fitted on data that includes val or any
+   held-out target. The basis is a response-derived transformation and is fenced accordingly.
+2. **Blocked target-OOD split**, sequence-similarity family blocking, same generator as the
+   reference (`tcell_pipeline.splits`) into a fresh `SPLITS_ROOT` per dataset.
+3. **Same four arms**, same nested family, same primary endpoint `systema`.
+4. **`lambda_graph = 0`.** The unnormalised edge penalty at 0.01 annihilates the gates in epoch 0;
+   running the replication at the confounded setting would test nothing.
+5. **>= 4 seeds per arm**, seeds drawn in order 0,1,2,3,4.
+6. **Epoch cap 20 with `EARLY_STOP_PATIENCE = 10`**, batch size 8, matching the reference campaign.
+7. **PINNACLE context matched to the dataset's cell type** where one exists (survey section 3);
+   where none exists, ESM-2-only node features, recorded in the run config as an explicit ablation.
+
+## 3. Decisions that must be fixed before data are seen, and are
+
+- **DE method.** Pseudobulk by (target, condition, replicate) using summed raw counts, then a
+  moderated t-test against the matched control pseudobulks within the same condition, producing
+  `log_fc`, `zscore`, `p_value`, `adj_p_value` (Benjamini-Hochberg), `baseMean`, `lfcSE`. Chosen
+  because `pydeseq2`/`decoupler` are not installed and adding a dependency mid-campaign is itself a
+  degree of freedom. If a dataset cannot yield >= 2 replicate pseudobulks per (target, condition),
+  it is **dropped**, not switched to a different test.
+- **Minimum cells per pseudobulk: 25.** A (target, condition, replicate) cell with fewer is dropped
+  and the drop is counted in the dataset's report.
+- **Gene space.** Symbol join to the reference's measured-gene space; a dataset's gene overlap is
+  reported (survey section 2) and no gene is imputed.
+- **Target space.** Single-gene targets only. Norman's double perturbations are excluded from the
+  split and from every contrast.
+
+## 4. Kill criteria — what makes a run not a result
+
+- **Gate collapse.** Mean edge gate is logged **every epoch on every graph arm**. A final gate mean
+  `<= 1e-3` means the graph was switched off, so the arm measures nothing about the graph. Such a
+  lane is reported as **UNDECIDABLE**, is excluded from every contrast, and is never averaged in as
+  evidence for the null. Undecidable is not the same as decided-against.
+- **Underpowered target axis.** A dataset whose blocked split yields fewer than **50 held-out
+  family groups** cannot support a family-blocked OOD claim; its result is reported as
+  *preliminary/qualitative* and is barred from any headline or pooled estimate. On the survey
+  numbers this is expected to bind on Shifrut (21 targets) and Datlinger (32).
+- **Seed attrition.** A contrast's `n` is the number of seeds where BOTH arms completed. Any dropped
+  seed is named in the report with its reason. `n` never shrinks silently.
+- **Zero variance across seeds** is the signature of seeds that did not propagate, not evidence of
+  an effect, and is reported as degenerate.
+
+## 5. Integration rules
+
+A per-dataset result may be promoted into the paper as a headline **only if all of**:
+
+1. `>= 4` seeds completed for **both** arms of that dataset's primary contrast;
+2. the dataset passed the target-axis criterion in section 4;
+3. every graph arm in the contrast had live gates (`> 1e-3`);
+4. the result is a **null (parity) or graph-worse**.
+
+Anything failing 1-3 goes into the report only. Anything failing 4 triggers section 6.
+
+**Pooling.** Once `>= 4` datasets have landed, pool per contrast with **both** a fixed-effect and a
+random-effects (DerSimonian-Laird) estimate, and report a heterogeneity statistic (Q, I^2). h1 and
+h2a are pooled **separately**, over their own eligible datasets, never merged into one "the graph
+does not help" number. Weights carry the per-dataset target counts so the reader can see that one
+dataset dominates. A pooled bounded null is the strongest available claim; substantial heterogeneity
+is an equally publishable and more interesting one, and will be reported as such rather than
+smoothed away.
+
+## 6. Contradiction stop
+
+If any dataset shows the graph **helping** — the primary contrast positive and surviving **both**
+Bonferroni and Holm — then: do not rewrite the null, do not integrate, do not re-run the dataset
+hoping it reverses. Snapshot the artifacts, flag it at the top of `RESULTS_SUMMARY.md` as
+`UNEXPECTED — NEEDS HUMAN REVIEW` with the numbers, and continue the remaining datasets. A positive
+replication is a finding, and adjudicating it is a human decision.
+
+## 7. What would falsify the paper's claim
+
+Stated now so it cannot be redefined later. The paper claims the typed protein-program graph does not
+help, and that a prior apparent version of this result was confounded by a silent regulariser. That
+claim is falsified if, on a dataset with live gates, a correctly context-matched graph, `>= 4` seeds
+and an adequately powered blocked target-OOD split, the primary contrast is positive and survives
+both corrections. It is *weakened* (not falsified) if the pooled random-effects estimate crosses zero
+with heterogeneity so large that the datasets are evidently not measuring one quantity — in which
+case the honest report is that the question is dataset-dependent, and the single-dataset null does
+not generalise.
+
+## 8. Reporting
+
+Every result carries: `n`, the per-seed values, both corrected p-values, gate health per arm, epochs
+run, the PINNACLE context used (or the ESM-2-only flag), the number of held-out family groups, and
+the name and reason of any dropped seed.
+
+---
+
+## Amendments
+
+### AMENDMENT 2 (2026-08-10): the replicate-pseudobulk rule was stricter than the reference itself
+
+**This amendment RELAXES a rule, which is the direction that deserves scrutiny, so the justification
+and the timing are both stated explicitly.**
+
+**The error.** Section 3 required "two or more replicate pseudobulks per (target, condition)" with a
+25-cell floor, and section 4 dropped any dataset that could not meet it. That rule was never applied
+to the reference dataset. The reference's supervised target is
+`data/raw/GWCD4i.DE_stats.h5ad`, a 16.8 GB artifact **downloaded from the source publication** and
+produced by the authors' own differential-expression pipeline over all cells per (perturbation,
+condition) against matched controls. So the design compared replication datasets, held to a
+per-replicate pseudobulk standard, against a reference held to no such standard. That is not a
+conservative choice; it is an inconsistent one, and it discards datasets for failing a test the
+reference never took.
+
+**The correction.** The DE unit becomes: **all cells for a (target, condition) against the pooled
+control cells of the same condition**, which is the standard Perturb-seq contrast and what the
+reference uses. The 25-cell floor is retained, now applied per (target, condition) rather than per
+(target, condition, replicate). Uncertainty comes from the cell-level fit rather than from replicate
+pseudobulks. Where a dataset does carry a genuine replicate axis (donor for Shifrut, gemgroup for
+Norman, batch for Replogle), it is recorded in the provenance and used as a covariate if the DE
+method supports one, but its absence no longer excludes a dataset.
+
+**Why this is not result-shopping.** No replication model has been trained. Zero replication arms have
+run, so no replication result exists that this amendment could have been chosen to favour. The change
+was prompted by an audit of how the reference target was constructed, not by any outcome. It is also
+outcome-symmetric: it admits datasets that could support a positive replication just as readily as a
+null. The pre-registered contrast family, the n>=4 bar, both corrections, the gate-collapse kill
+criterion, the blocked target-OOD split, and the fold-local basis refit are all UNCHANGED.
+
+**What it changes in practice.** Under the corrected rule, targets clearing the floor:
+Replogle RPE1 **2,122** (was 12), Frangieh **246** (was 216), Norman **105**, Papalexi 25,
+Datlinger 31, Shifrut 21. Replogle RPE1 moves from "dropped" to the best-powered candidate available,
+within an order of magnitude of the reference's 11,526 targets.
+
+**What does NOT change.** The target-axis floor of section 4 still applies: a dataset yielding fewer
+than 50 held-out family groups is reported as preliminary and barred from any headline or pooled
+estimate. On these numbers that still binds on Shifrut, Datlinger and Papalexi. Single-condition
+datasets still make h2a the primary contrast, because `condition_gated` degenerates there.
+
+### AMENDMENT (2026-08-03), before any replication lane launched
+
+Section 3 fixed the DE unit as "(target, condition, replicate)" without saying what *replicate*
+means, and the harmonised files do not agree on one. Inspecting the six candidates shows each
+carries a different replicate column, so leaving the word undefined would have let it be chosen
+after seeing results. Pinned now, per dataset, with the count actually present in the file:
+
+| Dataset | Replicate unit | Column | Levels | Groups (target x condition) | Median cells/group | % groups >= 25 cells |
+|---|---|---|---|---|---|---|
+| ShifrutMarson2018 | donor | `replicate` | 2 (D1, D2) | 42 | 502 | 100% |
+| DatlingerBock2017 | experimental replicate | `replicate` | 6 | 64 | 74 | 89% |
+| FrangiehIzar2021 | sgRNA targeting the same gene | `sgRNA` | 819 (~3/target) | 747 | 217 | 94% |
+| NormanWeissman2019 | 10x lane | `gemgroup` | 8 | 237 | 354 | 100% |
+| ReplogleWeissman2022 (RPE1) | batch | `batch` | 56 | 2,394 | 72 | 89% |
+
+Rationale for the one non-obvious choice: Frangieh has no replicate/donor/batch column, so the
+replicate unit is the **sgRNA**, which is the standard within-target biological replicate in pooled
+Perturb-seq. This is recorded because it is a weaker replicate than a donor or a batch: guides
+targeting one gene share the biological sample and differ only in cut site, so their variance
+understates true biological variance and the resulting p-values are anti-conservative. Frangieh's
+contrasts are therefore interpreted on effect size and CI, not on the p-value alone.
+
+Shifrut's 2 donors are the minimum the section-3 rule allows (`>= 2` replicate pseudobulks). It
+passes, but with df = 1 on the treatment side its CIs will be very wide, which compounds the
+target-axis limitation already recorded for it in section 4.
+
+No other section is changed.
+
+---
+
+## Amendment 3 — 2026-08-10 (BEFORE the first replication lane is trained)
+
+Written before any replication arm has been trained, so no result can have motivated it. Two
+decisions were forced by measurement during the stage 4-6 wire-up.
+
+### 3.1 Program dimension K is not portable across datasets
+
+The reference screen fits a K=128 fold-local program basis on 33,983 DE rows. A replication dataset
+has one DE row per (target x condition), so its row count is its target count times its condition
+count, and the train fold is 60% of that. K cannot exceed the number of train rows: the basis is
+rank-limited by its own input.
+
+Measured train-fold rows, and the K each dataset can carry:
+
+| Dataset | DE rows | train rows | K |
+|---|---|---|---|
+| ReplogleWeissman2022_rpe1 | 2,122 | ~1,273 | **128 (reference value)** |
+| ReplogleWeissman2022_K562_essential | 2,003 | ~1,201 | **128 (reference value)** |
+| FrangiehIzar2021_RNA | 702 | ~421 | **128 (reference value)** |
+| TianKampmann2021_CRISPRi | 184 | ~110 | 32 (deviation) |
+| TianKampmann2021_CRISPRa | 100 | ~60 | 16 (deviation) |
+| NormanWeissman2019_filtered | 105 | ~63 | 16 (deviation) |
+| PapalexiSatija2021_eccite_RNA | 25 | ~15 | 8 (chain smoke only, never headlined) |
+
+RULE: K = 128 wherever train rows >= 256; otherwise the largest power of two <= train_rows/2.
+Any dataset run at K != 128 is a **deviation from the reference architecture** and must be labelled
+as such wherever it appears. The pooled estimate is reported TWICE - over all datasets, and over the
+K=128 subset alone - and if those two disagree, the K=128 subset is the one that speaks to the
+reference architecture. Rationale for pre-registering the rule rather than dropping small datasets:
+silently shrinking capacity on some datasets and not others is exactly the kind of unlogged
+weakening that manufactures a null, and dropping them instead would leave the design at three.
+
+### 3.2 Primary contrast per dataset is fixed by its condition count, not chosen later
+
+The condition gate needs >= 2 contexts. On a single-condition dataset `condition_gated` is
+arithmetically identical to `typed_static` - it would report a number, and the number would be
+uninformative about gating. Fixed in advance:
+
+- **FrangiehIzar2021_RNA** (3 conditions) - PRIMARY h1: condition_gated vs expression_only.
+  This is the ONLY qualified dataset that can test h1 at all.
+- **every other dataset** (1 condition) - PRIMARY h2a: typed_static vs expression_only.
+  `condition_gated` is NOT run there; its absence is by design, not attrition.
+
+h1 and h2a are pooled SEPARATELY and never merged. h1 therefore pools over n=1 dataset, which is a
+stated limit of this replication, not a result about gating.
+
+### 3.3 PINNACLE context assignment (fixed now, logged per lane)
+
+| Dataset | Cell type | PINNACLE context used |
+|---|---|---|
+| FrangiehIzar2021_RNA | melanoma | `melanocyte` |
+| ReplogleWeissman2022_rpe1 | RPE1 | `retinal_pigment_epithelial_cell` |
+| ReplogleWeissman2022_K562_essential | K562 | **none** - ESM-2 features only |
+| TianKampmann2021_CRISPRi/a | iPSC neuron | matching context if present, else **none** |
+
+Where the context is `none` the graph arm carries ESM-2 node features and no PINNACLE channel. That
+is a weaker graph arm by construction and is reported as such; it is recorded here so it cannot
+later be mistaken for evidence about the graph.
+
+### 3.4 Kill criteria (unchanged in substance, restated for the replication lanes)
+
+A lane whose mean edge gate falls to <= 1e-3 is an UNDECIDABLE experiment and is reported as such -
+never as evidence the graph does not help. Gate mean is logged every epoch on every graph arm.
+
+---
+
+## Amendment 4 — 2026-08-16 (BEFORE any A1 lane is trained)
+
+Registers a MECHANISTIC DIAGNOSTIC, not a confirmatory hypothesis. Nothing here changes the
+confirmatory family, its `family_size`, or any landed aggregation.
+
+### 4.1 What question this answers, and why it needs pre-registering
+
+On the frozen fold at n=7, edge typing costs h2a = -0.0120 systema (7/7 seeds, survives Bonferroni
+AND Holm) while the untyped GCN is the best graph arm at +0.0043. That says WHICH component costs
+the graph its benefit and not WHY. Two explanations are confounded inside the existing contrast:
+
+  P  the relation PARTITION is the wrong inductive bias for this task;
+  C  typed message passing carries 4x the message parameters over the same edges (2,396,160 against
+     599,040 on the synthetic fixture), so the damage is CAPACITY and not about evidence types.
+
+Both predict the same sign on h2a, so the landed family cannot separate them. Two new arms can.
+
+### 4.2 The arms, fixed now
+
+**`typed_shared`** — `SharedWeightTypedGraphEncoder`, `typed_static` with ONE `_RelMessage` tied
+across all four relations instead of one each. Signed messages, edge features, complex nodes and the
+gate pinned to 1.0 are all unchanged. Implemented in `src/tcell_pipeline/baselines/graph_baselines.py`
+and covered by two tests in `src/tests/test_graph_baselines.py` (module identity, quarter parameter
+count, live intervention against `typed_static`).
+
+**`typed_permuted`** — per-relation parameters retained, but each PP edge's RELATION LABEL is
+randomly reassigned among the three PP relations, preserving each relation's edge count exactly.
+Edge attributes travel with the edge, so only which weight matrix processes it changes.
+`complex_membership` edges are not permuted (they join different node types). The permutation is
+drawn from the TRAINING SEED, so the five lanes average over five partitions rather than reporting
+one lucky one.
+
+### 4.3 The identifiability statement, recorded before the numbers exist
+
+Under `norm='add'` (what `typed_static` runs) a layer computes `sum_r sum_{u in N_r(v)} f_r(u)`.
+Tying `f_r = f` makes that identically `sum_{u in N(v)} f(u)`: the partition stops affecting the
+aggregate at the same moment the parameters drop. **`typed_shared` alone therefore cannot attribute
+a difference to parameter count.** This corrects the decision rule drafted in `NEXT_ACTIONS.txt`,
+which read a positive `typed_shared - typed_static` as evidence for C on its own. It is not.
+`typed_permuted` breaks the tie because it holds the parameter count at typed_static's while
+destroying the typing's information content.
+
+### 4.4 Decision rule, fixed before running
+
+Primary endpoint `systema_pert_specific_delta`, paired per seed on the frozen `blocked_target_ood`
+fold, seeds 0-4 (n=5, matching the landed reference family rather than a new n). Contrasts:
+
+  D1  `typed_shared   - typed_static`
+  D2  `typed_permuted - typed_static`
+
+Read as a 2x2 on which of D1/D2 clear correction:
+
+| | D2 null (typing carries no information) | D2 positive |
+|---|---|---|
+| **D1 null** | the typed STRUCTURE hurts, and neither its parameters nor its labels are the route | the true partition is worse than a random one at equal capacity: the typing is actively misleading |
+| **D1 positive** | capacity and partition are jointly the route; with D2 null, the labels contribute nothing that the shared arm loses | both routes live; report both effect sizes and claim neither exclusively |
+
+A D2 that is significantly NEGATIVE (permuting HELPS) is itself the finding that the annotation is
+worse than noise at equal capacity, and is reported as such rather than folded into the table.
+
+### 4.5 Multiplicity, and what this may not be used for
+
+D1 and D2 form their own diagnostic family of size 2; Bonferroni and Holm are both reported over
+that family and `survives_family_wise` requires BOTH, exactly as for the confirmatory family.
+Diagnostic arms are NOT added to the confirmatory family and do not change its `family_size` of 4.
+
+Neither arm may be used to promote a graph claim. `typed_shared` and `typed_permuted` beating
+`typed_static` says something about the typed encoder, not about whether a graph prior helps: the
+relevant graph claim remains `untyped_gnn - expression_only`, already on the record. If a diagnostic
+arm beats `expression_only` and survives both corrections, the contradiction stop in section 6
+applies unchanged — snapshot, flag, continue, do not rewrite the null around it.
+
+### 4.6 Lane validity
+
+The gate-collapse kill criterion does not bind here: both arms pin the gate to 1.0 by construction,
+so a gate mean of 1.0 is correct rather than evidence of collapse. A lane is valid if it completes
+at least as many epochs as its paired `typed_static` lane did before early stopping and returns a
+finite primary metric; a lane that fails is reported as a dropped seed, by name and reason, and
+shrinks n rather than being silently replaced.
+
+---
+
+## Amendment 4a — 2026-08-16 (correction to 4.2, BEFORE any `typed_permuted` lane is trained)
+
+Amendment 4 is unchanged except where this says otherwise. `typed_shared` was already running when
+this was written; `typed_permuted` had not started, so this is a pre-registration and not a
+post-hoc note.
+
+### 4a.1 The claim in 4.2 that was wrong
+
+4.2 said of `typed_permuted` that "edge attributes travel with the edge, so only which weight matrix
+processes it changes". That is false for the obvious implementation. The neighbourhood sampler ranks
+candidate neighbours BY RELATION — `_PRIORITY_BONUS` in
+`src/tcell_pipeline/graph/neighborhood_sampler.py` gives `physical_ppi` and `co_complex` a 1e6 bonus
+over `functional_assoc` — so a target whose neighbourhood exceeds `NEIGHBORHOOD_CAP` = 512 keeps its
+physical and co-complex neighbours and drops functional ones. Permuting the labels in the stored
+graph therefore changes WHICH NEIGHBOURS ARE IN THE SUBGRAPH, and `typed_permuted` would have
+differed from `typed_static` in two ways at once: the routing AND the sampled neighbourhood. D2
+would not have been interpretable, and nothing in the result would have shown it.
+
+### 4a.2 The design that replaces it
+
+The relabelling happens AFTER sampling, through a `_sample` hook on `TypedGraphEncoder` whose default
+is the plain sampler call (so every existing arm is bit-identical). `PermutedTypedGraphEncoder`
+samples under the TRUE relations and then moves each protein-protein edge, with its attributes, into
+its permuted relation store. The node set and the pooled edge multiset are therefore identical to
+`typed_static`'s, edge for edge, and only which weight matrix processes an edge changes. This is
+pinned by `test_permuted_relations_leave_the_sampled_neighbourhood_untouched`, which asserts it on a
+fixture whose cap actually binds.
+
+Two further properties are fixed here rather than left to the implementation:
+
+- **Globally consistent.** An edge's permuted label is a pure function of its GLOBAL endpoints and
+  the seed, so the same edge is relabelled the same way in every subgraph it appears in. The permuted
+  partition is therefore one fixed alternative partition of the same edge set. A per-subgraph
+  reshuffle would instead make the four modules a random router, which changes the architecture and
+  reintroduces exactly the confound this arm exists to remove.
+- **Exact global counts.** The two hash thresholds are read off the sorted hashes of every PP edge,
+  so each relation keeps its original edge count exactly. Under `norm='add'` a relation's
+  contribution to a node update scales with its degree, so a count that drifted would be a second
+  intervention riding along with the relabelling. A first implementation put the threshold
+  inclusivity the wrong way round and moved one edge; the count test caught it before any lane ran.
+
+### 4a.3 What does not change
+
+D1, D2, the 2x2 reading, the diagnostic family of size 2 with both corrections required, the ban on
+using either arm to promote a graph claim, and the lane-validity rules all stand as written in
+Amendment 4. Seeds are 0-4 on the frozen `blocked_target_ood` fold, paired per seed against the
+landed `typed_static` lanes, primary endpoint `systema_pert_specific_delta`. The permutation is drawn
+from the training seed, so the five lanes average over five partitions.
+
+---
+
+## Amendment 5 — 2026-08-16 (BEFORE the full-fold A3 re-scoring is read)
+
+Registers a RE-SCORING of predictions that already exist. No training, no new fold, no new seed. What
+is being fixed in advance is the endpoint list, the orientation rule, the multiplicity and the decision
+rule — everything that could otherwise be chosen after seeing which metric was kind.
+
+DISCLOSURE, so the record is complete: a 200-row plumbing smoke of the driver was run before this was
+written and its numbers were seen. They are not used, quoted or carried forward, and no endpoint or
+rule below was chosen because of them. The analysis this amendment governs is the full 4,400-row val
+fold at the campaign's five seeds.
+
+### 5.1 The endpoints, verified rather than assumed (checked 2026-08-16)
+
+| endpoint | who reports it | what it is |
+|---|---|---|
+| `pearson_delta` | TxPert | Pearson between predicted and observed response over all genes, per perturbation, macro-averaged |
+| `pearson_delta_top20` | GEARS | the same restricted to each perturbation's top-20 observed DE genes |
+| `mse_top20` | GEARS | mean squared error over those top-20 genes; GEARS' headline |
+| `edistance_scperturb` | scPerturb | E-distance as scPerturb computes it, on SQUARED euclidean distances |
+| `energy_distance` | Szekely | energy distance on plain euclidean distances |
+
+The DE subset is taken from the OBSERVED response, never the prediction.
+
+`edistance_scperturb` is reported for commensurability and NOT as distributional evidence: with squared
+distances the statistic collapses algebraically to `2*||mean(X) - mean(Y)||^2`, a difference of means
+that cannot distinguish two populations with the same mean and different spread. `energy_distance` is
+the distributional endpoint. Both are computed over the distribution of RESPONSES across held-out
+perturbations, not over cell populations — this pipeline predicts one pseudobulk response per (target,
+condition) and has no per-cell predictions to compare. Any claim about single-cell distributions
+remains out of reach and stays hedged.
+
+### 5.2 Orientation
+
+Correlations count upward, errors and distances downward. Every metric is signed to larger-is-better
+before any contrast is formed, so a positive delta always favours the first-named arm. Without this a
+graph arm could be made to look good by an endpoint that runs backwards.
+
+### 5.3 Multiplicity — the part that could be gamed, fixed now
+
+Five endpoints times the four pre-registered contrasts is TWENTY simultaneous tests. Correcting only
+within each endpoint's family of four and then reporting whichever endpoint was kind is the
+look-elsewhere effect this project's `fallacy_scan.py` exists to catch.
+
+Both bars are computed and both are reported:
+
+- **within-metric, m = 4** — comparable to every other number in the paper, and the bar under which
+  the campaign's own results were judged;
+- **across-metric, m = 20** — the honest bar for the question "did anything survive anywhere once we
+  looked under five endpoints".
+
+A claim that a contrast SURVIVES the re-scoring requires the across-metric bar, under Bonferroni and
+Holm both. The within-metric numbers are context, not the claim.
+
+### 5.4 Decision rule
+
+- **Closed** when the null holds under at least one endpoint an outside positive was reported in, and
+  under the distributional endpoint. That is the paper's commensurability hedge discharged on its
+  metric half.
+- **A POSITIVE that clears the across-metric bar fires the contradiction stop** (section 6, unchanged):
+  snapshot, flag at the top of `RESULTS_SUMMARY.md`, continue. The null is not rewritten around it.
+- **Endpoints that DISAGREE IN SIGN on the same contrast are a result, not a nuisance**, and are
+  reported as one. A sign that depends on which reported metric is chosen bounds what any single-metric
+  claim in this literature can mean — including ours.
+- Everything computed is reported. There is no endpoint here that can be dropped after the fact: the
+  five are named above and the artifact carries all twenty cells.
+
+### 5.5 What this cannot settle
+
+The commensurability hedge has two halves. This closes the metric half only. Outside results are also
+obtained on different splits, and re-scoring our predictions cannot speak to that; the split half stays
+hedged, and no sentence anywhere may use this re-scoring to adjudicate another paper's claim.
+
+---
+
+## Amendment 6 — 2026-08-16 (BEFORE any injected-signal lane is trained)
+
+Registers A2(a), the empirical detection floor: put a graph signal of KNOWN size into the real
+responses and report the smallest size the pipeline recovers. A2(b) already answers what the floor
+should be from the measured variance; this is whether the pipeline achieves it.
+
+### 6.1 What is injected
+
+For each perturbation target, the mean response of its direct PPI neighbours computed over TRAIN-FOLD
+ROWS ONLY, scaled so its spread equals the TRAIN response's, multiplied by `delta`, added to every
+train and validation row of that target. `delta` therefore reads as a fraction of a response standard
+deviation. Neighbours are one hop, edge-score weighted, row-normalised, with the diagonal cleared after
+any expansion so no walk returns a target its own response.
+
+A model that can read the graph can predict a held-out target from its neighbours. A model that cannot,
+cannot. That is the entire design, and its validity rests on one property.
+
+### 6.2 Leakage, and a leak we already found
+
+If any validation response reached any injected value, the graph arm would detect leakage rather than
+structure. The guard is asserted by a test that perturbs a validation response and requires the whole
+injection matrix to be bit-identical, and that test was watched to FAIL against a deliberately leaky
+variant before being trusted.
+
+It also caught a real leak in the first implementation, which is why this paragraph exists. The
+per-target means were train-only, but the SCALING CONSTANT was computed over train and validation rows
+together; tampering with one validation response moved the constant and rescaled every injected value
+by a factor of 46. Fixed before any lane ran: every number that reaches the output, constants included,
+is now computed on train rows alone.
+
+### 6.3 Rail 1
+
+Rows whose target is in the challenge or calibration role receive an injection of exactly zero and are
+copied through bit-identically. No sealed response enters any statistic, including the scaling
+constant. The sealed split is not read, opened, or scored.
+
+### 6.4 The ladder, and why `delta=0` is NOT the negative control
+
+Rungs: `delta` in {0.02, 0.05, 0.10, 0.20, 0.40}, plus ONE permuted control at 0.40 in which each
+target receives some OTHER target's neighbour mean. The permuted control injects a component of the
+same size and distribution with no relationship to the graph; a ladder that recovers it is not
+measuring graph structure.
+
+`NEXT_ACTIONS.txt` specified a `delta=0` rung as the negative control, required NOT to clear
+correction. That is superseded, and the reason is a result of this project rather than a convenience:
+at `delta=0` the data is the untouched reference screen, where the untyped arm ALREADY beats the
+baseline by +0.0043 and survives both corrections at n=7. A control the data cannot pass is not a
+control. The `delta=0` row is still reported, read off the landed reference lanes rather than re-run,
+and it is the ladder's ZERO POINT, not its null.
+
+### 6.5 Arms, and the cost argument for choosing them
+
+`untyped_gnn` against `expression_only`, at seeds 0-3 (n=4, rail 5) per rung.
+
+`NEXT_ACTIONS.txt` said `condition_gated` vs `expression_only`. Two reasons to change it, both stated
+before the numbers exist. Cost: `condition_gated` lanes on this fold measured 7.5-16 GPU-hours against
+`untyped_gnn`'s 2.3-2.5, so the registered arm would cost about 200 GPU-hours against 66, and the
+budget for A2 is 60-100. Sensitivity: `untyped_gnn` is this pipeline's BEST graph detector, the only
+arm with a corrected-significant positive anywhere, so a floor measured with it is the floor of the
+best detector we have. If even that arm needs a large `delta`, the bound covers the weaker arms a
+fortiori; a floor measured with `condition_gated` would not have covered `untyped_gnn`.
+
+This is a bound on the pipeline's sensitivity, not on the typed encoder's specifically, and it will be
+labelled that way.
+
+### 6.6 Everything else is held fixed
+
+Same frozen `blocked_target_ood` split, 20 epochs, batch 8, `SUBGRAPH_CACHE_SIZE=9000`, config-default
+`lambda_graph` -- the configuration the landed reference lanes used. Each rung gets a FRESH
+`INTERMEDIATE_ROOT` in which only the response layer differs; every other artifact, including the
+program basis, the features and the split, is a symlink to the reference root.
+
+The program basis is deliberately NOT re-fitted per rung. Re-fitting would change the metric space rung
+by rung and make the rungs incomparable, which is the one thing a ladder cannot survive. The injected
+component is a linear combination of real responses and so lies in the span the basis was fitted to.
+
+### 6.7 Decision rule, fixed before running
+
+Primary per rung: `promotion_margin` = `untyped_gnn` - `expression_only` on
+`systema_pert_specific_delta`, paired per seed, n=4.
+
+Multiplicity: the six conditions form one family, m=6. Bonferroni AND Holm are both reported and
+survival requires both, as everywhere else in this project. Per-rung uncorrected intervals are also
+reported.
+
+**The measured floor is the smallest `delta` that clears both corrections AND is cleared by every
+larger rung.** A rung that clears while a larger one does not is a red flag and is reported as one, not
+as a floor: a monotone dose-response is part of what makes the ladder interpretable.
+
+**If the permuted control clears correction, the ladder is not reported as a floor at all.** It would
+mean the arms respond to an injected component of that size regardless of whether it follows the graph,
+and the number would measure injection magnitude rather than graph readability.
+
+**A HIGH floor is a result, not a failure.** If the smallest recovered rung is 0.20 response SDs, then
+this pipeline cannot see a graph effect below a fifth of a response standard deviation, and the paper's
+null is stated against that number instead of a hedge.
+
+---
+
+## Amendment 4b — 2026-08-16 (sign convention for D2, BEFORE any `typed_permuted` lane is trained)
+
+Amendment 4.4 contains a sign error in one sentence. Correcting it before the arm runs, because it
+would otherwise reverse the reading of the result.
+
+**The convention, stated once and used everywhere.** Both diagnostic contrasts are
+`(diagnostic arm) - typed_static`, so a POSITIVE value means the intervention IMPROVED on the typed
+encoder.
+
+Therefore, for `D2 = typed_permuted - typed_static`:
+
+- **D2 POSITIVE** means a random partition BEATS the true one at equal capacity. The evidence typing is
+  worse than noise: actively misleading, not merely uninformative.
+- **D2 NEGATIVE** means the true typing carries information a random partition lacks.
+
+Amendment 4.4 said "a D2 that is significantly NEGATIVE (permuting HELPS) is itself the finding that
+the annotation is worse than noise at equal capacity". Two of those three clauses disagree with each
+other under the convention above: permuting helping is D2 POSITIVE, and "the annotation is worse than
+noise" is also D2 POSITIVE. The sentence is replaced by the two bullets above. The 2x2 table in 4.4 is
+unaffected: its "D2 positive" column already reads "the true partition is worse than a random one at
+equal capacity: the typing is actively misleading", which is correct.
+
+Nothing else in Amendment 4 or 4a changes. The rule is implemented in
+`src/tcell_pipeline/screening/a1_report.py`, whose tests drive every cell of the 2x2 and pin this sign
+convention directly.
+
+---
+
+## Amendment 7 — 2026-08-19 (BEFORE any `typed_gcnnorm` lane is trained)
+
+**Why this arm exists.** A1 asked which part of edge typing costs the graph its benefit and eliminated
+both of its candidates: tying the message weights (D1, +0.0004, Bonferroni 1.000) and randomising every
+relation label at preserved edge counts (D2, +0.0065, Bonferroni 0.182). Neither the parameter count nor
+the annotation's information content is the route. What remains is the message FORM — the way a message
+is built and combined, holding both capacity and evidence content fixed. This amendment governs the
+first component of that form.
+
+**The arm.** `typed_gcnnorm` = `StaticTypedGraphEncoder(graph, gene_to_idx, norm="gcn")`. Every other
+element is `typed_static` unchanged: per-relation weights, signed messages, the per-edge feature term,
+complex-membership nodes, the residual FFN, and the condition gate pinned to 1.0. The single difference
+is how a node's incoming messages for one relation are combined — symmetric `1/sqrt(d_i d_j)` instead of
+a plain sum.
+
+**It costs no parameters, and that is deliberate.** `norm` selects an aggregation rule, not a module.
+`typed_gcnnorm` and `typed_static` have byte-identical parameter counts, asserted in
+`test_gcn_norm_reaches_every_relation_module_and_costs_no_parameters`. A component test that also moved
+the capacity would re-confound precisely what A1 separated.
+
+**WHAT THIS ARM DOES NOT ISOLATE.** `_RelMessage`'s `gcn` weight is computed on THIS relation's degrees,
+where `UntypedGraphEncoder`'s `GCNConv` uses the degree of the pooled homogeneous graph. So the arm
+isolates degree NORMALISATION and not the pooling of relations into one degree. A null here therefore
+does not exonerate degree effects in general; it exonerates per-relation degree normalisation
+specifically. This limitation is stated in advance because it bounds what a null can be claimed to mean.
+
+**7.1 Seeds and pairing.** Seeds 0-4, n=5, the same five seeds as the landed reference and A1 lanes, so
+the contrast is paired on the seed exactly as A1's was. The comparison arm is the LANDED `typed_static`
+lanes; they are not re-run. A lane that fails to complete shrinks n rather than being replaced, and any
+n<5 is reported with its n.
+
+**7.2 The primary and its sign.** `D3 = typed_gcnnorm - typed_static` on
+`systema_pert_specific_delta`, paired per seed. The Amendment 4b convention holds unchanged: a POSITIVE
+D3 means the intervention IMPROVED on the typed encoder, i.e. degree normalisation recovers part of the
+deficit. A NEGATIVE D3 means normalisation makes the typed encoder worse still.
+
+**7.3 Multiplicity, including under staging.** The family is the set of B1 message-form arms actually
+trained, and `m` is that count. B1 is staged on purpose — B1a is read before B1b-d are launched — so the
+rule that stops staging from laundering the correction is fixed here: **every B1 contrast is corrected at
+the number of B1 arms run as of the moment the result is READ, and if further arms are later added, every
+earlier contrast is RE-corrected at the larger m and the paper carries the final m.** An m=1 p-value from
+the first stage is never carried forward once a second arm exists. Bonferroni AND Holm, both required,
+via the shared `apply_family_wise`.
+
+**7.4 The decision rule.** The gap under study is `untyped_gnn - typed_static` = +0.0176 on the frozen
+fold at n=5. The route is the component whose removal recovers the largest share of it AND clears both
+corrections. Recovery share is reported as `D3 / 0.0176`, and it is DESCRIPTIVE only: it is a ratio of
+two estimated quantities and carries no interval. The inferential statement is the CI on D3 itself.
+
+**7.5 What each outcome means, fixed before the numbers exist.**
+
+- **D3 positive and clears both corrections.** Degree normalisation is a route. If the share is large
+  (say above half) the paper names it as the principal component; if it clears but the share is small,
+  the paper reports it as one contributor among others and does not claim it as the explanation.
+- **D3 null.** Per-relation degree normalisation is not the route, and B1b-d proceed. Given A1's two
+  nulls, a third null narrows the message form further rather than being a non-result.
+- **D3 negative and clears.** Normalisation actively hurts the typed encoder. This is reported as such
+  and is NOT folded into "no effect" — it would mean the unnormalised sum is doing useful work and the
+  deficit lies elsewhere in the form.
+- **NONE of B1a-d clears.** The deficit is distributed across the message form rather than localised in
+  one component, and the paper says exactly that, naming the arms that failed to localise it.
+
+**7.6 Isolation.** Rail 2. `data/results/screening` stays read-only; the campaign writes a FRESH root
+`data/results/screening_b1` seeded with copies of the landed reference lanes, sha256-manifested before
+and after. The frozen fold `data/splits` is read, never written. No sealed-split artifact is touched.
+
+---
+
+## Amendment 8 — 2026-08-19 (BEFORE the rank-bin decomposition is read)
+
+**Why.** Amendment 5 governed A3, which found the promotion margin corrected-significant NEGATIVE on
+each perturbation's top-20 DE genes and corrected-significant POSITIVE over all 10,282, and located the
+crossover of its cumulative sweep between the 250th and 500th gene. A cumulative sweep cannot say what
+happens on either side of that point, because every k contains all smaller k: a sign change in a running
+average only bounds where the underlying per-gene effect turned. This amendment governs the disjoint
+decomposition that can say.
+
+**8.1 The statistic.** Genes are ranked within each row by DESCENDING `|observed response|`, computed
+from the observation alone. Within each disjoint rank bin, the mean row-wise Pearson correlation between
+predicted and observed `delta_x` restricted to that bin's genes, one number per arm per seed. Two
+binnings are reported: ten equal-width DECILES, and a HEAD binning on A3's own k-sweep boundaries
+(1-20, 21-50, 51-100, 101-250, 251-500, 501-1000, 1001-2500, 2501-5000, 5001-10282) so that a bin here
+is exactly the increment between two consecutive points of that sweep. No training; the frozen val
+fold's stored predictions are re-read.
+
+**8.2 WHAT A BIN'S LEVEL DOES NOT MEAN, stated before the numbers exist.** Genes are selected into a bin
+by the same observed response that serves as the correlation's y-variable. Two biases follow, and they
+are conceded rather than corrected:
+
+- **Range restriction.** Within a narrow bin the observed values span a short interval, which attenuates
+  Pearson regardless of how good a prediction is.
+- **Selection on a noisy statistic.** Ranking by an observed quantity and then correlating within the
+  selection biases the correlation's level, in the same way any winner's-curse selection does.
+
+Therefore **the LEVEL of a bin's correlation is not comparable across bins, and no claim in this
+analysis rests on comparing one bin's level to another's.** The CONTRAST within a bin is unaffected by
+both biases: the two arms are scored on the identical gene set of the identical rows, the selection is
+made once from the observation, and neither arm's prediction enters it. Every claim below is a
+within-bin contrast.
+
+**8.3 Multiplicity.** Ten bins (or nine) times four pre-registered contrasts is forty (or thirty-six)
+simultaneous tests, and this analysis exists precisely to look in several places at once. The family is
+therefore ALL CELLS OF A BINNING, corrected together, Bonferroni AND Holm, both required. Correcting
+within a bin and reporting whichever bin was kind is the look-elsewhere effect and is not done. The two
+binnings are reported as two families, not pooled into one: the head binning is a refinement of the
+same rows and genes, so pooling them would double-count the same data rather than widen the search.
+
+**8.4 The reading rule.** The claim this analysis can support is of the form "the contrast is positive
+on bins X and negative on bins Y, both clearing correction". A sign change between two ADJACENT bins is
+reported as a located crossover only if BOTH bins clear correction; otherwise it is reported as a sign
+change that the data does not resolve, with its interval. If no bin clears in either direction, the
+conclusion is that the crossover A3 bounded cannot be localised at n=5 and the paper continues to state
+only the bound.
+
+**8.5 Isolation.** Read-only. The stored predictions under `data/results/predictions/` and the frozen
+val fold are read; nothing is trained, and no sealed-split artifact is touched.
+
+---
+
+## Amendment 9 — 2026-08-21 (BEFORE any `condition_gated` injected-signal lane is trained)
+
+Registers C1: the detection floor of the arm the paper's headline null is actually about. Extends
+Amendment 6 and changes nothing in it. Written before any lane of this campaign exists.
+
+**Why this is owed.** Amendment 6.5 registered the ladder on `untyped_gnn` against `expression_only`
+and gave two honest reasons — cost (2.3-2.5 GPU-hours per lane against 7.5-16) and sensitivity
+(`untyped_gnn` is this pipeline's best graph detector) — and closed with: "This is a bound on the
+pipeline's sensitivity, not on the typed encoder's specifically, and it will be labelled that way." It
+is now labelled that way, in the abstract, in Limitations and in App. `app:floor`, each saying the
+typed arm's own floor is unmeasured.
+
+That labelling is honest and it is also a gap. The a-fortiori argument runs one way only: the untyped
+arm detects an injected signal at 0.02 response SDs, so a weaker detector needs AT LEAST that much. It
+gives no upper bound. The typed, gated arm could need far more, and this paper's own evidence says it
+is the poorer detector (h2a $-0.0120$ at n=7; Amendment 7 puts most of that on the unnormalised sum).
+The headline null is stated about `condition_gated`. Its floor is the number that says whether that
+null describes an instrument that could see what it was pointed at.
+
+### 9.1 The design, fixed now
+
+The existing ladder re-run with `ARMS="expression_only condition_gated"` over the SIX rungs already
+built under `data/intermediate/inject` — `delta` in {0.02, 0.05, 0.10, 0.20, 0.40} plus the one
+permuted control at 0.40. No new rungs, no new injection code, no re-derivation: the injected matrices
+are the same bytes Amendment 6 governed, and their leakage and rail-1 guards are already asserted
+against them. Seeds 0-3, n=4 per arm per rung (rail 5). Everything in Amendment 6.6 is held fixed —
+same frozen `blocked_target_ood` split, 20 epochs, batch 8, `SUBGRAPH_CACHE_SIZE=9000`, the program
+basis NOT re-fitted per rung — with the single exception fixed in 9.2.
+
+### 9.2 `lambda_graph = 0`, and why this one deviation from 6.6 is mandatory
+
+Amendment 6.6 held `lambda_graph` at the config default, which is `0.01`. That was harmless for
+Amendment 6 because `untyped_gnn` and `expression_only` have no live edge gate to suppress. **It would
+be fatal here.** `condition_gated` is the only arm in this project whose gate is live, and the
+gate-magnitude sweep in `app:power` measures that gate collapsing toward $10^{-7}$ as `lambda_graph`
+rises, with `lambda_graph = 0` the setting that reproduces live gates at a mean of 0.76. The paper's
+headline family, and the $-0.0009$ h1 null itself, are stated on the REPAIRED root
+`data/results/screening_lambda0`, which is `lambda_graph = 0`.
+
+So these lanes run at `lambda_graph = 0`. Two reasons, both stated before any number exists. First,
+commensurability: a floor measured on a gate-suppressed arm would not be the floor of the arm the null
+describes, and the paper would be answering a question about a different model. Second, Amendment 3.4:
+a lane whose mean edge gate falls to $\le 10^{-3}$ is an UNDECIDABLE experiment, reported as such and
+never as evidence the graph does not help. At the config default that criterion is not a remote risk,
+it is the expected outcome, and a campaign designed to trip its own kill criterion is not a campaign.
+
+This is a deviation from 6.6 and is labelled one wherever the result appears. The zero point in 9.5 is
+read from the same `lambda_graph = 0` root so that the ladder and its zero point are one configuration.
+
+**Gate health is a reported quantity here, not an assumption.** Mean edge gate is logged every epoch on
+every `condition_gated` lane, and the report states the minimum observed across all lanes. Any lane
+below $10^{-3}$ is dropped by name and reason under Amendment 3.4 and shrinks n rather than being
+replaced.
+
+### 9.3 The primary, fixed before running
+
+Per rung: `h1_ladder` = `condition_gated` $-$ `expression_only` on `systema_pert_specific_delta`,
+paired per seed, n=4. Positive favours the graph arm, the convention used throughout this project.
+
+### 9.4 Multiplicity
+
+The six injected conditions form ONE family, m=6. Bonferroni AND Holm are both computed and survival
+requires BOTH, as everywhere else here. Per-rung uncorrected intervals are also reported.
+
+**This family is NOT pooled with Amendment 6's.** The two ladders run the same six rungs, so pooling
+them would correct over twelve tests while double-counting the same injected data rather than widening
+the search. They are reported side by side, each at m=6, and any comparison between the two floors is
+descriptive.
+
+### 9.5 The zero point, and that it is not a family member
+
+`delta = 0` is read off the landed `lambda_graph = 0` lanes in `data/results/screening_lambda0` at
+seeds 0-3, not re-run. It is the ladder's ZERO POINT and NOT a member of the family, for the reason
+Amendment 6.4 gives: at `delta = 0` the data is the untouched screen, and a control the data cannot
+pass is not a control. Note the asymmetry with Amendment 6, recorded rather than smoothed over: there
+the zero point sits at $+0.0048$ because the untyped arm already wins with no injection, whereas h1's
+zero point is a null ($-0.0009$ at n=5). That makes this ladder's primary easier to read, not harder:
+a rung that clears is not clearing on a pre-existing benefit.
+
+The post-hoc increment-over-zero of Amendment 6's report is computed here too, on the same
+paired-on-seed basis, and carries the same label: POST-HOC, never the rule.
+
+### 9.6 The decision rule, copied from 6.7 so the two ladders are read identically
+
+- **The measured floor is the smallest `delta` that clears both corrections AND is cleared by every
+  larger rung.**
+- **A rung that clears while a larger one does not is a RED FLAG and is reported as one, not as a
+  floor.** A monotone dose-response is part of what makes a ladder interpretable.
+- **If the permuted control clears correction, no floor is reported at all.** It would mean the arms
+  respond to an injected component of that size regardless of whether it follows the graph, and the
+  number would measure injection magnitude rather than graph readability. This veto is absolute and
+  applies before any other reading.
+- **A lane that fails shrinks n**, reported by name and reason, never silently replaced.
+
+### 9.7 What each outcome means, fixed before the numbers exist
+
+- **The floor lands at or below 0.02, like the untyped arm's.** The strongest form of the paper's
+  central claim: the null is bounded by an instrument demonstrably able to see a graph signal of that
+  size, and the "unmeasured" hedge in the abstract, Limitations and `app:floor` is discharged and
+  removed.
+- **The floor lands between 0.02 and 0.20.** The typed gated arm is a measurably worse detector than
+  the untyped one, quantified. The null stands but is restated against that number, and the gap
+  between the two floors becomes a second measurement of what the typed encoder costs — independent of
+  Amendment 7's, and on a different axis.
+- **The floor is above the largest rung tested (0.40).** This pipeline's gated arm cannot see an
+  injected graph signal even at 0.40 response SDs. See 9.8.
+- **The permuted control clears.** No floor. The ladder is reported as uninterpretable for this arm and
+  the reason is stated; it does not become a floor by another name.
+- **Non-monotone.** Red flag, reported with every rung's interval, and no floor is named.
+
+### 9.8 THE UNCOMFORTABLE OUTCOME, STATED IN ADVANCE AND IN WRITING
+
+**If the typed arm's floor lands far above 0.02 — and most of all if it is above the whole ladder —
+then the paper's headline null is a statement about an instrument that could not see what it was
+pointed at, and the paper carries that.** It would mean the central negative result is not "a PPI prior
+does not help" but "our gated encoder is too insensitive for this experiment to answer the question",
+and every sentence resting on the null would have to be re-read in that light: the abstract, the
+Limitations section, and cause C in the causes table.
+
+Committing to this before the numbers exist is the only thing that makes the answer worth anything. An
+outcome that is a result when it is convenient and an artifact when it is not is not a measurement. If
+this fires, it is reported at the top of `RESULTS_SUMMARY.md` on the same day, the paper is corrected
+rather than hedged, and the correction joins the four already on this project's record.
+
+**And the reverse commitment, which costs just as much:** a floor at or below 0.02 does NOT license
+strengthening any claim beyond the removal of the "unmeasured" hedge. It bounds the instrument. It says
+nothing about whether a better prior or a better encoder would help, and no sentence may use it to
+suggest otherwise.
+
+### 9.9 Cost, and the stop rule
+
+24 `condition_gated` lanes at the 7.5-16 GPU-hours those lanes measured on this fold is 180-380
+GPU-hours, plus 24 cheap `expression_only` lanes. That is the largest single spend left in this
+project, on a shared box whose per-epoch time has measured 38 to 90 minutes depending on other users.
+Per-epoch cost is RE-MEASURED on the first lane rather than extrapolated, and if the measured rate puts
+the campaign beyond the deadline it is stopped and reported at whatever n landed, labelled preliminary
+with its n under rail 5 — not quietly extended, and not headlined at n<4.
+
+### 9.10 Isolation
+
+Rail 1: the sealed challenge split is not read, opened or scored; the injected matrices already leave
+challenge and calibration rows bit-identical, asserted on the real matrix. Rail 2: every landed results
+root is read-only. These lanes write a FRESH root, separate from `data/results/a2_ladder`, so
+Amendment 6's landed ladder is not touched. `data/splits` is read, never written.
+
+### 9.11 The analysis is the same code
+
+The floor is read by `screening/ladder_report.py`, whose rule is Amendment 6.7 implemented without
+discretion. It currently hardcodes `untyped_gnn` as the better arm and `screening_untyped_n7` as the
+reference root, so it needs the arm and the reference root to become parameters before this ladder can
+be read. That change must be made and tested BEFORE the lanes land, so that the analysis code cannot be
+shaped by the numbers it will produce — the same discipline that made Amendment 6's post-hoc increment
+worth reading, since it was committed while three rungs were still unrun.

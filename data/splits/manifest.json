@@ -1,0 +1,26 @@
+{
+  "seed": 0,
+  "fractions_target": {
+    "train": 0.6,
+    "val": 0.15,
+    "calibration": 0.1,
+    "challenge": 0.15
+  },
+  "fractions_realized_blocked": {
+    "train": 0.6254,
+    "val": 0.1295,
+    "calibration": 0.0794,
+    "challenge": 0.1656
+  },
+  "seq_cosine_threshold": 0.85,
+  "group_size_cap_frac": 0.05,
+  "n_genes": 11525,
+  "sequence_block_active": true,
+  "n_genes_with_embedding": 11462,
+  "n_family_groups": 5141,
+  "refused_merges": 3986,
+  "sha256": {
+    "blocked_target_ood.csv": "e6907b5be514ed9cf541ca09cc3d8b22aec4d50d772f83a3d9e1c215eff84f55",
+    "random.csv": "c6c16da8bb51821d27f72fab97a1d8999ff4f1c2697884e8556df33809d7d24f"
+  }
+}
