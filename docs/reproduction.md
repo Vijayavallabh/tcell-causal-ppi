@@ -51,6 +51,7 @@ for f in GWCD4i.DE_stats.h5ad GWCD4i.DE_stats.by_donors.h5mu GWCD4i.DE_stats.by_
          GWCD4i.pseudobulk_merged.h5ad; do
   aws s3 cp "s3://genome-scale-tcell-perturb-seq/marson2025_data/$f" "data/raw/$f" --no-sign-request
 done
+(cd data/raw && sha256sum -c ../manifests/GWCD4i_SHA256SUMS.txt)
 aws s3 sync s3://genome-scale-tcell-perturb-seq/marson2025_data/suppl_tables/ data/raw/suppl_tables/ --no-sign-request
 aws s3 sync s3://genome-scale-tcell-perturb-seq/marson2025_data/metadata/ data/raw/metadata/ --no-sign-request
 # the other supplementary tables live in the authors' analysis repository
