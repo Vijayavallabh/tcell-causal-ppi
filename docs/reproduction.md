@@ -94,7 +94,7 @@ around it. Paths are under `data/results/`.
 
 | In the paper | Result file | Section |
 |---|---|---|
-| Figure 2, the penalty sweep | `q4_lambda_sweep_22ep.json`; the text also cites `q4_lambda_sweep_12ep.json` and the three-epoch `screening_lambda0/lambda_sweep_empirical.json` | 4.1 |
+| Figure 1, the penalty sweep | `q4_lambda_sweep_22ep.json`; the text also cites `q4_lambda_sweep_12ep.json` and the three-epoch `screening_lambda0/lambda_sweep_empirical.json` | 4.1 |
 | Table 2, the five-seed family with live gates | `screening_lambda0/robustness_5seed.json` | 4.2 |
 | the same family at the default penalty | `screening/robustness_5seed.json` | 4.2 |
 | the second metric | `screening_lambda0/second_metric_5seed.json` | 4.3 |
@@ -138,7 +138,7 @@ SCREENING_ROOT=<root> REGISTRY_PATH=<root>/experiment_registry.yaml SPLITS_ROOT=
 PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
 ```
 
-Figures 3 to 5 (the folds and injected-signal ladders, the per-dataset replication, and the evidence
+Figures 2 to 4 (the folds and injected-signal ladders, the per-dataset replication, and the evidence
 for causes C and D) are drawn from the files of 4.2, 4.4, 4.5, 4.6, 4.9 and 4.11 by
 `python paper/icbinb/make_result_figures.py`, which writes `paper/figures/folds_floor.pdf`,
 `paper/figures/replication_forest.pdf` and `paper/figures/causes.pdf`.
@@ -147,7 +147,7 @@ It checks from the run registry that every lane scored the same fold. For a root
 run elsewhere, pass `--no-registry` and it checks each lane's recorded `n_train` and `n_val` instead.
 Read `family_size` in the output: it must be 4.
 
-### 4.1 Gate collapse and Figure 2
+### 4.1 Gate collapse and Figure 1
 
 The precondition every graph result is read against: the collapse factor of the edge gates against
 initialization. Near 1e-7 the graph is switched off and a graph contrast is undecidable.
@@ -156,7 +156,7 @@ initialization. Near 1e-7 the graph is switched off and a graph contrast is unde
 PYTHONPATH=src python -m tcell_pipeline.probe_graph_gradients --n-max 8 --batch-size 2 --steps 1
 ```
 
-Figure 2 is one seed of `condition_gated` on the first 512 training and 128 validation rows, 22 epochs,
+Figure 1 is one seed of `condition_gated` on the first 512 training and 128 validation rows, 22 epochs,
 at nine penalty weights, batch 4; panel (b) plots the same runs epoch by epoch. Each weight takes about 0.4 GPU-hours; `--lambdas` splits the weights
 across cards, and the parts merge by concatenating their `runs` lists.
 

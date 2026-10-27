@@ -136,6 +136,8 @@ def table(label: str):
 _FAMILY_ROOT = "data/results/screening_lambda0"          # the REPAIRED gate root, not screening/
 _FAMILY_KEY = {"ts": "typed_static", "cg": "condition_gated", "ug": "untyped_gnn",
                "eo": "expression_only"}
+_FAMILY_WORD = {"typed": "typed_static", "gated": "condition_gated", "untyped": "untyped_gnn",
+                "no graph": "expression_only"}
 _CONTRAST_OF = {("typed_static", "expression_only"): "h2a",
                 ("condition_gated", "typed_static"): "h2b",
                 ("untyped_gnn", "expression_only"): "promotion_margin",
@@ -264,6 +266,9 @@ PROSE_REGIONS = {
                   _R + "splits_c080c10/manifest.json", _R + "splits_c070/manifest.json"],
     # AUTO 2026-10-01: App.~K now lists the corrections, so it quotes both sides of each: the live
     # artifacts and the dead-gate / uncorrected ones they replaced.
+    # AUTO 2026-10-27: the plain-language rewrite added a glossary. It states no result, so it maps to
+    # nothing and any number added to it later fails rather than going unchecked.
+    "app:glossary": [],
     "app:repro": [_R + "reproducibility/repro_real_report.json",
                   _R + "reproducibility/manifest_real.json",
                   _R + "screening_lambda0/robustness_5seed.json",
@@ -305,7 +310,7 @@ PROSE_DECLARED = {
     "0.84": "Bonferroni-over-six p if the gated arm had the untyped sd; recomputed by prose:derived.",
     "63": "seeds to match the untyped se, lowest of the four small rungs; recomputed by prose:derived.",
     "358": "seeds to match the untyped se, highest rung; recomputed by prose:derived.",
-    "22": "epochs in the lambda sweep of Figure 2 (q4_lambda_sweep_22ep.json); a run setting.",
+    "22": "epochs in the lambda sweep of Figure 1 (q4_lambda_sweep_22ep.json); a run setting.",
     "85": "share of PPI edges that are functional_assoc; measured at 85.41% in rationale_bound.json.",
     "8{,}029{,}296": "protein-protein edge count of the built graph; a property of the graph build.",
     "11.3": "BioGRID share of protein-protein edges; the tier the source ablation did not cover.",
@@ -341,7 +346,7 @@ PROSE_DECLARED = {
     "0.103": "the range the difficulty statistic moved over; derived from the cosines above.",
     "0.056": "the designed range of that statistic; a design parameter.",
     # --- rationale-audit quantities normalised per 1% of edges removed, a derivation ------------
-    "0.0043": "sufficiency cost per 1% of STRING edges removed; derived from the raw ablation delta.",
+    "0.0043": "prediction change per 1% of STRING edges removed; derived from the raw source-ablation delta.",
     "0.0025": "the same for HuRI; derived as above.",
     "0.0014": "the same for BioPlex; derived as above.",
     "1.47": "the sufficiency scale the audit reports against; a property of that scale.",
@@ -702,11 +707,11 @@ def _prose_derived(tex):
     need("paired sd ratio, lowest injected rung", min(ratio[k] for k in inj),
          r"is ${V}$ to $9.5\times$ the untyped")
     need("paired sd ratio, highest injected rung", max(ratio[k] for k in inj),
-         r"to ${V}\times$ the untyped arm's across")
+         r"to ${V}\times$ the untyped model's across")
     need("paired sd ratio, scrambled control", ratio["permuted_d400"],
-         r"arms are equally noisy (${V}\times$)")
+         r"models are equally noisy (${V}\times$)")
     need("sd ratio at the largest rung", ratio["d400"],
-         r"gated arm carries only ${V}\times$ the")
+         r"gated model carries only ${V}\times$ the")
     need("mean ratio at the largest rung", uc["d400"]["mean"] / gc["d400"]["mean"],
          r"estimate is ${V}\times$ smaller")
     need("seeds to match the untyped se at d400", 4 * ratio["d400"] ** 2,
@@ -733,7 +738,7 @@ def _prose_derived(tex):
     # seven replication screens.
     p7 = load("data/results/replication/pooled.json")["pooled"]
     need("untyped I2 over the seven replication screens", p7["promotion_margin"]["I2"] * 100,
-         r"against ${V}\%$ (Figure")
+         r"against ${V}\%$, the pool on which")  # AUTO 2026-10-27: plain-language wording
     need("typed I2 with the reference screen added",
          load("data/results/replication/pooled_with_reference.json")["pooled"]["h2a"]["I2"] * 100,
          r"raises its $I^2$ from $39.2\%$ to ${V}\%$")
@@ -858,10 +863,10 @@ def _prose_derived(tex):
     z = [r for r in sweep["runs"] if r["lambda_graph"] == 0][0]["trajectory"][-1]
     need("live gate at lambda=0 in the sweep", z["val_gate"], r"from ${V}$ to $\sim$$10^{-7}$")
     if len(sweep["runs"]) != len({r["lambda_graph"] for r in sweep["runs"]}):
-        fails.append("derived: the lambda sweep now has more than one run per point, so Figure 2's "
+        fails.append("derived: the lambda sweep now has more than one run per point, so Figure 1's "
                      "caption must stop saying 'one run at one seed'")
     pre = load("data/results/screening/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]["mean"]
-    need("pre-repair h1", abs(pre), r"headline from $-{V}$ to $-0.0009$")
+    need("pre-repair h1", abs(pre), r"h1 barely moved, from $-{V}$ to $-0.0009$")  # AUTO 2026-10-27: plain-language wording
 
     # ---- App.~B: the search's epoch budget, and App.~C's m=1 p --------------------------------
     asb = load("data/results/a2_power/arch_search_bound.json")
@@ -869,9 +874,10 @@ def _prose_derived(tex):
         fails.append(f"derived arch-search epochs: artifact says {asb['epochs_run']}, App.~B says five")
     b1 = load("data/results/screening_b1/b1_message_form.json")["contrasts"]["D3"]
     need("B1a uncorrected p", b1["p_value"], r"uncorrected $p{=}{V}$")
-    need("B1a recovery share", b1["recovery_share"] * 100, r"recovers ${V}\%$ of the untyped gap")
+    need("B1a recovery share", b1["recovery_share"] * 100,
+         r"recovers ${V}\%$ of the gap between the typed and untyped models")  # AUTO 2026-10-27
 
-    # Figure 2(b)'s caption reads the epoch at which each weight's mean gate first falls below the
+    # Figure 1(b)'s caption reads the epoch at which each weight's mean gate first falls below the
     # dead-gate threshold, and says none recovers. Epochs are 0-indexed in the artifact.
     ordinal = {1: "second", 2: "third", 3: "fourth", 4: "fifth", 11: "twelfth"}
     pen = [r for r in load("data/results/q4_lambda_sweep_22ep.json")["runs"] if r["lambda_graph"] > 0]
@@ -881,18 +887,18 @@ def _prose_derived(tex):
     fd = {r["lambda_graph"]: first_dead(r) for r in pen}
     hi = {v for k, v in fd.items() if k >= 1e-3}
     if len(hi) != 1 or f"up are dead from the {ordinal.get(min(hi))} epoch" not in flat:
-        fails.append(f"derived Figure 2 crossing: weights >= 1e-3 first dead at 0-indexed epochs "
+        fails.append(f"derived Figure 1 crossing: weights >= 1e-3 first dead at 0-indexed epochs "
                      f"{sorted(hi)}; the caption does not say so")
     if f"$10^{{-5}}$ from the {ordinal.get(fd.get(1e-5))}" not in flat:
-        fails.append(f"derived Figure 2 crossing: 1e-5 first dead at 0-indexed epoch {fd.get(1e-5)}; "
+        fails.append(f"derived Figure 1 crossing: 1e-5 first dead at 0-indexed epoch {fd.get(1e-5)}; "
                      f"the caption does not say so")
     recovers = [k for k, r in ((r["lambda_graph"], r) for r in pen) if fd[k] is None or any(
         e["val_gate"] >= GATE_DEAD for e in r["trajectory"] if e["epoch"] >= fd[k])]
     if recovers or "none recovers" not in flat:
-        fails.append(f"derived Figure 2: the caption says no penalized run recovers; weights {recovers} "
+        fails.append(f"derived Figure 1: the caption says no penalized run recovers; weights {recovers} "
                      f"are live at some epoch after their first dead one")
 
-    # Per-dataset survivor counts, over TWO sets that must not be mixed: Figure 4's caption counts the
+    # Per-dataset survivor counts, over TWO sets that must not be mixed: Figure 3's caption counts the
     # reference screen and the seven replication screens apart (both contrasts survive on the
     # reference; on the replication screens the typed one on none, the untyped one on two, in opposite
     # directions), while the Conclusion and Table 3 count the untyped arm over all eight (three, in
@@ -907,13 +913,13 @@ def _prose_derived(tex):
             if pd["promotion_margin"][k]["survives_family_wise"]]
     ref_both = pd["h2a"][ref]["survives_family_wise"] and pd["promotion_margin"][ref]["survives_family_wise"]
     if not ref_both or "Both contrasts clear correction on the reference screen" not in flat:
-        fails.append(f"derived Figure 4: on the reference screen h2a survives "
+        fails.append(f"derived Figure 3: on the reference screen h2a survives "
                      f"{pd['h2a'][ref]['survives_family_wise']}, untyped "
                      f"{pd['promotion_margin'][ref]['survives_family_wise']}; the caption says both")
     if typed_surv or "the typed contrast clears it on none" not in flat:
-        fails.append(f"derived Figure 4: typed survivors on replication screens {typed_surv}")
+        fails.append(f"derived Figure 3: typed survivors on replication screens {typed_surv}")
     if not (len(unt7) == 2 and min(unt7) < 0 < max(unt7)) or "the untyped one on two, in opposite directions" not in flat:
-        fails.append(f"derived Figure 4: untyped survivors on the replication screens {unt7}, "
+        fails.append(f"derived Figure 3: untyped survivors on the replication screens {unt7}, "
                      f"expected two in opposite directions")
     if not (len(unt) == 3 and min(unt) < 0 < max(unt)) or "clears correction on three datasets in disagreeing" not in flat:
         fails.append(f"derived Conclusion: untyped survivors over all eight {unt}, expected three in both directions")
@@ -1006,7 +1012,7 @@ def _prose_derived(tex):
     n7h1 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
     sg = 1.0 if n7h1["better"] == "condition_gated" else -1.0
     lo7, hi7 = sorted((sg * n7h1["ci_low"], sg * n7h1["ci_high"]))
-    want = f"leaving the gated arm at ${sg * n7h1['mean']:+.4f}$ against no graph ($95\\%$ CI $[{lo7:+.4f},{hi7:+.4f}]$)"
+    want = f"leaving the gated model at ${sg * n7h1['mean']:+.4f}$ against no graph ($95\\%$ CI $[{lo7:+.4f},{hi7:+.4f}]$)"
     if want not in flat:
         fails.append(f"derived n=7 h1: the paper does not say '{want}'")
 
@@ -1093,12 +1099,16 @@ def _prose_headline(tex):
         # every row; the three fold estimates are plotted in Figure~\ref{fig:floor}a from the same roots
         # tab:folds checks. Only what the prose still states is anchored here.
         ("Pearson h1 p",       "$p={v}$ for the gated graph",      f"{cg_eo_p['p_value']:.2f}" if cg_eo_p else "?"),
-        ("prog-cos h1",        "agreeing (${v}$, $p=",             f4(cg_eo_c["mean"]) if cg_eo_c else "?"),
+        ("prog-cos h1",        "agrees (${v}$, $p=",             f4(cg_eo_c["mean"]) if cg_eo_c else "?"),
         ("harder h2a CI low",  "$95\\%$ CI $[{v},",                f4(HD["h2a"]["ci_low"])),
         ("harder h2a CI high", ",{v}]$, $p=",                      f4(HD["h2a"]["ci_high"])),
         ("harder h2a p",       "$p={v}$, clearing neither",        f"{HD['h2a']['p_value']:.2f}"),
         ("intermediate h2a",   "h2a is ${v}$, within",             f4(INT["h2a"]["mean"])),
         ("intermediate h2a p", "($p={v}$) because",                f"{INT['h2a']['p_value']:.2f}"),
+        # AUTO 2026-10-27: Section 4.2 now quotes the intermediate split's h1 beside the frozen one.
+        ("intermediate h1, body", "on the first it is ${v}$, positive in all five seeds",
+         f4((lambda c: c["mean"] if c["better"] == "condition_gated" else -c["mean"])(INT["h1_vs_no_graph"]))),
+        ("intermediate h1 p, body", "with uncorrected $p{=}{v}$", f"{INT['h1_vs_no_graph']['p_value']:.3f}"),
         # --- sec:repl -------------------------------------------------------------------------
         ("typed pooled FE CI", "fixed-effect $95\\%$ CI $[{v},",   f4(P7full["fixed_ci"][0])),
         ("typed pooled I^2",   "$I^2{=}{v}\\%$, $Q$",              f"{P7full['I2']*100:.1f}"),
@@ -1106,10 +1116,10 @@ def _prose_headline(tex):
         ("RPE1 typed arm",     "the other way (${v}$)",            f4(pdh2a["ReplogleWeissman2022_rpe1"]["mean"])),
         ("pooled 8 p",         "$p{=}{v}$) at $I^2",               f"{p8['random_p']:.2f}"),
         # --- sec:causes: per-arm means at n=7 --------------------------------------------------
-        ("n7 mean untyped",    "untyped ${v}$,",                   f"{N7pc['untyped_gnn']['mean']:.4f}"),
-        ("n7 mean expr",       "expression-only ${v}$,",           f"{N7pc['expression_only']['mean']:.4f}"),
-        ("n7 mean gated",      "condition-gated ${v}$,",           f"{N7pc['condition_gated']['mean']:.4f}"),
-        ("n7 mean typed",      "typed-static ${v}$",               f"{N7pc['typed_static']['mean']:.4f}"),
+        ("n7 mean untyped",    "untyped ${v}$, no graph",                   f"{N7pc['untyped_gnn']['mean']:.4f}"),
+        ("n7 mean expr",       "no graph ${v}$, gated",           f"{N7pc['expression_only']['mean']:.4f}"),
+        ("n7 mean gated",      "gated ${v}$, typed",           f"{N7pc['condition_gated']['mean']:.4f}"),
+        ("n7 mean typed",      ", typed ${v}$. At",               f"{N7pc['typed_static']['mean']:.4f}"),
     ]
     A1 = load("data/results/screening_a1/a1_mechanism.json")
     AB = load("data/results/a2_power/arch_search_bound.json")
@@ -1119,15 +1129,15 @@ def _prose_headline(tex):
 
     claims += [
         # --- app:mechanism ---------------------------------------------------------------------
-        ("A1 D1 (parameter cut)", "primary endpoint by ${v}$",     f4(a1f["D1"]["mean"])),
+        ("A1 D1 (parameter cut)", "moves \\textsc{systema} by ${v}$",     f4(a1f["D1"]["mean"])),  # AUTO 2026-10-27: plain wording
         ("A1 D2 (permuted)",      "moves it by ${v}$",             f4(a1f["D2"]["mean"])),
         ("A1 shared vs untyped",  "{gcn} (${v}$ and",              f4(a1c["shared_vs_untyped"]["mean"])),
         ("A1 permuted vs untyped","and ${v}$) and below",          f4(a1c["permuted_vs_untyped"]["mean"])),
         ("A1 shared vs nograph",  "baseline (${v}$ and",           f4(a1c["shared_vs_nograph"]["mean"])),
         ("A1 permuted vs nograph","and ${v}$), so the deficit",    f4(a1c["permuted_vs_nograph"]["mean"])),
         ("arch search spread",    "spans ${v}$ across all",        f"{AB['observed_spread']:.4f}"),
-        ("arch search cells",     "across all ${v}$ of its cells", str(AB["n_cells"])),
-        ("B1a gap",               "frozen fold is ${v}$",            f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
+        ("arch search cells",     "across all ${v}$ of its runs", str(AB["n_cells"])),
+        ("B1a gap",               "frozen split is ${v}$",            f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
         ("B1a D3 uncorrected p",  "the uncorrected $p={v}$",       f"{B1['contrasts']['D3']['p_value']:.4f}"),
         # --- app:metrics -----------------------------------------------------------------------
         ("B2 top-20 deficit",     "it is large (${v}$)",           f4(DEC["cells"]["1-20/promotion_margin"]["mean"])),
@@ -1153,8 +1163,8 @@ def _prose_headline(tex):
         ("control increment",      "zero point is ${v}$ ($[",          f4(inc["permuted_d400"]["mean"])),
         ("control incr CI low",    "$[{v},",                           f4(inc["permuted_d400"]["ci_low"])),
         ("control incr CI high",   ",{v}]$, $p=0.02$)",                f4(inc["permuted_d400"]["ci_high"])),
-        ("d020 gap",               "rung produced a gap of ${v}$",     f4(FL["contrasts"]["d020"]["mean"])),
-        ("d100 delta",             "rung's ${v}$ sits",                f4(FL["contrasts"]["d100"]["mean"])),
+        ("d020 gap",               "step produced a gap of ${v}$",     f4(FL["contrasts"]["d020"]["mean"])),
+        ("d100 delta",             "step's ${v}$ sits",                f4(FL["contrasts"]["d100"]["mean"])),
         ("B3 MDE control sd",      "four seeds of ${v}$ on this",      f"{B3['mde']['control_sd_uncorrected']:.4f}"),
         ("B3 MDE rungs median",    "spread, ${v}$ on the injected",    f"{B3['mde']['real_sd_uncorrected']:.4f}"),
         ("B3 MDE corrected",       "and ${v}$ once the enlarged",      f"{B3['mde']['control_sd_bonferroni']:.4f}"),
@@ -1191,16 +1201,16 @@ def _prose_headline(tex):
         # --- the architecture search bound -------------------------------------------------------
         ("arch best cell",    "the best is ${v}$ against", f4(AB["best_delta"])),
         ("arch worst cell",   "the worst is ${v}$,",       f4(AB["worst_delta"])),
-        ("arch seed sd",      "sd}={v}$) would be",        f"{AB['seed_sd_frozen']:.4f}"),
+        ("arch seed sd",      "sd}={v}$ on the frozen split), their scores",        f"{AB['seed_sd_frozen']:.4f}"),  # AUTO 2026-10-27
         ("arch expected span","expected to span ${v}$",    f"{AB['expected_spread_from_seed_noise_alone']:.4f}"),
         ("arch seeds needed", "would need ${v}$ paired seeds", str(AB["seeds_that_would_be_needed_for_the_best_cell"])),
         # --- the three fold re-draws -------------------------------------------------------------
         ("redraw 2 h1",       "$p=0.025$), ${v}$ ($[",     f4(R2["h1_vs_no_graph"]["mean"])),
         ("redraw 3 h1",       "and ${v}$ ($[-0.0024",      f4(R3["h1_vs_no_graph"]["mean"])),
         # --- the unrepaired headline, from the pre-repair root -----------------------------------
-        ("unrepaired h1",     "moved the headline from ${v}$ to", f4(SCR["h1_vs_no_graph"]["mean"])),
+        ("unrepaired h1",     "h1 barely moved, from ${v}$ to", f4(SCR["h1_vs_no_graph"]["mean"])),  # AUTO 2026-10-27
         # --- the genome-wide tightest point -------------------------------------------------------
-        # "tightest" is the TYPED contrast, not the untyped one; the body now points at Figure 4a and
+        # "tightest" is the TYPED contrast, not the untyped one; the body now points at Figure 3a and
         # App.~D states the value.
         ("gwps point",        "the tightest of the seven, is ${v}$", f4(pdh2a["ReplogleWeissman2022_K562_gwps"]["mean"])),
         # --- the full eight-dataset ordering ------------------------------------------------------
@@ -1210,6 +1220,9 @@ def _prose_headline(tex):
         ("K562-essential",    "K562-essential ${v}$,", f4(pd8["ReplogleWeissman2022_K562_essential"]["mean"])),
         # --- the K=128 subset (rail-4 finding) ----------------------------------------------------
         ("K128 subset RE",    "datasets it is ${v}$ ($[", f4(load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]["random_effect"])),
+        # AUTO 2026-10-27: the same pool, as Section 4.3 quotes it.
+        ("K128 subset RE, body", "comparison is ${v}$ ($p{=}", f4(load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]["random_effect"])),
+        ("K128 subset p, body", "($p{=}{v}$), but that pooling is post hoc", f"{load('data/results/replication/pooled_k128_subset.json')['pooled']['promotion_margin']['random_p']:.4f}"),
         # --- B1a gap and D3 -----------------------------------------------------------------------
         ("B1a gap in share",  "of the ${v}$ gap",     f4(B1["gap_untyped_minus_typed"]["mean"])),
     ]
@@ -1227,6 +1240,8 @@ def _prose_headline(tex):
         # --- the rationale audit's GInX comparison ---------------------------------------------
         ("GInX rationale",     "is GInX \\citep{amara2023ginx}, ${v}$ against", f"{gx['rationale']:.3f}"),
         ("GInX random",        "random's ${v}$ at",      f"{gx['random']:.3f}"),
+        # AUTO 2026-10-27: App.~G now says how many predictions the audit covers.
+        ("audit cases",        "Over ${v}$ audited predictions", str(RA["aggregate"]["n_cases"])),
     ]
     I1c = load("data/results/screening_c080c10_h1/robustness_5seed.json")["contrasts"]
     R2c, R3c = R2, R3
@@ -1247,7 +1262,7 @@ def _prose_headline(tex):
         ("redraw Bonf 1", "family of four (${v}$,", f"{min(1.0, 4 * I1c['h1_vs_no_graph']['p_value']):.3f}"),
         ("redraw Bonf 2", ", ${v}$, $1.000$)",      f"{min(1.0, 4 * R2c['h1_vs_no_graph']['p_value']):.3f}"),
         # --- the gated arm against no graph at n=7 -----------------------------------------------
-        ("gated vs no graph n=7", "leaving the gated arm at ${v}$", f4(N7["h1_vs_no_graph"]["mean"])),
+        ("gated vs no graph n=7", "leaving the gated model at ${v}$", f4(N7["h1_vs_no_graph"]["mean"])),
         # --- B1a's recovered effect, in its own sentence -----------------------------------------
         ("B1a D3 in prose", "it recovers ${v}$ \\textsc{systema}", f4(B1["contrasts"]["D3"]["mean"])),
     ]
@@ -1270,7 +1285,7 @@ def _prose_headline(tex):
         # --- alpha, from the analysis artifact rather than assumed -------------------------------
         ("nominal alpha",          "not the nominal ${v}$",   f"{PSIM['alpha']:.2f}"),
         # --- between-dataset spread ---------------------------------------------------------------
-        ("between-dataset tau",    "contrast is ${v}$, five times", f"{PSIM['measured']['promotion_margin']['tau']:.4f}"),
+        ("between-dataset tau",    "comparison is ${v}$, five times", f"{PSIM['measured']['promotion_margin']['tau']:.4f}"),
         # --- the decile dilution and the eight-dataset ordering -----------------------------------
         ("decile dilution",        "diluted to a positive ${v}$", f4(DECI["d1/promotion_margin"]["mean"])),
         ("gwps in the ordering",   "genome-wide ${v}$,",          f4(pd8["ReplogleWeissman2022_K562_gwps"]["mean"])),
@@ -1303,17 +1318,23 @@ def _prose_headline(tex):
         # written as ONE math block with commas inside, not one $...$ per value
         ("RPE1 per-seed",    "per-seed {v};",             "$" + ",".join(f"{d:+.3f}" for d in RPE["deltas"]) + "$"),
         ("RPE1 p",           "$p{=}{v}$, Bonferroni",     f"{RPE['p_value']:.3f}"),
-        ("RPE1 Bonf/Holm",   "Holm both ${v}$ at family", f"{RPE['p_bonferroni']:.3f}"),
-        ("RPE1 family size", "at family size {v})",       "two" if RPE["family_size"] == 2 else str(RPE["family_size"])),
+        ("RPE1 Bonf/Holm",   "Holm both ${v}$ in that dataset's family", f"{RPE['p_bonferroni']:.3f}"),  # AUTO 2026-10-27
+        ("RPE1 family size", "dataset's family of {v})",       "two" if RPE["family_size"] == 2 else str(RPE["family_size"])),
     ]
     QC = load("data/results/replication/frangieh_on_target_qc.json")
     claims += [
-        ("Frangieh QC own mean",   "FC mean ${v}$,",        f"{QC['own_mean']:.3f}"),
-        ("Frangieh QC own %neg",   "${v}\\%$ negative,",    f"{QC['own_frac_negative']*100:.0f}"),
+        ("Frangieh QC own mean",   "fold change mean ${v}$,",        f"{QC['own_mean']:.3f}"),
+        ("Frangieh QC own %neg",   "negative for ${v}\\%$ of targeted genes",    f"{QC['own_frac_negative']*100:.0f}"),  # AUTO 2026-10-27
         ("Frangieh QC random mean","against ${v}$ and",     f"{QC['random_mean']:.3f}"),
         ("Frangieh QC random %neg","and ${v}\\%$ for random", f"{QC['random_frac_negative']*100:.0f}"),
     ]
     claims = [c for c in claims if c[2] is not None]
+    # "positive in all five seeds" (Section 4.2) is a claim about every seed, not the mean.
+    _c = INT["h1_vs_no_graph"]
+    _sg = 1.0 if _c["better"] == "condition_gated" else -1.0
+    _i1 = [_sg * d for d in _c["deltas"]]
+    if not (len(_i1) == 5 and min(_i1) > 0):
+        fails.append(f"prose intermediate h1: the paper says positive in all five seeds; per-seed {_i1}")
 
     for what, tmpl, val in claims:
         ctx = tmpl.replace("{v}", val)
@@ -1364,8 +1385,9 @@ def _prose_camera(tex):
         ("val paralog, App G", f"finds ${vp['val_frac_ge_threshold'] * 100:.1f}\\%$ of validation targets "
                                f"(${vp['val_n_ge_threshold']}$ of ${vp['n_val_targets']:,}$)".replace(",", "{,}")),
         ("val paralog max", f"(maximum ${vp['val_max_cosine']:.3f}$)"),
-        ("typed vs others, body", f"scored by epoch ${typed_best}$ and the others at {span(others)}"),
-        ("typed vs others, App B", f"by epoch ${typed_best}$ and the untyped and no-graph arms not until "
+        # AUTO 2026-10-27: the body's epoch sentence moved to App.~B and G (anchored just below) when the
+        # plain-language rewrite needed the space; the body now points there in words.
+        ("typed vs others, App B", f"by epoch ${typed_best}$ and the untyped and no-graph models not until "
                                    f"epochs {span(others)}"),
         ("eo and ug best epochs", f"best checkpoints at epochs {span(eo)} and {span(ug)}"),
         ("ts stop and best", f"stop after {span(ts['epochs_run'])} epochs with the checkpoint from epoch "
@@ -1373,7 +1395,10 @@ def _prose_camera(tex):
         ("cg stop and best", f"after {span(cg['epochs_run'])} with checkpoints from epochs "
                              f"{span(cg['best_epoch'])}"),
         ("functional edge median", f"median score ${F['functional_edges']['median_score']:.3f}$"),
-        ("HKSJ p, body", f"($p{{=}}{k128['hksj_p']:.2f}$ and ${all8['hksj_p']:.2f}$; Appendix"),
+        # AUTO 2026-10-27: the body's pooled sentence ("HKSJ p, body") moved to App.~D in the
+        # plain-language rewrite; the two anchors below check both p-values where they now live.
+        # AUTO 2026-10-27: Section 4.3 again quotes the K=128 pool with its Hartung-Knapp p.
+        ("HKSJ p K=128, body", f"adjustment for few datasets ($p{{=}}{k128['hksj_p']:.2f}$; Appendix"),
         ("HKSJ K=128", f"five-dataset interval to {ci(k128)} ($p{{=}}{k128['hksj_p']:.2f}$)"),
         ("HKSJ all eight", f"eight-dataset one to {ci(all8)} ($p{{=}}{all8['hksj_p']:.2f}$)"),
         ("HKSJ typed seven", f"bound of \\S\\ref{{sec:repl}} to {ci(typ7)}"),
@@ -1410,11 +1435,13 @@ def _family(tex):
     pear = {c["contrast"]: c for c in sec["metrics"]["pearson"]["contrasts"]}
     seen = 0
     for cs in cells_of(tex, "tab:family"):
-        m = re.match(r"\\?t?e?x?t?b?f?\{?(ts|cg|ug|eo)\}?\s*\$?-?\$?\s*\$?-?\$?\s*(ts|cg|ug|eo)",
-                     cs[0].replace("\\textbf{", "").replace("$-$", "-"))
+        # AUTO 2026-10-27: rows are named in words ("Typed $-$ no graph (h2a)"), not by code.
+        # "untyped" must be tried before "typed", which it contains.
+        m = re.match(r"(untyped|typed|gated|no graph)\s*-\s*(untyped|typed|gated|no graph)\b",
+                     cs[0].replace("\\textbf{", "").replace("$-$", "-").strip(), re.I)
         if not m or len(cs) < 6:
             continue
-        a, b = _FAMILY_KEY[m.group(1)], _FAMILY_KEY[m.group(2)]
+        a, b = _FAMILY_WORD[m.group(1).lower()], _FAMILY_WORD[m.group(2).lower()]
         key = _CONTRAST_OF.get((a, b))
         if key is None:
             continue
@@ -1422,7 +1449,7 @@ def _family(tex):
         c = d["contrasts"][key]
         # The artifact orients every contrast better-minus-worse; the table writes A minus B.
         sign = 1.0 if (c["better"], c["worse"]) == (a, b) else -1.0
-        cmp_cell(fails, f"tab:family {m.group(1)}-{m.group(2)} delta", cs[1], sign * c["mean"])
+        cmp_cell(fails, f"tab:family {key} delta", cs[1], sign * c["mean"])
         lo, hi = (sign * c["ci_low"], sign * c["ci_high"])
         if sign < 0:
             lo, hi = hi, lo
@@ -1453,10 +1480,16 @@ def _family(tex):
                      star=bool(pc.get("survives_both")))
 
     # The per-arm mean footer is a \multicolumn line, so it is not a row; parse it directly.
-    foot = re.search(r"Per-arm.*?systema.*?\$n\{=\}5\$\):(.*?)\\\\", tex, re.S)
+    # AUTO 2026-10-27: the footer names the models in words. It must name all four: a footer the regex
+    # no longer finds used to be skipped silently, which reads exactly like a pass.
+    foot = re.search(r"Per-model.*?systema.*?\$n\{=\}5\$\):(.*?)\\\\", tex, re.S)
+    pairs = re.findall(r"(untyped|typed|gated|no graph)\s*\$(\d\.\d+)\$", foot.group(1)) if foot else []
+    if sorted(w for w, _ in pairs) != sorted(_FAMILY_WORD):
+        fails.append(f"tab:family per-model footer: expected one mean for each of the four models, "
+                     f"found {pairs}")
     if foot:
-        for short, val in re.findall(r"(ts|cg|ug|eo)\s*\$(\d\.\d+)\$", foot.group(1)):
-            arm = _FAMILY_KEY[short]
+        for word, val in pairs:
+            arm = _FAMILY_WORD[word]
             want = d["per_config"][arm]["mean"]
             nd = len(val.split(".")[1])
             if f"{float(val):.{nd}f}" != f"{want:.{nd}f}":
@@ -1474,7 +1507,7 @@ def _family(tex):
 @table("tab:causes")
 def _causes(tex):
     """A SUMMARY table: its cells are verdicts in prose. Since 2026-10-01 causes C and D point at
-    Figure 5 instead of repeating its numbers, so what is checked here is each QUALITATIVE claim
+    Figure 4 instead of repeating its numbers, so what is checked here is each QUALITATIVE claim
     those cells make, re-derived from the artifacts the figure is drawn from: a cell that says
     "harmful" or "no detectable effect" fails if the artifact stops saying so.
 
@@ -1502,10 +1535,10 @@ def _causes(tex):
          f"n=7 h2b {h2b:+.4f} against h2a {h2a:+.4f}, survives {n7['h2b']['survives_family_wise']}"),
         ("clears correction on three datasets, in disagreeing directions",
          len(surviving) == 3 and min(surviving) < 0 < max(surviving), f"untyped survivors {surviving}"),
-        ("graph-derived features costs \\textsc{systema} under correction",
+        ("graph-derived features lowers \\textsc{systema}, a drop that survives correction",  # AUTO 2026-10-27
          feat["nograph"]["mean"] < 0 and feat["nograph"]["survives"] == "True",
          f"nograph {feat['nograph']['mean']:+.4f}, survives {feat['nograph']['survives']}"),
-        ("nearly all of it the degree scalars", 0.9 <= ratio < 1.0, f"degrees-only / all = {ratio:.3f}"),
+        ("nearly all of it the degree counts", 0.9 <= ratio < 1.0, f"degrees-only / all = {ratio:.3f}"),
         ("the gated graph (h1) has no detectable effect",
          not h1["survives_family_wise"] and h1["ci_low"] < 0 < h1["ci_high"],
          f"h1 {signed(h1, 'condition_gated'):+.4f} [{h1['ci_low']:+.4f},{h1['ci_high']:+.4f}]"),
@@ -1518,7 +1551,7 @@ def _causes(tex):
         elif not ok:
             fails.append(f"tab:causes: '{phrase}' is not what the artifact says ({found})")
     return fails, (f"partial: {len(claims)} qualitative claims in causes C and D re-derived from the "
-                   f"artifacts behind Figure 5; causes A, B and E have no JSON of their own (see docstring)")
+                   f"artifacts behind Figure 4; causes A, B and E have no JSON of their own (see docstring)")
 
 
 @table("tab:checklist")

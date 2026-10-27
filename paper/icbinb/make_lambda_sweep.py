@@ -1,4 +1,4 @@
-"""Figure 2 (paper/figures/lambda_sweep.pdf) from its artifacts, so it can be regenerated and checked.
+"""Figure 1 (paper/figures/lambda_sweep.pdf) from its artifacts, so it can be regenerated and checked.
 
 The submitted figure was drawn ad hoc with no generator, and its "campaign band 0.57-0.77" matched no
 definition of the live gates: the five scored lambda_graph=0 checkpoints span 0.27 to 0.78. The band
