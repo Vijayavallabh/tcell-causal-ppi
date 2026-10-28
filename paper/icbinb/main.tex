@@ -26,173 +26,164 @@
 \maketitle
 
 \begin{abstract}
-We asked whether a protein-interaction graph, a map of which proteins interact and on what kind of
-evidence, helps a model predict how primary human T cells respond when one gene is knocked down. Our
-four models differ only in how they read the graph and are scored on held-out genes with \textsc{systema},
-a correlation between predicted and observed responses ($0.072$ to $0.090$ on our screen). We report
-two failures. First, a textbook penalty on the graph's edge gates, summed over every edge of each sampled
-neighborhood without normalization, was about $103\times$ the main prediction-error term at its default weight and
-drove every gate to $\sim$$10^{-7}$ within the first pass over the data, in all five runs; training still
-reported a plausible score, though no messages passed along the edges. Second, with working
-gates the gated graph model is indistinguishable from the no-graph baseline
-($\Delta\,\textsc{systema}=-0.0009$, $95\%$ CI $[-0.0072,+0.0054]$, $n{=}5$; not significant after
-correction for multiple tests), the same model with every edge always on shows no benefit on seven more
-Perturb-seq screens, and the only comparison in our pre-registered five-run family to pass correction (that always-on
-model doing worse than no graph) failed to replicate on a harder split. Of five candidate causes, the two that carry
-our argument concern our encoder, the part of the model that reads the graph, and our baseline, not
-biology. The baseline was never graph-free: zeroing its graph-derived input features lowers
-\textsc{systema} by $0.0036$, surviving correction, while the gated message passing over eight million
-typed edges that we set out to measure has no detectable effect (the two do not differ significantly). A
-simpler graph model without edge types or gates, run as a diagnostic, beats the baseline on our screen ($+0.0043$, $n{=}7$,
-surviving Bonferroni and Holm) and on Replogle RPE1 ($+0.0675$) but \emph{loses} on Norman ($-0.0790$),
-so three of eight datasets pass correction, in opposite directions. Our negative result is therefore
-evidence about the encoder we built, not against the graph: a negative graph-versus-no-graph comparison
-can be an artifact of the encoder. It is also limited by detection: with a known
-graph-shaped signal added to the data, the gated model's difference from the baseline passes correction
-at no size up to $0.40$ response standard deviations and the simpler model's from $0.02$, though neither
-model's gain over its own result without the signal passes. We close with the checklist we wish we had
-used.
+We asked whether a protein-interaction graph, a map of which proteins interact and on what evidence,
+helps a computer model predict how human T cells respond when one gene is turned down. We compared four
+models that differ only in how they use the graph. Two things went wrong. First, a standard training
+penalty (a regularizer) silently shut every link in the graph. Within the first pass over the data it
+pushed the links' gates, learned dials from $0$ (off) to $1$ (on), to about $10^{-7}$ on average, yet
+training looked normal. Second, after we removed the penalty, our gated model still
+could not be told apart from the model that does not read the graph (the difference in our score,
+\textsc{systema}, was $-0.0009$, with a $95\%$ confidence interval of $[-0.0072,+0.0054]$; five runs per
+model). A version with every link always on showed no benefit on seven more Perturb-seq datasets. Two
+findings point to why. A simpler graph model beat the no-graph model on the T-cell data (it passed
+correction for multiple tests only after we added two runs per model to the first five, so this result is
+somewhat optimistic) and on one other dataset, but did worse on a third. So our negative result says more about how our model's encoder reads the graph than
+about the graph itself. And the no-graph model was not free of the graph: removing the graph-derived
+features among its inputs lowered its score by $0.0036$, a drop that survives correction, while the
+gated graph had no detectable effect (the two effects do not differ significantly). When we planted a
+known graph-shaped signal in the data, the gated model's difference from no graph failed correction at
+every size we tried, so what this setup can detect also limits our result. We end with a checklist for
+experiments that switch parts of a model on or off.
 \end{abstract}
 
 \section{Introduction}
 
-Perturb-seq experiments perturb genes, usually one per cell and with CRISPR (knocking a gene down,
-knocking it out or switching it on), and measure how every other gene's expression changes; genome-scale screens now do
-this for nearly every expressed gene in primary human cells
-\citep{dixit2016perturbseq,replogle2022genomescale,zhu2025gwperturbseq}. We ask how well a model predicts
-that response for a target gene it never saw in training. Protein-interaction graphs, networks of
-proteins joined by known interactions, hold decades of curated evidence about which proteins work
-together: a natural \emph{prior}, knowledge given to a model before training. Does the graph help
-predict the response to a held-out gene? Published answers disagree (\S\ref{sec:related}).
+Perturb-seq experiments use CRISPR to turn down, knock out or switch on genes, usually one per cell, and
+then measure how the expression of every other gene changes. Recent screens do this for nearly every
+expressed gene in primary human cells \citep{dixit2016perturbseq,replogle2022genomescale,zhu2025gwperturbseq}.
+We ask how well a model can predict the response to a gene it never saw during training.
 
-We built a model to give the graph its best chance: an \emph{encoder}, the part of the model that reads
-the graph, that keeps each interaction's type of evidence and learns for every edge a gate, a weight
-between $0$ and $1$ that sets how much the edge counts (Appendix~\ref{app:arch}, Figure~\ref{fig:arch}). We tested it as a nested
-series of models, with pre-registered comparisons, paired runs and correction for multiple tests, and spent
-most of the project discovering that our measurement was broken. We report a standard
-penalty that silently switched off the mechanism under test, with its signature and a one-line fix
-(\S\ref{sec:confound}); a repaired comparison in which the graph still did not help and the only
-pre-registered comparison to pass correction at five seeds failed to replicate (\S\ref{sec:null}); evidence from a
-simpler model, run all along, that points to our encoder as the cause (\S\ref{sec:repl},
-\S\ref{sec:causes}); and a checklist for experiments that gate or remove model structure
-(\S\ref{sec:checklist}). Appendix~\ref{app:glossary} defines the technical terms we use.
+Protein-interaction graphs record decades of evidence about which proteins work together. In such a
+graph each protein is a point, and each known interaction is a link between two points, called an
+\emph{edge}. A graph like this is a natural \emph{prior}: knowledge given to a model before training.
+Does it help predict the response to an unseen gene? Published answers disagree (\S\ref{sec:related}).
+
+We built a model to give the graph its best chance and compared it with the same model with its graph
+reader switched off. Most of the project went into finding out that our measurement was broken. We
+report four findings. First, a standard training penalty silently shut every edge, and the fix is one
+line (\S\ref{sec:confound}). Second, with the edges open again, our gated model still did not beat the
+no-graph model (\S\ref{sec:null}). Third, a simpler graph model points to our encoder as a likely cause
+(\S\ref{sec:repl}, \S\ref{sec:causes}). Fourth, our ``no graph'' model still received a summary of the
+graph through its input features (\S\ref{sec:causes}). We end with a checklist for similar experiments
+(\S\ref{sec:checklist}). Appendix~\ref{app:glossary} explains the technical terms.
 
 \section{Related work}
 \label{sec:related}
 
-Benchmarks report that deep-learning and foundation models (large models pretrained on broad data) do
-not beat simple baselines such as a linear model or the average training response
-\citep{ahlmanneltze2025linear,wongmoccia2025crispr}, and that tabular foundation models match
-specialized architectures \citep{hollmann2025tabpfn,royer2026tfm}; other work reports that graph and
-foundation models win under its own splits and scores \citep{wenkel2026txpert,cole2026foundation}. The
-disagreement tracks how test sets are built and scored more than model design. \textsc{gears}
-\citep{roohani2024gears} and TxPert \citep{wenkel2026txpert} build gene-gene knowledge graphs into the
-predictor, the design choice we test. scPerturb \citep{peidli2024scperturb} collects public
-screens in one format, and Appendix~\ref{app:metrics} re-scores our results under five other scores. Our
-condition gate is closest to differentiable edge masking \citep{schlichtkrull2021graphmask}, which also
-learns a gate for each edge under a sparsity penalty, so the failure of \S\ref{sec:confound} is a hazard
-of that construction in general, not of our model alone. Appendix~\ref{app:arch} places our encoders
-among standard graph networks.
+Benchmarks report that deep-learning and foundation models (large models pretrained on broad data) do not
+beat simple baselines, such as a linear model or the average training response, at predicting these
+responses \citep{ahlmanneltze2025linear,wongmoccia2025crispr}. Other studies report that graph and
+foundation models do win when judged by their own ways of dividing genes into training and test sets, and
+by their own scores \citep{wenkel2026txpert,cole2026foundation}. \textsc{gears} \citep{roohani2024gears}
+and TxPert \citep{wenkel2026txpert} build gene-gene knowledge graphs into the predictor, the design we
+test. Our model computes a gate for each edge from its evidence (\S\ref{sec:approach}), much like
+differentiable edge masking
+\citep{schlichtkrull2021graphmask}, which also learns gates on edges under a penalty that pushes them
+toward zero.
 
 \section{Methods}
 
 \subsection{Problem}
 \label{sec:setup}
 
-\paragraph{Task and data.} The data are the genome-scale Perturb-seq screen of primary human
-CD4$^{+}$ T cells of \citet{zhu2025gwperturbseq}, which knocks down one target gene per cell with CRISPR
-interference (CRISPRi), in cells from four donors cultured resting or 8 or 48 hours after stimulation
-(Rest, Stim8hr, Stim48hr). For each target and condition, the response is the change in every gene's
-expression against unperturbed control cells, a differential-expression (DE) profile. One example, or
-\emph{row}, is one (target, condition) pair: the model sees fixed features of the target's protein and
-the condition, and predicts the response as changes in $K{=}128$ \emph{programs}, groups of genes that
-change together, found by sparse principal component analysis \citep{zou2006sparsepca} on each split's
-training targets only. The data hold $33{,}983$ such rows over $10{,}282$ genes, covering $11{,}526$
-distinct targets.
+\paragraph{Data.} We use the genome-scale Perturb-seq screen of primary human CD4$^{+}$ T cells of
+\citet{zhu2025gwperturbseq}. It turns down one target gene per cell with CRISPR interference (CRISPRi), in
+cells from four donors that were resting or stimulated for 8 or 48 hours. For each target and culture
+condition, the \emph{response} is how much each gene's expression changed relative to unperturbed
+control cells, as a \emph{z-score} published by the screen's authors and capped at ten either way. One example, or \emph{row}, is one (target,
+condition) pair. The data hold $33{,}983$ rows covering $11{,}526$ targets, and each response is measured
+over $10{,}282$ genes. The models predict the response as changes in $K{=}128$ \emph{programs}, groups
+of genes that change together, found by sparse principal component analysis \citep{zou2006sparsepca} on
+training targets only.
 
-\paragraph{Score and split.} The main score, \textsc{systema} \citep{vinas2025systema}, is computed on
-the programs: it subtracts the average training response from each held-out prediction and observation
-and correlates what is left, so a model earns no credit for predicting the generic response many
-perturbations share; $0$ means no target-specific signal and $1$ a perfect correlation. A \emph{split}
-divides the targets into training targets, which the model learns from, and validation targets, which
-are held out and scored; a third set is held back and never scored
-(Appendix~\ref{app:folds}). Because paralogs, genes related by duplication that often have similar
-sequences, can respond alike, we group targets whose protein sequences look alike to the protein
-language model ESM-2 \citep{lin2023esm2} (centered cosine similarity of their embeddings $\geq 0.85$,
-groups capped at $5\%$ of targets) and keep each group whole, in training or in validation. The blocking
-is imperfect, which leaves $24\%$ of validation targets with a close training paralog, against $60\%$
-for a naive split (Appendix~\ref{app:folds}). Every transform learned from the responses, such as the
-programs, is fit on training targets only.
+\paragraph{Score.} Our main score, \textsc{systema} \citep{vinas2025systema}, compares predicted and
+observed responses one row at a time. For each held-out row we subtract the average training response
+from both, compute the correlation between them across the programs, and then average over rows. Because
+of that subtraction, a model gets no credit for predicting the generic response that many perturbations
+share: predicting the average training response scores $0$, and $1$ is a perfect correlation. On the
+T-cell screen the four models score between $0.0726$ and $0.0902$ (Table~\ref{tab:family}). These low
+scores fit a screen with little target-specific signal (cause A in \S\ref{sec:causes}).
 
-\paragraph{Statistical protocol.} Training involves random choices, such as the starting weights and the
-order of the rows, so the same model trained twice gives slightly different results; a \emph{seed}
-fixes those choices. Every model is trained with the same five seeds on the same
-\emph{frozen} split, the one every main result uses, and two models trained with the same seed are compared
-with each other (\emph{paired}), so run-to-run noise they share cancels; $n$ counts these paired seeds.
-Each run stops once its loss on the validation targets stops improving, and its best state is scored. A difference between two models is reported as its mean over seeds with a $95\%$ confidence
-interval (CI); an interval that crosses zero means the data cannot tell the models apart. Four
-comparisons were \emph{pre-registered} (Table~\ref{tab:arms}) and form one \emph{family}, the set of
-tests corrected together: testing several at once raises the chance of a lucky hit, so each must pass
-\emph{both} the Bonferroni and the Holm correction \citep{holm1979}. A claimed benefit must also be
-positive on average over at least four paired seeds ($n\geq4$). After the five-seed untyped comparison,
-positive in every seed, failed Bonferroni, we ran the untyped and no-graph models at two more seeds,
-then the typed and gated models at the same seeds so that all four share seven (Appendix~\ref{app:repl});
-we say wherever seven are used. The
-results rest on $379$ training runs (Appendix~\ref{app:repro}).
+\paragraph{Split.} We divide the targets into \emph{training} targets, which the models learn from, and
+\emph{validation} targets, which are held out and scored. The remaining targets are set aside, and no
+result in this paper is scored on them. Genes with similar protein sequences can respond alike, so we
+keep such genes on the same side of the split. We use ESM-2 \citep{lin2023esm2}, a model that turns a
+protein's sequence into an \emph{embedding}, a list of numbers that summarizes the protein. Genes whose
+embeddings are similar (centered cosine $\geq 0.85$) form a group, and members of the same protein
+complex join one group where the size limit allows. No group may hold more than $5\%$ of targets, and
+each group goes wholly to training or wholly to validation. This is imperfect: $24\%$ of validation
+targets still have a close relative in training, against $60\%$ for a simple split that ignores
+similarity.
+
+\paragraph{Statistics.} Training involves random choices, such as the model's starting values, so the
+same model trained twice gives slightly different scores. A \emph{seed} fixes these choices. We train
+every model with the same five seeds on the same split and compare two models seed by seed (a
+\emph{paired} comparison), so noise that both runs share cancels; $n$ is the number of paired seeds. Each
+run trains for up to $20$ epochs, stops early if its validation loss has not improved for ten epochs, and
+is scored at its best epoch. For each difference
+between two models we report the mean over seeds, a $95\%$ confidence interval (CI) and a $p$-value from a
+paired $t$-test: how often a difference at least this large would arise by chance if the two models were
+equal.
+Testing several comparisons at once raises the chance of a lucky result, so we adjust the $p$-values. A difference is
+\emph{significant}, or \emph{passes correction}, only if its $p$-value stays below $0.05$ after the
+Bonferroni adjustment; we also report the less strict Holm adjustment \citep{holm1979}. The intervals are
+not adjusted, so one can exclude zero while the difference still fails correction. Our written plan,
+fixed before any graph model was trained, named two of the four comparisons in \S\ref{sec:approach}:
+typed against no graph and gated against typed (they are \emph{pre-registered}). We added the other two,
+and the rule of correcting all four together as one \emph{family}, after seeing early results but before
+training the gated runs that our results use. Where a result uses seven seeds instead of five, we say so.
 
 \subsection{Proposed approach}
 \label{sec:approach}
 
-\paragraph{Graph.} Nodes are proteins and protein complexes, and each target gene enters as its
-protein. They are joined by $\sim$$8$M edges, each with a confidence score and one of three evidence
-types: physical protein-protein interaction (PPI)
-\citep{huttlin2021bioplex,luck2020huri,oughtred2021biogrid}, shared complex membership
-\citep{tsitsiridis2023corum}, and functional association \citep{szklarczyk2023string}, the most numerous
-and least certain type. Functional associations are $85\%$ of the edges (Appendix~\ref{app:causes}), the
-type a skeptic would suspect of adding noise (cause E in \S\ref{sec:causes}).
+\paragraph{Graph.} The graph links proteins and protein complexes by about $8$ million edges. Each edge
+has a confidence score and one of three types of evidence: physical binding (protein-protein interaction,
+PPI) \citep{huttlin2021bioplex,luck2020huri,oughtred2021biogrid}, membership of the same complex
+\citep{tsitsiridis2023corum}, or functional association \citep{szklarczyk2023string}, a link inferred mostly
+from indirect evidence such as shared expression. Functional associations are $85\%$ of the edges and the
+least certain type.
 
-\paragraph{Model.} EG-IPG (Evidence-Gated Intervention-Informed Protein-Program Graph;
-Figure~\ref{fig:arch} in Appendix~\ref{app:arch}) describes each target only by fixed, precomputed features of its protein, never by
-a learned label for the gene itself, so it cannot memorize genes and must generalize to unseen ones. Its
-encoder passes \emph{messages} over a sampled two-step neighborhood of the target: each protein updates
-its \emph{state}, a vector of numbers, from signed signals sent by its graph neighbors, and each edge's
-signal is scaled by a learned gate between $0$ and $1$ that depends on the culture condition and the
-edge's evidence. A learned mixing weight $\gamma$ combines this graph-based prediction with one that
-skips the graph encoder, and $\gamma{=}0$ recovers the no-graph model exactly
+\paragraph{Model.} Our model describes each target only by fixed features of its protein, never by a label
+for the gene itself, so it cannot memorize genes and must generalize to new ones. Its graph
+\emph{encoder}, the part that reads the graph, looks at a neighborhood of up to $512$ proteins around the
+target, chosen by a fixed rule. In three rounds of \emph{message passing}, each protein updates its
+internal state from \emph{messages} that its neighbors send along the edges. Each message is multiplied by
+a learned \emph{gate} between $0$ (off) and $1$ (on). The gate is computed for each evidence type from the
+culture condition and the edge's evidence, such as its source and confidence score. It does not see the
+proteins themselves, so two edges with the same evidence get the same gate in the same condition. A learned weight,
+computed for each row, mixes the graph-based prediction of the programs with one that skips the graph;
+fixing that weight at zero gives the no-graph model's program predictions exactly
 (Appendix~\ref{app:arch}).
 
-\paragraph{The four models.} The four models differ only in how the graph enters
-(Table~\ref{tab:arms}), so each comparison removes part of one architecture. We call them the
-no-graph, typed, gated and untyped models, and the comparisons h1 (gated against no graph), h2a (typed
-against no graph), h2b (gated against typed) and the untyped comparison. h1 is
-the hypothesis the model was built to test and the subject of our main negative result. The approach can
-work only if curated interactions say something about how genes respond together that the target's own
-features do not, and if the gate can switch off the edges that say nothing while keeping the rest;
-\S\ref{sec:confound} shows a penalty silently switching off every edge.
+\paragraph{Four models.} The four models share everything except how they use the graph
+(Table~\ref{tab:arms}). The \emph{no-graph} model skips the graph encoder. The \emph{typed} model reads
+the graph, treats each evidence type separately and keeps every gate fixed at $1$. The \emph{gated} model
+is our full model, with learned gates. The \emph{untyped} model is a standard graph network
+\citep{kipf2017gcn} over all links between two proteins, whatever their evidence. It ignores evidence
+types, has no gates, and scales
+each message down by how many partners its two proteins have, where our encoder adds messages up without
+scaling; it is also simpler in other ways (Appendix~\ref{app:arch}). Our main test is whether the gated
+model beats the no-graph model. The other three comparisons are typed against no graph, gated against
+typed, and untyped against no graph. The approach can only work if the graph carries information about a
+gene's response that its protein's own features do not, and if the gates can tell useful evidence from
+useless evidence.
 
 \begin{table}[t]
 \centering
-\caption{The four models and the four pre-registered comparisons; each comparison removes part of
-one architecture. Every model, the no-graph one included, gets the same fixed target features, among them
-three graph-derived degree counts (cause D in \S\ref{sec:causes}); small capitals: code names.}
+\caption{The four models. All four get the same fixed features for each target. These include three
+counts taken from the graph, so even the no-graph model receives a summary of the graph (cause D in
+\S\ref{sec:causes}).}
 \label{tab:arms}
 \vspace{2pt}
 {\small
-\begin{tabular}{@{}llll@{}}
+\begin{tabular}{@{}lllll@{}}
 \toprule
-Model (code name) & Message passing & Edge types & Edge gate \\
+Model & Reads the graph & Evidence types & Edge gates & Messages added up \\
 \midrule
-No graph (\textsc{expression\_only}) & off & n/a & n/a \\
-Typed (\textsc{typed\_static}) & typed & used & fixed at $1$ \\
-Gated (\textsc{condition\_gated}) & typed & used & learned \\
-Untyped (\textsc{untyped\_gnn}) & GCN & ignored & none \\
-\midrule
-Comparison & Definition & \multicolumn{2}{l}{Asks whether} \\
-\midrule
-h1 & gated $-$ no graph & \multicolumn{2}{l}{the gated model beats no graph} \\
-h2a & typed $-$ no graph & \multicolumn{2}{l}{typed edges, with no gate, beat no graph} \\
-h2b & gated $-$ typed & \multicolumn{2}{l}{the condition gate adds anything} \\
-untyped & untyped $-$ no graph & \multicolumn{2}{l}{\emph{any} graph beats no graph} \\
+No graph & no & n/a & n/a & n/a \\
+Typed & yes & used & all fixed at $1$ & plain sum \\
+Gated (our model) & yes & used & learned & plain sum \\
+Untyped & yes & ignored & none & scaled by partner counts \\
 \bottomrule
 \end{tabular}}
 \end{table}
@@ -200,301 +191,271 @@ untyped & untyped $-$ no graph & \multicolumn{2}{l}{\emph{any} graph beats no gr
 \section{Results: observed outcome}
 \label{sec:outcome}
 
-\subsection{A default penalty switched the graph off}
+\subsection{A default penalty shut every edge}
 \label{sec:confound}
 
-Our first five-seed comparison found the graph useless: the graph model could not be told apart from the
-no-graph model, and we recorded a clean negative result. A later check of the gates showed why: they sat
-near $10^{-7}$, in effect zero, so the graph had been switched off before it learned anything.
+Our first five-seed comparison found the gated model no better than the no-graph model, and we recorded a
+clean negative result. A later look at the gates showed the problem: their mean was near $10^{-7}$, so
+almost nothing passed along the edges.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{lambda_sweep.pdf}
-\caption{The default penalty weight silently disables the graph. \emph{One} seed per run, twenty-two
-epochs (passes over the data) on the first $512$ training and $128$ validation rows of the frozen split
-(Appendix~\ref{app:archsearch} explains why one seed suffices); a gate below $10^{-3}$ counts as dead.
-(a) Final mean gate (left axis) and fraction of dead gates (right axis) against the penalty weight
-$\lambda_{\mathrm{graph}}$; dotted, the default weight $10^{-2}$; band, the five scored full-data runs at
-$\lambda_{\mathrm{graph}}{=}0$ (at the default, full-data gates sat at $\sim$$10^{-7}$). (b) Mean gate
-per epoch, one line per penalty weight, dashed at the dead-gate threshold: weights from $10^{-3}$ up are
-dead from the second epoch, $10^{-5}$ from the twelfth; none recovers.}
+\includegraphics[width=0.78\linewidth]{lambda_sweep.pdf}
+\caption{The default penalty shuts the gates. Mean edge gate during training for the default penalty
+strength ($10^{-2}$), the weakest we tried ($10^{-5}$) and no penalty, on a log scale. A gate below
+$10^{-3}$ (dashed line) is effectively off. This is a small run, one seed per setting for $22$ epochs on the first $512$ training and
+$128$ validation rows, so the gates fall more slowly than in the full runs (\S\ref{sec:confound}). Across
+the eight penalty strengths we tried (six are not drawn), those from $10^{-3}$ up are dead from the second epoch and
+the weakest, $10^{-5}$, from the twelfth; none recovers. Without the penalty the gates end at $0.76$.
+These gaps are far larger than anything a different seed changes.}
 \label{fig:lambda}
 \end{figure}
 
-\paragraph{Mechanism.} The training loss carries a penalty meant to keep the graph sparse and to
-discount low-confidence edges:
-\begin{equation}
-\mathcal{L}_{\mathrm{graph}}=\tfrac{1}{B}\sum_{r,b,e}\big(|\alpha^{r}_{b,e}| + (1-\mathrm{conf}^{r}_{b,e})(\alpha^{r}_{b,e})^2\big),
-\label{eq:graphloss}
-\end{equation}
-where $\alpha^{r}_{b,e}$ is the gate on edge $e$ of type $r$ in the neighborhood sampled for training
-example $b$, and $\mathrm{conf}^{r}_{b,e}$ is that edge's confidence. The sum runs over \emph{every edge
-of every sampled neighborhood}, tens of thousands of them, but is divided only by the number of examples
-in a training batch, $B$, never by the number of edges, so its size depends on how many edges the
-sampler draws. At the default weight $\lambda_{\mathrm{graph}}{=}10^{-2}$ it is $\approx$$103\times$ the
-error on the predicted programs, which is an average rather than a sum. Training changes each number in the model
-(each \emph{parameter}) in small steps that lower the loss, and our optimizer, AdamW
-\citep{kingma2015adam,loshchilov2019adamw}, divides each step by the typical size of that parameter's
-recent gradients, so parameters move at a similar rate however hard the loss pushes; a penalty this large
-therefore plausibly sets the \emph{direction} in which the gates move, not only their speed, turning a
-mild preference into their main objective.
+\paragraph{Cause.} The training loss, the number that training lowers, includes a penalty on the gates,
+meant to keep few edges switched on and to discount low-confidence edges (Eq.~\ref{eq:graphloss} in
+Appendix~\ref{app:arch}). It adds up a term for every edge in every row's neighborhood, tens of thousands
+of edges, but divides only by the number of rows in a batch. At its default strength, at the start of
+training, it was therefore about $103$ times larger than the error on the predicted programs, the main part
+of the loss. Size alone does not explain the collapse, though. Our optimizer, AdamW
+\citep{loshchilov2019adamw}, scales each step to the recent size of that parameter's gradient, so even a
+small push keeps moving a gate if nothing pushes back. The prediction error barely reached the gates, so
+the penalty decided which way they moved, and it pushes every gate toward zero. In Figure~\ref{fig:lambda}, even a penalty a
+thousand times weaker shut the gates, only later.
 
-\paragraph{Signature, and why it is dangerous.} Every gate falls to $\sim$$10^{-7}$ within the first
-epoch, in all five seeds; across penalty weights the final gate falls as the weight grows, and no
-penalized run recovers (Figure~\ref{fig:lambda}). The run does not crash, warn or diverge, and reports a
-plausible \textsc{systema}. With every gate near zero, no messages pass along the edges, so the
-comparison no longer tests message passing, and its small difference and narrow interval mean nothing.
-Expecting no benefit, we believed it.
+\paragraph{Why it is dangerous.} The mean gate fell to about $10^{-7}$ within the first epoch, in all five
+seeds. Nothing looked wrong: training did not crash, warn or diverge, and it reported a plausible score.
+But with every gate near zero, almost nothing passes along the edges, so the comparison no longer tests
+message passing. (The model still pools the features of the proteins in each neighborhood, which the
+graph chooses.) We had expected no benefit, so we believed the result.
 
-\paragraph{Fix and precondition.} The fix that worked is one line: set $\lambda_{\mathrm{graph}}{=}0$.
-Dividing the penalty by the number of edges does not rescue the gates, consistent with the direction
-argument above: in a pilot run $98\%$ were dead after one epoch. Removing the penalty raised the mean gate
-by a factor of $4.5\times10^{6}$, from $\sim$$10^{-7}$ to a live $0.27$ to $0.78$ in the checkpoints we
-scored. Yet h1 barely moved, from $-0.0019$ to $-0.0009$ (\S\ref{sec:null}), so the repair did not create
-the negative result; that before-and-after comparison is the only use we make of the dead-gate runs' h1. We
-now read the mean gate before any result and reject a run below a dead-gate threshold of $10^{-3}$, where
-the comparison cannot decide anything. The check takes three minutes; a training run takes hours.
+\paragraph{Fix.} The fix that worked is one line: set the penalty to zero. Dividing the penalty by the
+number of edges made it small but did not change its direction: in a pilot run, $71\%$ of the gates were
+dead after one epoch and $98\%$ after two. Without the penalty, the gates stayed live, with a mean between
+$0.27$ and $0.78$ in the checkpoints we scored. Yet the main comparison barely moved, from $-0.0019$ to
+$-0.0009$ (\S\ref{sec:null}), so the broken penalty did not create the negative result. Apart from
+describing the collapse, this before-and-after comparison is the only use we make of the dead-gate runs. We now check the mean gate
+before reading any result and discard runs whose mean gate is below $10^{-3}$. The check takes three
+minutes; a training run takes hours.
 
-\subsection{With the graph switched on, it still does not help}
+\subsection{With the edges open, the gated model still does not beat no graph}
 \label{sec:null}
 
-In the corrected five-seed comparison with working gates (Table~\ref{tab:family}), the gated model
-cannot be told apart from the no-graph model: its interval crosses zero and it passes neither
-correction. The typed model, with every edge always on, is worse than no graph on this split, the only
-comparison in the family to pass correction. Both conclusions hold under Pearson-delta, the same
-correlation without subtracting the average training response, which varies less between seeds and so
-has more power (Table~\ref{tab:family}, last column; cause B in Appendix~\ref{app:causes}); under it h2b
-and the untyped comparison also pass correction. h1
-again passes neither correction on two stricter splits, which use a lower sequence-similarity threshold
-and larger groups and so keep more paralogs apart (Figure~\ref{fig:floor}a; Appendix~\ref{app:folds}); on the first it is $+0.0082$, positive in all five
-seeds, with uncorrected $p{=}0.025$.
+With working gates, the gated model still cannot be told apart from the no-graph model
+(Table~\ref{tab:family}): the difference is $-0.0009$, its interval crosses zero, and it fails
+correction. With seven seeds it is $-0.0036$, also not significant (Appendix~\ref{app:repl}). The typed
+model, whose gates are all fixed at $1$, scores below the no-graph model, and this is
+the only comparison in the family that passes correction. The untyped model has the highest mean score,
+but at five seeds its gain over no graph fails correction (with seven seeds it passes; \S\ref{sec:repl}).
 
 \begin{table}[t]
 \centering
-\caption{Five paired seeds with working gates on the frozen split.
-$\Delta_{\textsc{sys}}$: the first model's \textsc{systema} minus the second's. $p$: paired $t$-test
-before correction. Passes: survives \emph{both} Bonferroni and Holm at $\alpha{=}0.05$ over the four
-tests; a \emph{no} does not show equivalence, so h1's tie (bold) rests on its interval. $\Delta_{\textsc{pear}}$: the same comparison under Pearson-delta,
-$\star$ surviving both corrections.}
+\caption{The main result on the T-cell screen: five paired seeds per model, with working gates.
+Difference: the first model's \textsc{systema} minus the second's. The $95\%$ intervals are not adjusted
+for testing four comparisons, so an interval can exclude zero while the comparison still fails correction
+(last two rows). Significant: passes correction over the four comparisons. A \emph{no} does not mean the
+two models are equal, only that the data cannot tell them apart. Mean \textsc{systema} per model
+($n{=}5$): untyped $0.0902$, no graph $0.0857$, gated $0.0848$, typed $0.0726$.}
 \label{tab:family}
 \vspace{2pt}
 {\small
-\begin{tabular}{@{}lccccc@{}}
+\begin{tabular}{@{}lccc@{}}
 \toprule
-Comparison & $\Delta_{\textsc{sys}}$ & $95\%$ CI & $p$ & Passes & $\Delta_{\textsc{pear}}$ \\
+Comparison & Difference & $95\%$ CI & Significant \\
 \midrule
-Typed $-$ no graph (h2a) & $-0.0131$ & $[-0.0190,-0.0072]$ & $0.0036$ & \textbf{yes, worse} & $-0.0067^{\star}$ \\
-Gated $-$ typed (h2b) & $+0.0122$ & $[+0.0028,+0.0215]$ & $0.023$ & no & $+0.0062^{\star}$ \\
-Untyped $-$ no graph & $+0.0045$ & $[+0.0011,+0.0079]$ & $0.021$ & no & $+0.0023^{\star}$ \\
-\textbf{Gated $-$ no graph (h1)} & $\mathbf{-0.0009}$ & $\mathbf{[-0.0072,+0.0054]}$ & $\mathbf{0.71}$ & \textbf{no} & $\mathbf{-0.0005}$ \\
-\midrule
-\multicolumn{6}{@{}l@{}}{\emph{Per-model} mean \textsc{systema} ($n{=}5$): untyped $0.0902$, no graph $0.0857$, gated $0.0848$, typed $0.0726$}\\
+\textbf{Gated $-$ no graph (main test)} & $\mathbf{-0.0009}$ & $\mathbf{[-0.0072,+0.0054]}$ & \textbf{no} \\
+Typed $-$ no graph & $-0.0131$ & $[-0.0190,-0.0072]$ & yes, worse \\
+Gated $-$ typed & $+0.0122$ & $[+0.0028,+0.0215]$ & no \\
+Untyped $-$ no graph & $+0.0045$ & $[+0.0011,+0.0079]$ & no \\
 \bottomrule
 \end{tabular}}
 \end{table}
 
-\paragraph{Our first significant result, that the typed model hurts, did not replicate.} The harder split
-also tests whether h2a holds up, and it does not (Figure~\ref{fig:floor}a). At the same $n{=}5$ the typed
-model's deficit there is $-0.0012$, $95\%$ CI $[-0.0074,+0.0050]$, $p=0.61$, clearing neither
-correction: it shrank elevenfold, and one seed reverses sign. h2b and the untyped comparison shrink the
-same way, nothing in the family passes correction on that split, and on the intermediate split h2a's
-estimate holds but its seed noise more than triples (Appendix~\ref{app:folds}), so ``an always-on typed
-graph hurts'' holds on one split only.
+\paragraph{Other scores and splits.} Under a second score, Pearson-delta (the same correlation without
+subtracting the average training response), the gated model is still no better than no graph
+(Appendix~\ref{app:causes}). We also tried two stricter splits, which keep more similar genes apart; on
+neither does the gated model pass correction. Its best showing is on the first, the intermediate split:
+$+0.0082$, positive in all five seeds, with uncorrected $p{=}0.025$. Two re-draws of that split, made the
+same way with a different random choice of groups, gave $+0.0026$ and $+0.0021$, and none of the three
+passes correction (Appendix~\ref{app:folds}).
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{folds_floor.pdf}
-\caption{Where the negative result holds, and what our setup can detect, with $95\%$ CIs; filled markers
-survive Bonferroni and Holm. (a) h1 and h2a on the frozen split and two stricter splits (similarity
-threshold/group cap), five paired seeds each, family of four. (b) The planted-signal test
-(Appendix~\ref{app:floor}): each target's response gains $\delta$ response standard deviations of the mean
-training response of its graph neighbors, and we retrain; four paired seeds per step, family of six.
-Squares: nothing added; last step (scr.): each target gets another target's neighbors, so the signal no
-longer follows the graph. Markers show each model's difference from no graph, not its gain over its own no-injection
-result.}
-\label{fig:floor}
-\end{figure}
+\paragraph{The typed model's shortfall did not hold on a harder split.} Our first significant result,
+that the typed model is worse than no graph, did not hold on the harder split: there the difference is
+$-0.0012$, $95\%$ CI $[-0.0074,+0.0050]$, $p=0.61$, and one seed reverses sign. Nothing in the family
+passes correction on that split (Appendix~\ref{app:folds}). So ``an always-on typed graph hurts'' holds on
+one split only.
 
-\subsection{The negative result replicates, but it is about our encoder}
+\subsection{Seven more datasets}
 \label{sec:repl}
 
-We repeated the comparisons on seven more Perturb-seq screens from scPerturb \citep{peidli2024scperturb}
-(Figure~\ref{fig:repl}), covering four cell types other than T cells, genes switched off as well as
-switched on, and a hundredfold range in the number of targets. Six of the seven have a single culture
-condition, where the gate cannot vary with condition, so the pre-registration made h2a, not h1, their main
-comparison in advance. Each dataset has its own blocked split, its own programs fit on
-its training data, four seeds per model and multiple-test correction (Appendix~\ref{app:repl}).
+We repeated the comparisons on seven more Perturb-seq screens collected by scPerturb
+\citep{peidli2024scperturb} (Table~\ref{tab:repl}). They cover four other cell types, genes turned down,
+knocked out and switched on, and a hundredfold range in the number of targets. Each dataset gets its own
+split, its own programs and four seeds per model, and is corrected for multiple tests on its own
+(Appendix~\ref{app:repl}). Six of the seven have only one culture condition, so they cannot test gates
+that change with the condition. On those six we did not train the gated model, and our plan made typed
+against no graph the main comparison.
 
-\paragraph{The typed graph shows no benefit.} Pooled over the seven replication datasets, the typed graph
-is worth $+0.0018$ \textsc{systema}, with a random-effects $95\%$ CI of $[-0.0028,+0.0065]$ that bounds
-any benefit (the fixed-effect interval also crosses zero, and the spread between datasets is not
-significant; Appendix~\ref{app:repl}). Frangieh, the only replication dataset with more than one culture condition and so the only one
-that can test h1, is underpowered, not evidence of no effect.
-
-\paragraph{The exception points at our encoder.} On Replogle RPE1, in retinal pigment epithelial
-cells, the untyped model beats the no-graph model by $+0.0675$ \textsc{systema}, all four seeds
-positive ($p{=}0.009$, Bonferroni and Holm both $0.019$ in that dataset's family of two), while the typed
-model goes the other way (Figure~\ref{fig:repl}). Where the graph does help, our typed
-encoder does not show it.
-
-RPE1 is not the only case. On our own screen the untyped model gains $+0.0043$ \textsc{systema} at
-$n{=}7$ (all seven seeds positive, Bonferroni $0.027$ and Holm $0.020$), where the typed model loses
-(Figure~\ref{fig:causes}a). Across the eight datasets, however, three pass correction and \emph{they
-disagree in sign}: the reference screen and RPE1 gain, while Norman ($-0.0790$), a gene-activation screen,
-loses (Figure~\ref{fig:repl}b); all four of its seeds are negative and none was dropped. Neither cell type
-nor perturbation direction predicts the sign, and Norman's loss cannot be cleanly separated from its
-smaller number of programs. Pooled over the five datasets run with all $K{=}128$ programs, the untyped
-comparison is $+0.0141$ ($p{=}0.0056$), but that pooling is post hoc and fails the Hartung-Knapp
-adjustment for few datasets ($p{=}0.24$; Appendix~\ref{app:repl}). Read by the untyped model, the same graph moves predictions strongly, better on two
-datasets and worse on one, while the typed model passes correction on none of the seven replication
-screens. This is the evidence for cause C (\S\ref{sec:causes}), which we had first
-recorded as refuted.
-
-\begin{figure}[t]
+\begin{table}[t]
 \centering
-\includegraphics[width=\linewidth]{replication_forest.pdf}
-\caption{The replication, dataset by dataset: (a) the typed and (b) the untyped model against no graph,
-with $95\%$ CIs; filled markers survive Bonferroni and Holm within the dataset's pre-registered family.
-The reference screen ($n{=}7$ seeds) leads, then the replication screens ($n{=}4$) by size
-(Table~\ref{tab:repl}), with $K$ shown where it is below $128$. Diamonds:
-random-effects pools over the seven replication screens and over all eight. Both contrasts clear
-correction on the reference screen; of the replication screens, the typed contrast clears it on none and
-the untyped one on two, in opposite directions.}
-\label{fig:repl}
-\end{figure}
+\caption{What the graph did on each dataset: \textsc{systema} with a graph model minus \textsc{systema}
+without it, so a positive number means the graph model scored higher. \textbf{Bold}: significant within
+that dataset's family (four comparisons on Zhu and Frangieh, two on the other six, where we did not train
+the gated model). The other differences cannot be told apart from zero, even large ones on small
+datasets. The T-cell screen has seven seeds per model, the others four, so Zhu's numbers differ slightly from
+Table~\ref{tab:family}. $^{*}$Small datasets use fewer programs: $K{=}32$ for Tian CRISPRi and $K{=}16$
+for Norman and Tian CRISPRa.}
+\label{tab:repl}
+\vspace{2pt}
+{\small
+\begin{tabular}{@{}lllrrr@{}}
+\toprule
+Dataset & Cells & Genes are & Targets & Typed graph & Untyped graph \\
+\midrule
+Zhu (main) & CD4$^{+}$ T cells & turned down & $11{,}526$ & $\mathbf{-0.0120}$ & $\mathbf{+0.0043}$ \\
+Replogle genome-wide & K562 leukemia & turned down & $9{,}730$ & $+0.0008$ & $+0.0069$ \\
+Replogle RPE1 & retina (RPE1) & turned down & $2{,}122$ & $-0.0196$ & $\mathbf{+0.0675}$ \\
+Replogle essential & K562 leukemia & turned down & $2{,}003$ & $+0.0030$ & $+0.0081$ \\
+Frangieh & melanoma & knocked out & $238$ & $+0.0256$ & $+0.0194$ \\
+Tian CRISPRi$^{*}$ & neurons & turned down & $184$ & $+0.0332$ & $+0.0281$ \\
+Norman$^{*}$ & K562 leukemia & switched on & $105$ & $-0.0652$ & $\mathbf{-0.0790}$ \\
+Tian CRISPRa$^{*}$ & neurons & switched on & $100$ & $+0.0048$ & $+0.0226$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\paragraph{The typed graph shows no benefit.} Pooled over the seven new datasets, the typed graph is worth
+$+0.0018$ \textsc{systema}, with a random-effects $95\%$ CI of $[-0.0028,+0.0065]$ (Appendix~\ref{app:repl}).
+So the data rule out a large pooled benefit, but not one as large as the untyped model's gain on the
+T-cell screen. Frangieh is the only new dataset with several conditions and the only one on which we trained
+the gated model; it is too small to decide.
+
+\paragraph{A simpler graph model points at our encoder.} The untyped model passes correction on three of
+the eight datasets, and they disagree in sign. It beats the no-graph model on the T-cell screen
+($+0.0043$ \textsc{systema} at $n{=}7$, all seven seeds positive, Bonferroni $0.027$ and Holm $0.020$) and
+on Replogle RPE1 ($+0.0675$, all four seeds positive), but it loses on Norman ($-0.0790$; all four of its
+seeds are negative and none was dropped). On the T-cell screen this needs seven seeds: we added two after
+the five-seed result fell short of correction, which makes these $p$-values somewhat optimistic
+(Appendix~\ref{app:repl}). The sign does not follow the cell type, or whether genes were turned down or
+switched on. Norman also uses fewer programs, so we cannot cleanly separate its result from that
+difference. Pooled over all eight datasets, the untyped gain is $+0.0091$ ($p{=}0.12$); over only the
+five that use all $K{=}128$ programs, which leaves out Norman and the two Tian datasets, it is $+0.0141$
+($p{=}0.0056$). Our plan did not pool the untyped comparison, and both estimates fail the Hartung-Knapp
+adjustment for having few datasets ($p{=}0.48$ and $0.24$; Appendix~\ref{app:repl}). On RPE1, where the untyped model helps most, the typed model scores lower than no graph
+($-0.0196$, not significant). So the same graph, read by a simpler encoder, changes predictions a lot,
+for the better on two datasets and for the worse on one. This points at our encoder, not only at the
+graph, as a cause of the negative result (cause C in \S\ref{sec:causes}).
 
 \section{Discussion}
 
 \subsection{Reason for failure: five candidate causes}
 \label{sec:causes}
 
-Table~\ref{tab:causes} weighs five candidate explanations, labeled A to E; Appendix~\ref{app:causes}
-argues causes A, B and E in full. Causes C and D carry our argument, and neither is about biology.
+Table~\ref{tab:causes} lists five possible reasons why the graph did not help our models, the evidence for each, and
+our verdict. Causes C and D carry our argument, and neither is about biology: C concerns how our model
+reads the graph, and D what the no-graph model is fed. Appendix~\ref{app:causes} gives the details.
 
 \begin{table}[t]
 \centering
-\caption{Five candidate causes, the evidence and our verdict. Three
-survive our attempts to rule them out; we regard cause D as the most consequential for how such ablations
-are usually run.}
+\caption{Five candidate causes for the missing benefit, the evidence, and our verdict.}
 \label{tab:causes}
 \vspace{2pt}
 {\footnotesize
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.16\linewidth}>{\raggedright\arraybackslash}p{0.58\linewidth}>{\raggedright\arraybackslash}p{0.20\linewidth}@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.2\linewidth}>{\raggedright\arraybackslash}p{0.55\linewidth}>{\raggedright\arraybackslash}p{0.19\linewidth}@{}}
 \toprule
 Candidate cause & Evidence & Verdict \\
 \midrule
-A. The task has little signal & Almost no prediction is nearest its target's profile (centroid accuracy $\approx$$0.001$), for \emph{any} model; a benchmark finds it near-null \citep{royer2026tfm} & \textbf{Survives}: little target-specific signal \\
-B. The score hides it & h1 stays null under Pearson-delta, which has more power, and under program cosine similarity (\S\ref{sec:null}; App.~\ref{app:causes}) & \textbf{Ruled out for h1} \\
-C. The architecture is wrong & At $n{=}7$ the typed static encoder is \emph{harmful}, and the gate's partial repair fails correction (Fig.~\ref{fig:causes}a); untyped clears correction on three datasets, in disagreeing directions (Fig.~\ref{fig:repl}b) & \textbf{Survives, and it is the encoder} \\
-D. The baseline is not graph-free & Zeroing its graph-derived features lowers \textsc{systema}, a drop that survives correction, nearly all of it the degree counts; the gated graph (h1) has no detectable effect, and the two do not differ significantly (Fig.~\ref{fig:causes}b) & \textbf{Survives, measured}: ``no graph'' is not graph-free \\
-E. Graph quality, or the wrong edges & $85\%$ of edges are functional associations; removing them moves the full prediction most, largely because they are most edges (App.~\ref{app:causes}) & \textbf{Partly}: that type matters most, mostly by count \\
+A. The data hold little target-specific signal & Every model scores low, and almost no prediction is closest to its own target's response (about one in a thousand); a benchmark finds almost nothing to predict in this screen \citep{royer2026tfm} & \textbf{Holds}: there is little to find \\
+B. Our score hides a benefit & The gated model is still no better than no graph under Pearson-delta, a score that varies less between seeds, or under program cosine similarity & \textbf{Ruled out} for gated against no graph \\
+C. Our encoder is badly designed & On our main split, with seven seeds, the typed model is \emph{worse} than no graph, and the gates repair only part of the damage, not significantly; the untyped model passes correction on three datasets, in opposite directions (Table~\ref{tab:repl}) & \textbf{Holds} on our main split \\
+D. The ``no graph'' model is not graph-free & Setting its graph-derived features to zero lowers \textsc{systema}, a drop that survives correction, nearly all of it from three counts; the gated graph has no detectable effect, and the two do not differ significantly & \textbf{Holds}: ``no graph'' is not graph-free \\
+E. The graph has the wrong edges & $85\%$ of edges are functional associations; removing them moves the prediction most, largely because they are most of the edges & \textbf{Partly}: the least certain edges dominate \\
 \bottomrule
 \end{tabular}}
 \end{table}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{causes.pdf}
-\caption{The evidence for causes C and D, with $95\%$ CIs; filled markers survive Bonferroni and Holm.
-(a) The four pre-registered comparisons, $n{=}7$ paired seeds, frozen split. (b) The no-graph model's
-score with each group of graph-derived features minus with it zeroed, so positive means the group helps
-(all, the three degree counts, or PINNACLE; $n{=}5$, family of three), beside h1 on the same seeds and
-baseline runs; grey diamond, all features minus h1, paired by seed (post hoc).}
-\label{fig:causes}
-\end{figure}
+\paragraph{C. Our encoder is badly designed.} We first recorded this cause as refuted, based on a search
+over design variants whose single-seed runs could not resolve differences this small
+(Appendix~\ref{app:mechanism}). On our main split, running all four models with seven seeds shows where the
+typed model's shortfall comes from: the typed encoder itself, which the gates repair only in part, not
+significantly. Much of it seems to come from how messages are added up. The typed model sums the
+messages of each edge type without scaling, so a protein with many partners receives a very large sum.
+Scaling each message down by how many partners its two proteins have, similar to what the untyped model
+does, recovers $79\%$ of the gap between the typed and untyped models (Appendix~\ref{app:mechanism}). That
+gain has uncorrected $p{=}0.0245$: it was the only one of four planned variants that we ran, and corrected
+over all four it would not pass. The repaired model still does not beat no graph. The typed model is also scored after
+its first epoch in four of five seeds, so part of its shortfall may come from how it trains.
+\textbf{Holds} on our main split; it best explains the negative result.
 
-\paragraph{C. The architecture is wrong.} We first recorded this cause as refuted, on a $14$-run
-architecture search whose single-seed, five-epoch runs could not resolve differences this small
-(Appendix~\ref{app:archsearch}). Running all four models at $n{=}7$ on the frozen split locates the
-damage instead (Figure~\ref{fig:causes}a): the typed static encoder causes it, and the condition gate
-repairs part of it, unreliably (the repair fails correction), rather than adding signal. Most of the
-damage is not about evidence types. The typed model adds up each edge type's incoming messages, so a
-protein with many partners receives a large sum; scaling each message down by the degrees of the two proteins
-its edge joins recovers $79\%$ of the gap between the typed and untyped models (a family of one,
-uncorrected $p{=}0.0245$) yet still does not beat no graph, so the deficit looks like an artifact of how
-messages are added up (Appendix~\ref{app:mechanism}). Part of the typed and gated models' cost may also be
-that they peak within four epochs and the others only at epochs $13$ to $19$ (Appendix~\ref{app:causes}). \textbf{Survives}; it best explains the negative result.
-
-\paragraph{D. The baseline was never graph-free.} The usual no-graph baseline has message passing off,
-but its fixed target features carry graph-derived information: three PPI degree counts (the protein's
-numbers of physical, functional and shared-complex partners) and a $128$-d PINNACLE embedding. Setting
-those to zero as well lowers \textsc{systema} by $0.0036$, a drop that survives correction
-(Figure~\ref{fig:causes}b), while gated message passing over roughly eight
-million typed edges (h1), the quantity the paper set out to measure, has no detectable effect. Whether
-this per-protein summary of the graph is worth \emph{more} than h1 is not settled: paired by seed it
-comes out ahead in all five seeds, but its interval crosses zero. A comparison that calls one model ``no
-graph'' while feeding it a summary of the graph does not measure what its name says. \textbf{Survives}
-(Appendix~\ref{app:causes}).
+\paragraph{D. The ``no graph'' model was never graph-free.} The usual no-graph baseline turns message
+passing off, but its fixed input features still carry information from the graph: three counts of each
+protein's partners (physical, functional and complex) and a PINNACLE embedding \citep{li2024pinnacle}
+learned from an interaction network. Setting these to zero lowers \textsc{systema} by $0.0036$, a drop that
+survives correction, and nearly all of it comes from the three counts (Appendix~\ref{app:causes}). The drop
+is small, about four percent of the no-graph model's $0.0857$; it passes correction largely because the
+no-graph model varies little between seeds. The gated graph, the thing we set out to measure, has no
+detectable effect. Whether the graph-derived features are worth \emph{more} than the gated graph is not
+settled: in a post hoc test paired by seed, the features' effect minus the gated model's is $+0.0045$
+($95\%$ CI $[-0.0012,+0.0101]$, $p{=}0.093$); it comes out ahead in all five seeds, but its interval
+crosses zero. A comparison that calls a model ``no graph'' while feeding it a summary of the graph does
+not measure what its name says. \textbf{Holds.}
 
 \subsection{Boundary conditions}
 \label{sec:limits}
 
-\paragraph{Bounds and detection.} No split shows a gated-model benefit that survives correction, and
-each split's interval bounds the effect only on that split (Figure~\ref{fig:floor}a;
-Appendix~\ref{app:folds}). In the planted-signal test, at four seeds the gated model's difference from no
-graph passes correction at no injected size up to $0.40$, and the untyped model's from $0.02$, but not for a scrambled graph; as a gain over its own no-injection result, neither
-model passes (Figure~\ref{fig:floor}b; Appendix~\ref{app:floor}). Our negative
-result thus describes what this encoder can resolve with this many seeds, not whether a
-protein-interaction prior helps.
+\paragraph{What our setup can detect.} A confidence interval from one split describes that split only. To
+learn what our setup can detect, we planted a known signal that follows the graph: each target's response
+gained a multiple $\delta$ of its graph neighbors' mean training response, and we retrained
+(Appendix~\ref{app:floor}). The gated model's difference from no graph passed correction at no size up to
+$0.40$ response standard deviations (a standard deviation is the typical spread of the responses). The
+untyped model's passed at every size, down to the smallest we tried, $0.02$, but it was already $+0.0048$
+ahead of no graph before anything was planted. Counting only what the planting added, a post hoc step,
+neither model's gain passes correction. With a scrambled graph, where the planted signal no longer follows
+the real neighbors, nothing passed. So our negative result describes what this encoder can detect with
+this many seeds, not whether a protein-interaction prior helps.
 
-\paragraph{Scope.} Our pre-registered rule for building responses first excluded four of six candidates by a
-standard the reference data do not meet (Appendix~\ref{app:prereg}); even after its
-amendment, h1 rests on one replication dataset and none shares the reference \emph{cell type}
-(Appendix~\ref{app:repl}). Gains elsewhere \citep{wenkel2026txpert,cole2026foundation} use other
-splits and scores, outside our bound. Scored their way, the gated
-model shows no whole-profile benefit; the untyped comparison \emph{reverses sign} between TxPert's
-and \textsc{gears}' scores, and by gene rank the gated model passes correction for the graph on the
-least-changed genes and, under \textsc{gears}' score, against it on the top twenty
-(Appendix~\ref{app:metrics}).
+\paragraph{Scope.} No new dataset is a T-cell screen, so if the graph's value were specific to T cells,
+our replication could not show it (Appendix~\ref{app:repl}). Other groups report gains from graphs under
+different splits and scores \citep{wenkel2026txpert,cole2026foundation}. Scored their ways, the gated
+model still shows no benefit on the whole response, and the untyped model helps under TxPert's score and
+hurts under \textsc{gears}'. On some groups of genes the gated model does pass correction: for the graph on
+genes that change little, and against it on the twenty genes that change most, though that one passes
+only when corrected over the twenty scores (Appendix~\ref{app:causes}). These scores are computed on single genes, where the graph models carry an
+extra term of their own, so they are not pure tests of the graph (Appendix~\ref{app:arch}).
 
 \subsection{Actionable takeaways: the checklist we wish we had used}
 \label{sec:checklist}
 
-Checks 1 to 5 of Table~\ref{tab:checklist} guard the mechanism, 6 to 8 the comparison, 9 to 14 the
-conclusion.
-
-\begin{table}[t]
-\centering
-\caption{The checklist we wish we had used for any experiment that gates or masks model structure,
-with the place in this paper where each check mattered.}
-\label{tab:checklist}
-\vspace{2pt}
-{\footnotesize\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}r>{\raggedright\arraybackslash}p{0.61\linewidth}>{\raggedright\arraybackslash}p{0.33\linewidth}@{}}
-\toprule
-& Check & Where it mattered here \\
-\midrule
-1 & Log the tested mechanism's health every epoch, not just loss and score. & dead gates, healthy run (Fig.~\ref{fig:lambda}) \\
-2 & Set a collapse threshold in advance; past it a run is \emph{undecidable}. & our first null had no live edges (\S\ref{sec:confound}) \\
-3 & Compare each penalty's size with the prediction error, not only its weight. & $103\times$ the response error (Eq.~\ref{eq:graphloss}) \\
-4 & Normalize structural penalties by size; still check the mechanism. & per edge, still dead (\S\ref{sec:confound}) \\
-5 & Check the main result survives a large change to the suspect setting. & gates up $4.5\times10^{6}$-fold, same null (\S\ref{sec:confound}) \\
-6 & List the baseline's inputs, then remove the graph-derived ones. & degree counts carry signal (Fig.~\ref{fig:causes}b) \\
-7 & Check how often each feature is present, not only that it is listed. & PINNACLE $90.8\%$ zeros (App.~\ref{app:ablate}) \\
-8 & Run the simplest graph model with enough seeds, not a one-seed search. & revived cause C (Fig.~\ref{fig:repl}) \\
-9 & Re-draw the split before interpreting a sweep over splits. & re-draw noise beat the threshold (App.~\ref{app:folds}) \\
-10 & Report each model's seed-to-seed spread, not only paired differences. & graph models $6$ to $32\times$ noisier (App.~\ref{app:power}) \\
-11 & Fix the family of comparisons in advance and correct for it. & three raw hits, one survives (Tab.~\ref{tab:family}) \\
-12 & Plant a known signal, with a scrambled control, in the claimed model. & gated: none detected up to $0.40$ (Fig.~\ref{fig:floor}b) \\
-13 & Score the most- and least-changed genes separately; check bin size. & hidden top-$20$ deficit (App.~\ref{app:metrics}) \\
-14 & Replicate the comparison that \emph{passed}, not only the null. & h2a failed on a harder split (Fig.~\ref{fig:floor}a) \\
-\bottomrule
-\end{tabular}}
-\end{table}
+For any experiment that switches parts of a model on or off:
+\begin{enumerate}
+\setlength{\itemsep}{0pt}
+\item Log the health of the part being tested, here the gates, at every epoch, not only the loss and the
+score (\S\ref{sec:confound}).
+\item Decide in advance when a run counts as broken, here a mean gate below $10^{-3}$, and do not interpret
+broken runs.
+\item Check which part of the loss decides how the tested part moves, not only how large each part is
+(\S\ref{sec:confound}).
+\item List the baseline's inputs and remove any that come from the thing being tested (\S\ref{sec:causes},
+cause D).
+\item Test the simplest version of the idea, with enough seeds (\S\ref{sec:repl}).
+\item Plant a known signal, with a scrambled control, to learn what the setup can detect
+(\S\ref{sec:limits}).
+\item Correct for multiple comparisons, and repeat any result that passes on a new or re-drawn split
+(\S\ref{sec:null}, Appendix~\ref{app:folds}).
+\item Check the result under more than one score (Appendix~\ref{app:causes}).
+\end{enumerate}
 
 \section{Conclusion}
 
-In testing whether a protein-interaction graph helps predict T-cell responses to a knocked-down gene,
-the harder problem was trusting our measurement: a standard penalty had switched off the mechanism
-under test. With the gates repaired the gated model cannot be told apart from no graph, the typed graph's
-lack of benefit holds on seven more screens, and the only pre-registered comparison to pass correction at
-five seeds failed to replicate. The untyped model, run as a diagnostic, clears correction on three datasets in
-disagreeing directions, a sign that neither cell type nor perturbation direction predicts and
-that we cannot cleanly separate from the number of programs, so our negative result is evidence about the
-encoder, not against the prior. A graph ablation should also strip the ``no graph'' baseline's
-graph-derived features, and a negative result about a prior should test its simplest encoder. For us that
-was one extra model; without it we would have published the wrong cause and, had we stopped at the
-first five datasets, all favoring the untyped model, a sign the sixth reversed.
+We asked whether a protein-interaction graph helps predict how T cells respond to a turned-down gene. The
+harder problem turned out to be trusting our own measurement: a standard penalty had shut the very edges
+we were testing. With the gates repaired, our gated model could not be told apart from the model without
+the graph, and the typed graph shows no benefit on seven more datasets. The one comparison that passed
+correction at five seeds, the typed model's shortfall, did not hold on a harder split. A simpler graph
+model helps on two datasets and hurts on one (on the T-cell screen only after we added two seeds), a sign
+we cannot predict. So
+our negative result says more about our encoder than about the graph. Two lessons carry over to other
+work: strip the graph-derived features from the ``no graph'' baseline, and test the simplest way of using
+a prior before concluding that the prior does not help.
 
 \begin{ack}
 This work received no external funding. The author has no competing interests to declare.
@@ -505,7 +466,7 @@ This work received no external funding. The author has no competing interests to
 
 \section*{LLM usage disclosure}
 
-An AI coding agent wrote most of the pipeline and analysis code under the author's direction and review, and helped revise this manuscript. Every reported number was produced by running that code and re-derived from stored result files; the scientific claims and their interpretation are the author's.
+An AI coding agent wrote most of the pipeline and analysis code under the author's direction and review, and helped revise this manuscript. Every reported number was produced by running that code, and nearly all were re-derived from stored result files (Appendix~\ref{app:repro} names the exceptions); the scientific claims and their interpretation are the author's.
 
 \section*{Ethics statement}
 
@@ -513,511 +474,332 @@ This work uses a public, de-identified genome-scale Perturb-seq resource derived
 
 \section*{Reproducibility statement}
 
-The pipeline, the pre-registered family of comparisons, the split generator and the analysis behind every table are released at \url{https://github.com/Vijayavallabh/tcell-causal-ppi}. The dataset is public \citep{zhu2025gwperturbseq}. Appendix~\ref{app:repro} says which file each number is read from and how it is regenerated, describes the gate-health check that comes before them, and lists every correction made after review. The replication datasets are the harmonized scPerturb release \citep{peidli2024scperturb} (CC-BY-4.0), with checksums in \texttt{data/manifests/}.
+The pipeline, the family of comparisons, the split generator and the analysis behind every table are released at \url{https://github.com/Vijayavallabh/tcell-causal-ppi}. The dataset is public \citep{zhu2025gwperturbseq}. Appendix~\ref{app:repro} says where each number is read from and how it is regenerated, and lists the corrections made after review. The replication datasets are the harmonized scPerturb release \citep{peidli2024scperturb} (CC-BY-4.0), with checksums in \texttt{data/manifests/}.
 
 
 \appendix
 
-\section{Model architecture}
+\section{Model details}
 \label{app:arch}
 
-EG-IPG has four modules (Figure~\ref{fig:arch}): an encoder for the perturbation and its context; the typed, gated graph encoder; a program decoder with a mixing weight between graph-based and expression-only predictions; and a sparse rationale head in the GNNExplainer lineage \citep{ying2019gnnexplainer}, which picks out the few edges behind each prediction and is fitted after the predictor is frozen.
+\paragraph{Inputs.} Each target protein is described by fixed features only: an ESM-2 protein-sequence
+embedding \citep{lin2023esm2} ($1280$ numbers), a PINNACLE embedding \citep{li2024pinnacle} ($128$
+numbers), three counts of its interaction partners, and the gene's baseline expression in control cells.
+These are combined with the culture condition, the donor's control-cell profile and two covariates known
+before any response is seen (such as the number of guide RNAs) into one vector of $256$ numbers. The
+no-graph model uses this vector alone, so it too receives the graph-derived counts and embedding (cause D
+in \S\ref{sec:causes}).
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{eg_ipg_architecture_compact.pdf}
-\caption{EG-IPG, and where it breaks. Modules M1 to M3 form the predictor that every comparison
-scores; the sparse rationale head M4, which picks out the few edges behind each prediction, is fitted
-only after the predictor is frozen. The boxed sparsity penalty (Eq.~\ref{eq:graphloss}) acts on the
-learnable edge gates, the part that separates the gated model from the typed model, whose gates are
-fixed at $1$, and it is what switched the graph off (\S\ref{sec:confound}). The paragraphs
-below explain every label.}
-\label{fig:arch}
-\end{figure}
-
-\paragraph{Reading Figure~\ref{fig:arch}.} Inputs (left): the target gene $g$, the culture condition $c$, the donor $d$, entered through that donor's control-cell profile, the covariates $q_{\mathrm{pre}}$ known before any response is seen (the number of guide RNAs and a single-guide estimate), the gene's baseline expression and the fixed protein features below. M1 combines them into $h_{\mathrm{do}}$. M2, the graph encoder, reads the target's sampled neighborhood $\mathcal{N}_k(g)$ and the condition embedding $h_{\mathrm{cond}}(c)$, which feeds the gates, and outputs $h_{\mathrm{graph}}$. M3 mixes the graph-based and no-graph predictions with the learned weight $\gamma$, labeled a mixture gate in the figure but not an edge gate. The outputs are the predicted change in programs, $\Delta\hat z$, and in genes, $\Delta\hat x$, and a predicted uncertainty $\hat U$ that this paper does not use. Training has two stages. Stage A trains M1 to M3 on a loss that sums, each with its weight $\lambda$: $\mathcal{L}_{\mathrm{resp}}$, the error on the program changes; $\mathcal{L}_{\mathrm{gene}}$, the error on the gene changes; $\mathcal{L}_{\mathrm{DE}}$, a classification loss for calling each gene up or down; $\mathcal{L}_{\mathrm{inv}}$, a penalty that keeps the program prediction the same whichever donor's control cells are used; and $\mathcal{L}_{\mathrm{graph}}$, the edge penalty of Eq.~\ref{eq:graphloss}, boxed because it is the confound of \S\ref{sec:confound}. Stage B, with the predictor frozen, fits the uncertainty and the rationale head M4, which scores each edge as its gate times a learned edge score, $\mathrm{imp}_e=\alpha_e\,\sigma(\mathrm{score}(e))$, and keeps the fifteen highest-scoring edges as the rationale $\hat S$.
-
-\paragraph{Perturbation and context encoder.} The target protein is described by fixed features only, with \emph{no} learned gene-identity embedding, so the model cannot memorize which target is which and must generalize to unseen genes. The features are an ESM-2 650M protein-sequence embedding ($1280$-d) \citep{lin2023esm2}, a PINNACLE embedding ($128$-d) \citep{li2024pinnacle}, three PPI degree counts and the gene's baseline expression in control cells, $1412$-d in total. These are combined with an embedding of the culture condition and with donor context into one intervention vector $h_{\mathrm{do}}\in\mathbb{R}^{256}$. This vector, and therefore the no-graph model, contains graph-derived features (\S\ref{sec:causes}, cause D). How often each feature is actually present over the $33{,}983$ DE rows: ESM-2 resolves for $99.4\%$, physical and functional PPI degree are nonzero for $96.5\%$ and $98.4\%$, complex degree for $29.5\%$, and PINNACLE for $9.2\%$ (the embedding store returns a zero vector when a protein is missing).
-
-\paragraph{Typed, gated graph encoder.} Around each target we sample a two-step neighborhood of at most $512$ nodes and run $L{=}3$ relational message-passing layers \citep{schlichtkrull2018rgcn}, which keep separate weights for each edge type. For an edge $u\!\to\!v$ of type $r$ the message is
+\paragraph{Graph encoder.} Around each target we take a neighborhood of at most $512$ proteins, up to two
+steps away: physical and complex partners first, then functional partners by confidence score. We run
+three rounds of message passing with separate weights for each evidence type, as in R-GCN
+\citep{schlichtkrull2018rgcn} but without its scaling: each type's messages are summed. Each message is
+signed, so it can push a protein's state up or down, and includes a term for the edge's evidence. The gate
+on an edge from $u$ to $v$ of type $r$ is
 \begin{equation}
-m_{u\to v}^{(l),r}=\tanh\!\big(W^{(l),r}_{\mathrm{sign}}h_u^{(l-1)}\big)\odot\mathrm{ReLU}\!\big(W^{(l),r}_{\mathrm{mag}}h_u^{(l-1)}\big),
-\end{equation}
-a message that can be positive or negative, as activation or inhibition would be ($\tanh$ factor), times a non-negative strength ($\mathrm{ReLU}$ factor). The condition gate
-\begin{equation}
-\alpha_{u\to v}^{r}(c)=\sigma\!\big(w_{\mathrm{gate}}^{r}\cdot[\,h_{\mathrm{cond}}(c)\,\|\,f_e\,]+b_{\mathrm{gate}}^{r}\big)\in[0,1]
+\alpha_{u\to v}^{r}(c)=\sigma\!\big(w_{\mathrm{gate}}^{r}\cdot[\,h_{\mathrm{cond}}(c)\,\|\,f_e\,]+b_{\mathrm{gate}}^{r}\big)\in[0,1],
 \label{eq:gate}
 \end{equation}
-multiplies each message before a node's incoming messages are combined, so the same physical edge can be on in one condition and off in another. Unlike graph attention, it is an independent sigmoid for each edge, computed from the culture condition $c$ and the edge's evidence features $f_e$, not a similarity score normalized over a neighborhood. Each node adds its new information to its old state (a residual update), and a $4$-head cross-attention readout, which weights each node by its relevance to the target's own features $h_{\mathrm{do}}$, pools the node states into $h_{\mathrm{graph}}\in\mathbb{R}^{256}$.
+where $h_{\mathrm{cond}}(c)$ represents the culture condition, $f_e$ holds the edge's evidence features
+(its source, confidence score, whether the binding is direct, and how many sources support it) and
+$\sigma$ maps any number into $[0,1]$. The gate does not depend on the proteins, so it is computed once and
+used in all three rounds. It multiplies the edge's message before the messages arriving at a protein are
+summed. An attention step then pools the proteins' states into one vector for the target.
 
-\paragraph{The other encoders, and PINNACLE.} The untyped model replaces these layers with a graph convolutional network (GCN) \citep{kipf2017gcn}, which treats all edges alike and has no gates, and our architecture search (Appendix~\ref{app:archsearch}) also tried graph attention \citep{brody2022gatv2}. PINNACLE \citep{li2024pinnacle} compresses a cell-type-specific interaction network into one vector per protein, which carries graph information into a model without message passing, the no-graph model included (cause D in \S\ref{sec:causes}); here it has no measurable effect (Appendix~\ref{app:ablate}).
+\paragraph{The untyped model.} It replaces these rounds with three layers of a standard graph convolution
+\citep{kipf2017gcn} over all links between two proteins (physical binding, shared complex and
+functional association), treated as one type. Each message is scaled by $1/\sqrt{d_i d_j}$, where $d_i$
+and $d_j$ are the numbers of partners, within the neighborhood and plus one, of the two proteins it
+joins. It has
+no gates, no signed messages, no evidence term, no complex nodes and a simpler update.
 
-\paragraph{Decoder and mixing weight.} The decoder predicts a change in the programs from the graph, and in parallel an expression-only prediction that bypasses the graph, then mixes the two with a learned weight $\gamma$. Switching the graph encoder off forces $\gamma{=}0$ and recovers the no-graph model exactly, so the four models are nested ablations of one architecture rather than comparisons between separate code paths.
+\paragraph{The penalty.} The penalty on the gates is
+\begin{equation}
+\mathcal{L}_{\mathrm{graph}}=\tfrac{1}{B}\sum_{r,b,e}\big(|\alpha^{r}_{b,e}| + (1-\mathrm{conf}^{r}_{b,e})(\alpha^{r}_{b,e})^2\big),
+\label{eq:graphloss}
+\end{equation}
+where the sum runs over every edge $e$ of every type $r$ in the neighborhood of each of the $B$ rows in a
+batch, and $\mathrm{conf}^{r}_{b,e}$ is the edge's confidence. It is divided by $B$ but not by the number
+of edges, which is why it grew so large (\S\ref{sec:confound}).
 
+\paragraph{Output.} The model makes two predictions of the program changes, one from the graph encoder and
+one that skips it, and mixes them with a weight between $0$ and $1$ that it computes for each row. Fixing
+that weight at zero gives the no-graph model's program predictions exactly, so the four models are versions
+of one architecture. The graph models also add a graph-based correction to each gene's predicted change,
+which the no-graph model lacks. \textsc{systema} scores the programs, so it does not read this term
+directly, though the term is trained with the rest of the model and may shape the program predictions.
+Scores computed on single genes (Appendix~\ref{app:causes}) read it directly.
+After training, a separate module in the GNNExplainer tradition \citep{ying2019gnnexplainer} picks out the
+few edges behind each prediction, its \emph{rationale}.
 
-\section{The architecture search, and why it decided nothing}
-\label{app:archsearch}
-
-The architecture search that we first used to refute cause C could not have refuted anything: each of its runs used one seed and five epochs, and the differences it ranked were smaller than seed noise.
-
-\begin{table}[h]
-\centering
-\caption{Representative runs from the $14$-run architecture search (one seed, five epochs, scored on an inner split, a holdout carved from the training targets so that the search never touched the validation targets). No run outranks the default gated encoder, but the search could not resolve differences of this size (see below), and Appendix~\ref{app:mechanism} overturns its verdict on normalization. The order records what we ran; it is not a result. Attention runs use GATv2 \citep{brody2022gatv2}. ``gate'' is the mean final edge gate.}
-\vspace{2pt}
-{\small
-\begin{tabular}{@{}lcc@{}}
-\toprule
-Architecture (inner split) & \textsc{systema} & gate \\
-\midrule
-gated, summed messages, all edges (\emph{default}) & $\mathbf{0.0914}$ & $0.73$ \\
-gated, messages averaged                          & $0.0884$ & $0.12$ \\
-gated, messages GCN-normalized                    & $0.0881$ & $0.03$ \\
-gated, functional edges scoring $<0.4$ removed    & $0.0881$ & $0.47$ \\
-untyped (pruned) $+$ GATv2 attention              & $0.0869$ & n/a \\
-untyped $+$ STRING edge weights                   & $0.0869$ & n/a \\
-untyped (plain GCN)                               & $0.0874$ & n/a \\
-no graph                                          & $0.0862$ & n/a \\
-gated, functional edges scoring $<0.7$ removed    & $0.0828$ & $0.30$ \\
-\bottomrule
-\end{tabular}}
-\label{tab:archsearch}
-\end{table}
-
-\paragraph{The search could not have answered its question.} Four of its runs drop the typing and gating (three appear as the untyped rows of Table~\ref{tab:archsearch}), so in principle it could have found cause C, but it was underpowered. Every run used a single seed, and our protocol gives no $p$-value at $n{=}1$, because one seed is not a paired result; no run was decidable on its own, and the search as a whole distinguished nothing. Across all $14$ runs the best is $+0.0051$ against the no-graph baseline and the worst is $-0.0037$, a spread of $0.0089$. If all $14$ designs were equally good and only the training seed varied (the \emph{seed noise alone}, $\mathrm{sd}=0.0043$ on the frozen split), their scores would be expected to span $0.0147$. The whole search is narrower than what re-running one architecture with new seeds produces, and its best run would need $12$ paired seeds to pass our correction rule with $80\%$ power. Its budget was also biased. Every run trained for \emph{five} epochs. In our full-length runs the typed and gated models reach their best validation loss by epoch $3$ and the untyped and no-graph models not until epochs $13$ to $19$ (Appendix~\ref{app:causes}). If the inner split trains the same way, five epochs catch the typed and gated runs at their best and the rest well short of theirs. That budget favors the runs that came out on top, and nothing here separates how fast a model converges from how good it ends up. We ranked $14$ architectures on differences we could not resolve, at a budget unlike the one we report, and then read the ranking as a refutation.
-
-\paragraph{Why Figure~\ref{fig:lambda} may rest on one seed when this table may not.} The penalty sweep behind Figure~\ref{fig:lambda} is also one run per point, so the objection above applies to it on its face. We accept it there for a reason that does not carry over. That figure measures a gate collapsing across seven orders of magnitude, from $0.76$ to $\sim$$10^{-7}$, and the largest seed-to-seed spread we measure anywhere in this paper is a factor of two on a quantity of order $10^{-2}$. The architecture search, by contrast, spans differences of $0.0089$ against a seed spread of $0.0043$, where one seed decides the ranking. The sweep clears its own noise by a margin that new seeds cannot close; the search does not.
-
-\section{Which part of the typed design does the damage?}
+\section{Why the typed model does worse}
 \label{app:mechanism}
 
-The typed model's deficit comes mostly from summing each edge type's messages without normalizing them, not from the edge types themselves and not from the model's size. \S\ref{sec:causes} traces the deficit to the typed encoder: $-0.0120$ \textsc{systema} at $n{=}7$, seven of seven seeds, surviving both corrections. Two explanations are tangled inside that number. Splitting edges by type may be the wrong design; or typed message passing simply has four times the message parameters over the same edges, in which case the damage is about capacity and has nothing to do with evidence types. Two extra models separate them (Table~\ref{tab:mechanism}), each registered with its decision rule before either was trained.
+With seven seeds on our main split, the typed model scores $-0.0120$ against no graph, worse in all seven
+seeds, and this shortfall survives correction. Two explanations are tangled in that number: splitting the
+edges by type may be the wrong design, or the typed model may simply have more parameters. Two extra
+models, each registered with its decision rule before training, separate them ($n{=}5$, corrected as a
+family of two). One shares a single message module across all edge types, which cuts the model's
+parameters by a third; it moves \textsc{systema} by $+0.0004$ against the typed model ($95\%$ CI
+$[-0.0048,+0.0057]$). The other gives every protein-protein edge a random type, keeping each type's edge
+count; it moves it by $+0.0065$ ($[-0.0017,+0.0147]$). Neither passes correction. So the extra parameters
+explain little of the shortfall (at most about two fifths, by the interval), and random labels recover
+about half of it, too uncertain to rule the labels in or out.
 
-\textsc{typed\_shared} uses one message module for all four relations (the three evidence types, plus the links from proteins to the complex nodes they belong to) instead of one each, cutting $2{,}396{,}160$ message parameters to $599{,}040$ and the model's total parameters by $34\%$ ($5{,}254{,}884$ to $3{,}457{,}764$), and changes nothing else. \textsc{typed\_permuted} keeps one module per relation but gives every protein-protein edge a randomly reassigned relation label, keeping each relation's edge count exactly. The relabeling happens \emph{after} the neighborhood is sampled, because the sampler ranks candidate neighbors by relation: permuting the stored graph would have changed which neighbors enter the subgraph, not only which weights process them.
+The architecture search we first used to dismiss this cause could not have resolved it. Its $14$ runs used
+one seed and five epochs each. If $14$ runs differed only by seed, we would expect their best and worst
+scores to differ by about $0.0147$. The search's whole range, $0.0089$, was narrower than that, and about
+half the $0.0176$ gap between the untyped and typed models.
 
-\begin{table}[h]
-\centering\small
-\caption{The two diagnostic comparisons, $n{=}5$ paired seeds on the frozen split, corrected as their own
-family of two with Bonferroni and Holm both required. Positive means the change improved on the
-typed encoder. Neither passes.}
-\label{tab:mechanism}
-\begin{tabular}{llrrr}
-\toprule
-comparison & what it removes & mean & $95\%$ CI & $p_{\mathrm{Bonf}}$ \\
-\midrule
-$D_1$ shared $-$ typed   & the per-relation parameters & $+0.0004$ & $[-0.0048,+0.0057]$ & $1.000$ \\
-$D_2$ permuted $-$ typed & the information in the typing & $+0.0065$ & $[-0.0017,+0.0147]$ & $0.182$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+\paragraph{Scaling the messages.} The typed model sums each edge type's messages. A variant that instead
+weights each message by $1/\sqrt{d_i d_j}$, where $d_i$ and $d_j$ count each protein's partners of that
+edge type in the neighborhood, gains $+0.0139$ \textsc{systema} over the typed model ($95\%$ CI
+$[+0.0029,+0.0248]$, five of five seeds) and so recovers $79\%$ of the gap, with a wide interval. This
+scaling is close to the untyped model's, which counts partners over all types together. We planned four
+such message variants and ran only this one; the other three were dropped because too little of the gap
+was left for them to detect. Alone it is a family of one, so its relevant number is the uncorrected
+$p{=}0.0245$, which would not pass Bonferroni over all four ($0.098$). The repaired
+model is still no better than no graph ($+0.0008$, $95\%$ CI $[-0.0047,+0.0062]$). Most of the typed
+model's shortfall therefore seems to come from the plain sum, under which a protein's update grows with
+its number of partners.
 
-Neither explains the deficit. Cutting the message parameters fourfold, a third of the whole model, moves \textsc{systema} by $+0.0004$; if the deficit were about capacity or overfitting, that change would have fixed it. Replacing the true relation labels with random ones of identical sizes moves it by $+0.0065$, which does not pass correction. That estimate is \emph{positive}, so if anything the curated labels are slightly worse than random ones, but under our rule it is a null and we report it as one.
+\paragraph{When each model is scored.} Every run is scored at the epoch with its lowest validation loss.
+Counting epochs from $1$, the no-graph and untyped runs reach theirs at epochs $15$ to $20$ and $14$ to
+$20$, and all of them run to the $20$-epoch limit. The typed and gated runs peak within their first four
+epochs and stop early; the typed model peaks at its very first epoch in four of five seeds. Longer
+training could therefore change the no-graph and untyped runs, and with them every comparison against no
+graph, including the main one. We did not test this, or choosing each run's best epoch by score instead of
+loss.
 
-What remains is what all three typed models (the typed model and its two variants) share and the untyped one does not. Both diagnostic models sit well below the untyped \textsc{gcn} ($-0.0172$ and $-0.0111$) and below the no-graph baseline ($-0.0126$ and $-0.0065$), so the deficit survives both changes. The remaining candidates concern the form of the message rather than where it goes: signed messages, the per-edge feature term, the node type for complex membership, the residual feed-forward block, and summing an edge type's messages instead of normalizing them by degree.
-
-We had reported the last of these as refuted. The architecture search that refuted it spans $0.0089$ across all $14$ of its runs, while the untyped-minus-typed gap we measure at $n{=}5$ on the frozen split is $0.0176$. A search whose whole range is half the difference under study was not resolving these models, so ``refuted within the searched space'' was never established for normalization either.
-
-\paragraph{Degree normalization recovers most of the deficit.} \textsc{typed\_gcnnorm} is the typed model with each relation's messages weighted by $1/\sqrt{d_i d_j}$, where $d_i$ and $d_j$ are the degrees of the edge's two ends, instead of summed. Nothing else changes, not even the parameter count, since the shared-module model had already excluded capacity. Against the typed runs at the same five seeds it recovers $+0.0139$ \textsc{systema} ($95\%$ CI $[+0.0029,+0.0248]$, five of five seeds positive), or $79\%$ of the $+0.0176$ gap to the untyped model. Most of the deficit is therefore the unnormalized sum per relation, not the relation labels: a relation's contribution grows with its degree, so \textsc{functional\_assoc} ($85\%$ of all edges, median score $0.209$) dominates each node's update by sheer count.
-
-\paragraph{It is not a graph benefit.} First, repairing the encoder buys nothing against no graph: \textsc{typed\_gcnnorm} is $+0.0008$ against the no-graph baseline ($[-0.0047,+0.0062]$, $p=0.71$, three of five seeds) and cannot be told apart from the untyped model ($-0.0037$, $p=0.22$). Fixing the aggregation removes the damage and leaves the plain negative result of \S\ref{sec:null}. Second, this is a family of \emph{one}, where Bonferroni and Holm change nothing, so ``passes both corrections'' means only the uncorrected $p=0.0245$; the three other registered message-form models would make a family of four ($m{=}4$), where it would not pass. What does not depend on the correction is that all five seeds agree in sign and that the recovered share is large.
-
-\paragraph{Why we stopped at one model.} The remainder that the other three would divide up is $\textsc{untyped\_gnn}-\textsc{typed\_gcnnorm}=+0.0037$, against a minimum detectable effect of $0.0096$ at five seeds, $2.6\times$ the whole remainder and larger still against any one model's share. Detecting the remainder needs about $21$ seeds, and half of it about $77$, so three more models at five seeds would have been underpowered by construction. Stopping also keeps the family at one and so keeps the $p$ above, but the power calculation, not the $p$, is why we stopped.
-
-\section{The replication datasets and protocol}
+\section{The replication}
 \label{app:repl}
 
-Seven public screens let us repeat the comparison, but none is a T-cell screen and most have far fewer targets than the reference screen, so each is a weaker test than the reference. We pre-registered the multi-dataset replication before running it: the family of comparisons and its correction, the number of seeds, the primary comparison for each dataset, the criteria for stopping and the rules for combining results. The survey of candidate datasets that went with it bears on how any such replication should be read.
+We pre-registered the replication before running it: the comparisons and their correction, four seeds per
+model, the main comparison for each dataset, and the rules for pooling. We amended the plan three times,
+and each amendment states that it was written before any replication model was trained. One changed how
+responses are built: as first written, that rule kept only $12$ of Replogle RPE1's $2{,}393$ targets, by a
+standard that our own screen's published responses do not meet. We built ten
+public datasets in our format. Eight passed a quality check that perturbing a gene consistently changes
+that gene's own expression. The two that failed, Datlinger and Shifrut, were the only T-cell screens among
+the candidates, so the replication covers four cell types but not T cells. Of the eight that passed,
+Papalexi has too few targets for a split, and the other seven were trained to completion
+(Table~\ref{tab:repl}). The number of programs $K$ cannot exceed the number of training rows, so the three
+smallest datasets use fewer programs, each number fixed before the first run.
 
-First, few candidates come close to the reference screen's number of targets. The reference screen has $11{,}526$ gene targets. One harmonized public alternative \citep{peidli2024scperturb} is comparable, the Replogle K562 genome-wide screen at $9{,}730$ targets with a response profile, and it gives the tightest interval of the seven (\S\ref{sec:repl}). The rest are far smaller: the largest is Replogle RPE1 at $2{,}122$, the largest with more than one experimental condition is Frangieh melanoma at $238$ over three conditions, and the two T-cell candidates, Shifrut in primary cells and Datlinger in the Jurkat cell line, yield $20$ and $30$. Because the split holds out whole groups of similar sequences, the number of targets sets how many groups there are to hold out, so outside the genome-wide screen a replication is a weaker measurement than the reference.
+\paragraph{Pooling.} Pooled over the seven new datasets, the typed graph's $+0.0018$ has a random-effects
+$95\%$ CI of $[-0.0028,+0.0065]$ and a fixed-effect CI of $[-0.0005,+0.0040]$. The pre-registration pools
+no untyped comparison, so the following two are post hoc. Over all eight datasets the untyped comparison is
+$+0.0091$ ($p{=}0.12$); over the five datasets with $K{=}128$ it is $+0.0141$ ($[+0.0041,+0.0240]$,
+$p{=}0.0056$). The Hartung-Knapp adjustment, which corrects a pooled interval for having few datasets,
+raises these to $p{=}0.48$ and $p{=}0.24$, and widens the typed interval to $[-0.0053,+0.0089]$.
 
-Second, the number of targets and the number of conditions are anti-correlated across candidates. Every dataset with enough targets for a well-powered split has a single condition, where the gate cannot vary with condition, so h1 cannot test condition-dependent gating there and the pre-registration treats it as undefined. The primary comparison on those datasets must be h2a, and the pre-registration assigns it per dataset in advance, not after seeing results.
+\paragraph{RPE1 and Frangieh.} On RPE1 the untyped gain has $95\%$ CI $[+0.0316,+0.1033]$ ($p{=}0.009$,
+Bonferroni and Holm both $0.019$ in that dataset's family of two). On Frangieh, the gated model against no
+graph is $+0.0033$ ($95\%$ CI $[-0.0829,+0.0894]$), with every gate live throughout training: an interval
+too wide to decide anything.
 
-\paragraph{What we built and trained.} Ten candidates were built under the corrected DE rule, eight passed an on-target quality check (QC), and seven were trained to completion: Frangieh melanoma, Replogle RPE1, Replogle K562-essential, Replogle K562 genome-wide, Norman K562, and Tian iPSC-neuron CRISPRi and CRISPRa (Table~\ref{tab:repl}). The two that failed QC, Datlinger and Shifrut, were the pool's only T-cell data, which is why the replication covers four cell types but not the reference's own. The number of programs does not carry over: $K$ cannot exceed the number of training rows, and a replication dataset has one row per (target, condition), so the reference $K{=}128$ is not possible everywhere. Tian CRISPRi runs at $K{=}32$, and Tian CRISPRa and Norman at $K{=}16$, each a labeled deviation fixed before the first run (Table~\ref{tab:repl}).
+\paragraph{The extra seeds on the T-cell screen.} At five seeds the untyped comparison was $+0.0045$
+($95\%$ CI $[+0.0011,+0.0079]$, Holm $0.062$ and Bonferroni $0.083$, clearing neither). After that result
+we ran two more seeds (numbered $5$ and $6$) of the untyped and no-graph models, and then of the typed and
+gated models. At
+seven seeds, none dropped, the estimate is $+0.0043$ and it passes both corrections. Adding seeds after
+seeing a near miss makes the seven-seed $p$-values somewhat optimistic. At seven seeds the gated model
+against no graph is $-0.0036$ ($95\%$ CI $[-0.0093,+0.0022]$); our main test stays at five seeds.
 
-\paragraph{The $K{=}128$ subset disagrees with the full pool.} Amendment 3.1 of the pre-registration asks for two pooled estimates: one over all datasets, and one over only the datasets that run with the reference model's $K{=}128$ programs (\S\ref{sec:repl}). It also fixed in advance that where the two disagree, the $K{=}128$ subset is the one that describes the reference model. We report both and settle neither, because the pre-registration pools only h1 and h2a, so for the untyped model both estimates are post hoc. Over all eight datasets, random effects give $+0.0091$ ($p{=}0.12$) at $I^2{=}87.5\%$, with CI $[-0.0024,+0.0207]$; random effects let the true effect differ between datasets, the right choice when datasets disagree this much. Over the five $K{=}128$ datasets it is $+0.0141$ ($[+0.0041,+0.0240]$, $p{=}0.0056$), and all five are positive. The datasets still disagree strongly within that subset ($I^2{=}87.7\%$). The only negative dataset, Norman, is one of the three that ran below $K{=}128$, so its opposite sign cannot be cleanly separated from its eightfold cut in the number of programs. The cut does not explain the sign either: the other two datasets below $K{=}128$ carry the second and third largest positive effects (Tian CRISPRi $+0.0281$, CRISPRa $+0.0226$), and one negative among three against none among five arises easily by chance ($p{=}0.375$, Fisher exact). Neither estimate is robust to the Hartung-Knapp adjustment, which corrects a pooled interval for having only a few datasets, usually widening it. The pre-registration did not specify it, so we report it only as a sensitivity check: it widens the five-dataset interval to $[-0.0139,+0.0421]$ ($p{=}0.24$), the eight-dataset one to $[-0.0201,+0.0384]$ ($p{=}0.48$), and the typed model's seven-screen random-effects bound of \S\ref{sec:repl} to $[-0.0053,+0.0089]$.
-
-\paragraph{On-target check.} The code that converts each public dataset into our format can produce a matrix of the right shape with wrong values, so we checked the one trained multi-condition dataset against biology it cannot fake: in Frangieh, knocking out a gene lowers that gene's own expression (own-gene $\log_2$ fold change mean $-0.613$, negative for $90\%$ of targeted genes, against $-0.002$ and $63\%$ for random genes).
-
-\begin{table}[h]
-\centering
-\caption{Replication candidates under the corrected DE rule (Amendment 2: all cells for each (target, condition) against pooled controls from the same condition). Papalexi passes QC but has fewer than the $50$ target groups a split needs, so it is barred from any headline or pooled estimate. Of the trained datasets only Frangieh has several conditions, so it is the only one that can test h1; Shifrut's build kept one of its two. $K$ is the number of programs fixed by Amendment 3.1; any $K{\ne}128$ is a labeled deviation from the reference architecture, and \emph{n/a} marks the three datasets that were never trained and so have no programs. The pre-registration also fixes a replicate unit per dataset; the table omits that column, and Appendix~\ref{app:prereg} discusses it.}
-\label{tab:repl}
-\vspace{2pt}
-{\footnotesize
-\begin{tabular}{@{}lrccll@{}}
-\toprule
-Dataset & Targets & Cond. & $K$ & On-target QC & Verdict \\
-\midrule
-ReplogleWeissman2022\_K562\_gwps & $9{,}730$ & $1$ & $128$ & pass & trained, h2a only \\
-ReplogleWeissman2022\_rpe1 & $2{,}122$ & $1$ & $128$ & pass & trained, h2a only \\
-ReplogleWeissman2022\_K562\_essential & $2{,}003$ & $1$ & $128$ & pass & trained, h2a only \\
-FrangiehIzar2021   & $238$ & $3$ & $128$ & pass & trained, \textbf{the only h1 test} \\
-TianKampmann2021\_CRISPRi & $184$ & $1$ & $32$ & pass & trained, \textbf{deviation} \\
-NormanWeissman2019 & $105$ & $1$ & $16$ & pass & trained, \textbf{deviation} \\
-TianKampmann2021\_CRISPRa & $100$ & $1$ & $16$ & pass & trained, \textbf{deviation} \\
-\midrule
-DatlingerBock2017  & $30$ & $2$ & n/a & \textbf{fail} & not trained \\
-PapalexiSatija2021 & $25$ & $1$ & n/a & pass & too few target groups \\
-ShifrutMarson2018  & $20$ & $1$ & n/a & \textbf{fail} & not trained, lost a condition \\
-\bottomrule
-\end{tabular}}
-\end{table}
-
-We set the graph's PINNACLE node features to a matching cell-type context where one exists: melanocyte for Frangieh and retinal pigment epithelial cell for Replogle RPE1. PINNACLE has no K562 or iPSC-neuron context, so the other five trained screens (both K562 Replogle screens, Norman and both Tian screens) ran without it, with ESM-2 features only; the monocyte and CD4$^{+}$ helper T-cell contexts that do exist belong to candidates that were not trained. Running a non-T-cell dataset with the CD4 context would weaken the graph for reasons unrelated to the hypothesis and manufacture the very null we are testing.
-
-\paragraph{No T-cell replication.} No replication dataset shares the reference \emph{cell type}, because the pool's only T-cell screens are the two that failed QC. If the graph's value were specific to T cells, screens of other cell types could not show it, and the replication contains no T-cell screen, so we cannot rule that out.
-
-\paragraph{The typed model's pooled bound.} Pooled over the seven replication screens, the typed graph's $+0.0018$ has fixed-effect $95\%$ CI $[-0.0005,+0.0040]$ and random-effects CI $[-0.0028,+0.0065]$, with $I^2{=}39.2\%$, $Q$ $p{=}0.13$: the $Q$ test does not detect heterogeneity despite that spread, and with seven datasets $I^2$ is itself imprecise.
-
-\paragraph{Which pool the heterogeneity comparison uses.} The typed model's low heterogeneity belongs to the replication screens, not to every pool containing them: adding the reference screen, where its one large negative sits, raises its $I^2$ from $39.2\%$ to $87.8\%$, level with the untyped model's $87.5\%$. Figure~\ref{fig:repl} therefore compares the two models over the seven replication screens, where their $I^2$ is $39.2\%$ against $88.7\%$, the pool on which both are measured on identical data. Pooled over all eight for both models, the difference in heterogeneity disappears; the per-dataset numbers below let a reader check either reading.
-
-\paragraph{The reference screen's untyped model at $n{=}7$.} Per-seed differences in \textsc{systema}, untyped minus no graph, on the frozen split, seeds $0$ to $6$, none dropped: $+0.0090$, $+0.0050$, $+0.0022$, $+0.0031$, $+0.0033$, $+0.0066$, $+0.0008$. Mean $+0.0043$, sd $0.0028$, se $0.0011$, paired $p=0.0068$ before correction. At $n{=}5$ (seeds $0$ to $4$) the same contrast was $+0.0045$, $95\%$ CI $[+0.0011,+0.0079]$, Holm $0.062$ and Bonferroni $0.083$, clearing neither. We ran seeds $5$ and $6$ of the untyped and no-graph models after seeing this five-seed result, to test whether it held, and then the typed and gated models at the same seeds so that all four share seven. Seeds $5$ and $6$ left the estimate nearly unchanged and cut the CI half-width from $0.0034$ to $0.0026$. That all seven seeds used one split is verified from the run records and the recorded split sizes: observed fold sizes $[21262, 4400]$ on every run that records them.
-
-\paragraph{The untyped model across all eight datasets.} In order of effect size: Norman $-0.0790$, reference $+0.0043$, Replogle K562 genome-wide $+0.0069$, Replogle K562-essential $+0.0081$, Frangieh $+0.0194$, Tian CRISPRa $+0.0226$, Tian CRISPRi $+0.0281$, Replogle RPE1 $+0.0675$. On RPE1 the untyped estimate has $95\%$ CI $[+0.0316,+0.1033]$; per-seed $+0.036,+0.072,+0.089,+0.073$; and the typed model goes the other way ($-0.0196$). Paired by seed, the untyped-minus-typed difference there is $+0.0871$ ($95\%$ CI $[+0.0179,+0.1562]$, $p{=}0.028$), a post hoc test that does not survive correction over the dataset's family (Bonferroni $0.084$, Holm $0.056$). We first had five datasets, all positive; the sixth reversed that decisively, and the genome-wide eighth is positive but not significant ($+0.0069$). Our two activation datasets, where CRISPR switches genes on, do not behave alike either ($-0.0790$ and $+0.0226$).
-
-\paragraph{The genome-wide point estimate, and the one gated replication.} The genome-wide screen's typed estimate, the tightest of the seven, is $+0.0008$ ($[-0.0042,+0.0058]$). On Frangieh, h1 is $+0.0033$ ($95\%$ CI $[-0.0829,+0.0894]$), with every gate live throughout training. That interval is wide, and we read it as underpowered rather than as a null.
-
-\section{Splits, re-drawn splits, and what each split can bound}
+\section{Splits}
 \label{app:folds}
 
-Each split bounds the effect only on itself. Re-drawing the same split specification moves results as much as changing the specification does, and the training seed is the largest source of noise.
+\paragraph{Stricter splits.} Two stricter splits lower the similarity threshold and raise the group cap:
+$0.80$ with $10\%$ (intermediate) and $0.75$ with $15\%$ (harder). With five paired seeds each, the gated
+model against no graph is $-0.0009$, $+0.0082$ and $+0.0005$ on the main, intermediate and harder splits,
+and none passes correction (Bonferroni $1.000$, $0.101$ and $1.000$). The typed model's shortfall is
+$-0.0131$, $-0.0122$ and $-0.0012$. On the intermediate split it passes no correction ($p=0.23$) because
+the typed model's spread across seeds is $0.0169$ there, against $0.0049$ on the main split; on the harder
+split the shortfall itself disappears.
 
-\paragraph{How well the frozen split is blocked.} Blocking by sequence group reduces the paralogs shared by training and validation; it does not remove them. The split's own audit compares only the training set with the sequestered split, a test set held back and never scored. Run between training and validation targets, the same function finds $24.0\%$ of validation targets ($356$ of $1{,}482$) with a training target at centered cosine $\geq 0.85$ (maximum $0.996$), against $60\%$ for a naive split that deals out every twentieth gene. Some above-threshold pairs land in different groups because the clustering does not chain similar pairs together, which is what keeps the groups from merging into one giant group.
+\paragraph{Re-drawing one split.} Changing only the random number that decides which groups go to training
+or validation, three draws of the intermediate split give the gated model $+0.0082$ ($p=0.025$),
+$+0.0026$ ($p=0.027$) and $+0.0021$ ($p=0.266$), all uncorrected. The experiment is the same, yet the
+estimate spans fourfold: two draws would look like a benefit without correction and the third would not.
+None passes Bonferroni over the family of four ($0.101$, $0.109$, $1.000$). This is why the corrected
+verdict carries the paper, and why a sweep over splits needs several draws per setting.
 
-\paragraph{A harder split.} Lowering the sequence-similarity threshold from $0.85$ to $0.75$ and raising the group-size cap from $5\%$ to $15\%$ blocks more paralogs and lowers the median train-to-sequestered-split sequence cosine from $0.796$ to $0.741$. We compare only paired comparisons within each split: the validation sets differ in size and composition, so absolute \textsc{systema} is not comparable between splits even when a paired comparison is, and the re-draws below show why we do not treat that cosine as a clean measure of difficulty either. On this split nothing in the family passes correction: h2b and the untyped comparison shrink as h2a does ($+0.0122\!\to\!+0.0017$, $+0.0045\!\to\!+0.0028$). The gated graph stays tied with no graph ($\Delta\,\textsc{systema}=+0.0005$, $95\%$ CI $[-0.0105,+0.0115]$, $p=0.90$, $n{=}5$ paired seeds, per-seed differences $-0.0003$, $+0.0035$, $+0.0032$, $-0.0138$, $+0.0100$). The point estimate here is nominally \emph{positive}, unlike the frozen split's $-0.0009$, and we read nothing into that: the interval straddles zero almost symmetrically, the comparison passes neither correction, and one seed ($-0.0138$) shifts the mean by more than the mean's own size. The sign is undetermined at this budget, and the harder split gives a wider interval, not a tighter bound.
-
-\paragraph{A third split.} Two splits invite a story about difficulty, so we ran a third at an intermediate threshold (Table~\ref{tab:folds}). The corrected h1 verdict is the same on all three, indistinguishable from no graph, but the point estimates are not: $-0.0009$, $+0.0082$, $+0.0005$. On the intermediate split all five seeds favor the graph and the \emph{uncorrected} interval excludes zero ($p=0.025$); it fails the correction for multiple tests ($p_{\mathrm{Bonf}}=0.101$, $p_{\mathrm{Holm}}=0.101$), so the verdict stands, but reporting only the two splits whose estimates sit near zero would be selective. h2a failed to replicate twice, for different reasons. On the intermediate split h2a is $-0.0122$, within $7\%$ of the frozen $-0.0131$, yet passes no correction ($p=0.23$) because the typed model's across-seed standard deviation is $0.0169$ there against $0.0049$ on the frozen split. On the harder split the estimate itself collapses to $-0.0012$ ($p=0.61$). The per-seed differences show why: $-0.0010$, $-0.0013$, $-0.0033$, $-0.0070$, $+0.0066$. One seed reverses sign. Only the second failure, the collapse on the harder split, says anything about the effect.
-
-\begin{table}[htbp]
-\centering
-\caption{The same four models, $n{=}5$ paired seeds, on three splits at decreasing sequence-similarity thresholds. We omit a ``difficulty'' column: the natural candidate, the median train-to-sequestered-split cosine ($0.796$, $0.759$, $0.741$), is not stable under re-drawing (see text). Absolute \textsc{systema} is not comparable across splits, so only paired comparisons are shown. No h1 comparison survives correction on any split. The h2a column gives point estimates only; \S\ref{sec:null} and the text above give each one's test.}
-\label{tab:folds}
-\vspace{2pt}
-{\small
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-Split (threshold/cap) & h1 $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & h2a $\Delta$ \\
-\midrule
-frozen ($0.85/0.05$)  & $-0.0009$ & $[-0.0072,+0.0054]$ & $1.000$ & $-0.0131$ \\
-intermediate ($0.80/0.10$) & $+0.0082$ & $[+0.0017,+0.0148]$ & $0.101$ & $-0.0122$ \\
-harder ($0.75/0.15$)  & $+0.0005$ & $[-0.0105,+0.0115]$ & $1.000$ & $-0.0012$ \\
-\bottomrule
-\end{tabular}}
-\end{table}
-
-\paragraph{One split specification, three re-draws.} Three splits are not three levels of difficulty. Holding the threshold and the cap fixed at the intermediate setting and changing only the split seed, the random number that decides which group goes where, three draws of the \emph{same} split specification give median train-to-sequestered-split cosines of $0.759$, $0.793$ and $0.862$. Partition noise alone spreads the statistic over $0.103$, against $0.056$ for the entire designed range across all three thresholds ($0.796$ to $0.741$): re-drawing one split moves the difficulty statistic almost twice as far as deliberately changing the threshold does, and the third re-draw is \emph{easier} than the frozen split it was meant to sit below. The draws also differ in structure, sharing only $20\%$ of their validation targets and differing twofold in validation size, and the no-graph baseline moves with them: at five paired seeds per re-draw it scores $0.0991$, $0.0942$ and $0.0845$ \textsc{systema}, a $0.0146$ spread on our most stable model, larger than any effect in Table~\ref{tab:folds}. It does not track the cosine statistic, since the nominally hardest re-draw scores highest. It orders with validation-set size, which the re-draws moved from $3{,}632$ to $7{,}216$ without our asking, though with three re-draws that ordering would arise by chance one time in six, so we offer it as the more plausible reading rather than a measured relationship.
-
-The comparison moves too. Running the graph-versus-no-graph comparison on all three re-draws at five paired seeds each (the first re-draw is the intermediate split of Table~\ref{tab:folds}) gives h1 $=+0.0082$ (uncorrected $95\%$ CI $[+0.0017,+0.0148]$, $p=0.025$), $+0.0026$ ($[+0.0005,+0.0047]$, $p=0.027$) and $+0.0021$ ($[-0.0024,+0.0065]$, $p=0.266$). The experiment, the specification and the five seeds are the same and only the partition draw differs, yet the estimate spans fourfold and \emph{the qualitative verdict flips}. Two re-draws give an interval excluding zero at $p\approx0.03$ and the third does not, so an author who drew the first would report an apparent graph benefit and one who drew the third would report nothing. All three estimates are positive, and none passes Bonferroni over the pre-registered family of four ($0.101$, $0.109$, $1.000$). That is why the corrected verdict carries the paper and the uncorrected intervals serve as a cautionary example.
-
-Each comparison is valid within its own split, but the \emph{ordering} in Table~\ref{tab:folds} carries far less information than three rows suggest. We therefore do not claim that the effect grows or shrinks with how unlike the training genes the validation genes are, and we suggest the same caution for any split sweep that uses one draw per setting: a threshold that appears to control difficulty may move it less than the partition seed does. Establishing a difficulty effect needs several draws per level, so that differences between levels can be read against the spread within a level.
-
-\paragraph{The nested variance decomposition.} We then ran that design. A \emph{level} is one threshold and cap setting, and a \emph{cell} is one draw of it, trained with five paired seeds (seven on the frozen split). For h2a we re-drew the harder split ($0.75/0.15$) three times and added a fourth level at $0.70/0.05$, giving six cells over four levels; for h1 we use the three intermediate re-draws above. Together they split the variance three ways: between levels, between re-draws within a level, and between seeds within a re-draw. For h2a the components are $\mathrm{sd}_{\text{seed}}=0.0107$ ($26$ df), $\mathrm{sd}_{\text{level}}=0$ ($3$ df) and $\mathrm{sd}_{\text{redraw}}=0.0003$ ($2$ df), where df, the degrees of freedom, counts the independent comparisons behind each estimate. For h1, over five cells at three levels, they are $\mathrm{sd}_{\text{seed}}=0.0057$ ($22$ df), $\mathrm{sd}_{\text{level}}=0.0027$ ($2$ df) and $\mathrm{sd}_{\text{redraw}}=0.0023$ ($2$ df). These figures were corrected after review (Appendix~\ref{app:repro}).
-
-Partition noise looks \emph{comparison-dependent}: h1's re-draw component is $0.0023$ against h2a's $0.0003$, roughly sevenfold, as the flipping verdicts above suggest. The two are not measured on the same partitions, though. h1's three re-draws sit at the intermediate $0.80/0.10$ setting and h2a's at the harder $0.75/0.15$, because those are the levels at which each comparison's models were replicated, so the sevenfold difference is confounded with difficulty level: it may be the comparison, or it may be the level. h2a shows no difficulty effect at all: once seed and re-draw noise are subtracted, its level component is zero, so its four level means differ by no more than that noise predicts. The term that dominates both comparisons is the seed. For h2a the training seed is the only component distinguishable from zero, and the only one here with enough degrees of freedom to be estimated precisely; for h1 the seed leads the difficulty setting by $2.1\times$, with $2$ df behind the level term. So a split sweep with one seed per split mostly measures seed noise.
-
-\paragraph{Per-split upper limits.} The quantity that matters is each split's interval, and it bounds that split only. The per-split upper limits are $+0.0054$ (frozen), $+0.0148$ (intermediate) and $+0.0115$ (harder), so across splits the data allow roughly three times the frozen split's ceiling. No split, and no re-draw of a split, yields a gated-graph benefit that survives correction over the pre-registered family of four, and no single split's upper limit bounds the effect elsewhere.
-
-\section{Removing the graph-derived features from the no-graph model}
-\label{app:ablate}
-
-The model we call ``no graph'' is not graph-free: three degree counts in its inputs carry a measurable signal, and its PINNACLE embedding carries none we can measure. Its inputs include a $128$-d PINNACLE embedding, itself learned from a protein-interaction network, and three PPI degree counts. To measure what they are worth we added variants that \emph{zero} those inputs rather than remove them, so the input width and the parameter count stay identical and the comparison isolates information rather than capacity (Table~\ref{tab:ablate}).
-
-The PINNACLE input is thinner than its size suggests: it resolves to a real vector for only $9.2\%$ of rows and the other $90.8\%$ receive zeros, because its CD4 context covers $1{,}119$ proteins against this screen's $11{,}526$ targets. A feature that the model's inputs list but the data mostly lack changes what an ablation means, in either direction.
-
-\begin{table}[h]
-\centering
-\caption{Removing the graph-derived inputs from the no-graph model, $n{=}5$ paired seeds on the frozen
-split, against the unablated no-graph baseline (mean \textsc{systema} $0.0857$). Each variant sets the
-named inputs to \emph{zero} and leaves the input width and the parameter count unchanged, so the
-comparison isolates information rather than capacity. Negative means the zeroed input was carrying
-signal. $p$ is corrected with Bonferroni and Holm over the three comparisons, both required. The
-PINNACLE row has six decimals because its effect is three orders of magnitude below the others, not
-because it is measured more finely.}
-\label{tab:ablate}
-\vspace{2pt}
-{\small
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-zeroed & $\Delta$ \textsc{systema} & $95\%$ CI & corrected $p$ & verdict \\
-\midrule
-PINNACLE $+$ degrees & $-0.00357$ & $[-0.00427,-0.00286]$ & $0.0005$ & carried signal \\
-degrees only & $-0.00347$ & $[-0.00403,-0.00291]$ & $0.0002$ & carried signal \\
-PINNACLE only & $+0.000006$ & $[-0.000006,+0.000018]$ & $0.64$ & inert \\
-\bottomrule
-\end{tabular}}
-\end{table}
-
-The degrees-only variant reproduces the full ablation within its interval, so the degree counts account for nearly all of it. The whole ablation took under six GPU-hours, against a cause we had listed as future work. The analysis was written and committed before the runs finished, fixing the comparison, the correction and the rule for interpreting it in advance.
-
-\section{The candidate causes in full}
+\section{The five causes in more detail}
 \label{app:causes}
 
-\paragraph{A. The task is close to null for every model.} Centroid accuracy, the fraction of held-out profiles whose prediction is closer to their own observed profile than to any other, sits near its floor ($\approx$$0.001$) for every model, and all four trained models occupy a band from $0.072$ to $0.090$. An independent tabular benchmark reports this exact screen as a near-null setting in which models barely separate from the average perturbed response \citep{royer2026tfm}. If there is little target-specific structure to recover, no prior can route it. That does not excuse the graph, but it bounds how much any component could have contributed, and it is why we report a \emph{bounded} null rather than a claim of zero.
+\paragraph{A. Little signal.} Centroid accuracy, the fraction of held-out responses whose prediction is
+closer to their own observed response than to any other, is about $0.001$ for every model: about one hit
+in a thousand. An independent benchmark reports this
+screen as one where models barely beat the average response \citep{royer2026tfm}. If there is little
+target-specific signal to recover, no prior can add much.
 
-\paragraph{B. The score is not hiding a gated-graph benefit.} \textsc{systema} deliberately withholds credit for predicting the average response, so it could also suppress a real gain. Scored instead with Pearson-delta on the programs, which does not subtract the training mean, h1 stays null ($p=0.64$ for the gated graph; Table~\ref{tab:family}, last column), and program cosine similarity agrees ($-0.0005$, $p=0.65$). Under Pearson-delta the paired per-seed differences have less than half the standard deviation they have under \textsc{systema}, so it has \emph{more} power, yet while it finds nothing for the gated graph, the untyped comparison and the gate's improvement over the typed model pass correction under it. So the score can hide a benefit, but not the one the headline is about. Ruled out for h1; Appendix~\ref{app:metrics} shows how far the other comparisons move when the score changes.
+\paragraph{B. The score.} \textsc{systema} gives no credit for predicting the average response, so it could
+hide a real gain. Pearson-delta, the same correlation without that subtraction, varies less between seeds,
+so it can detect smaller differences. Under it the four differences are $-0.0067$ (typed $-$ no graph),
+$+0.0062$ (gated $-$ typed), $+0.0023$ (untyped $-$ no graph) and $-0.0005$ (gated $-$ no graph, $p=0.64$);
+the first three pass both corrections and the last does not. Program cosine similarity, which compares the
+direction of the predicted and observed program changes, agrees ($-0.0005$, $p=0.65$). So the score can
+hide a benefit, but not a benefit of the gated model over no graph.
 
-\paragraph{E. The edges we would have pruned move the prediction most.} Functional associations are $85\%$ of the edges and the low-confidence type. Pruning them, the obvious cleanup, lowered \textsc{systema} and the gates in the architecture search, but no single-seed run there is decidable (Appendix~\ref{app:archsearch}). In the rationale audit with live gates, removing every functional-association edge moves the full prediction furthest ($\Delta=0.365$, the distance between the predictions with and without them, against $\leq0.0021$ for BioPlex, HuRI and CORUM). If most edges are noise and what signal there is sits among the least confident ones, an encoder that sums every edge without normalization pays for that noise (Appendix~\ref{app:mechanism}). Ours can switch edges off, which may be why it ties with no graph instead of showing the typed model's deficit, but gating recovers only enough to break even.
+We also re-scored all four models under five scores that other groups report
+\citep{roohani2024gears,wenkel2026txpert,peidli2024scperturb}, correcting over all twenty tests. These
+scores use single genes, so they also reflect the graph models' extra gene-level term
+(Appendix~\ref{app:arch}). The gated model passes correction in the graph's favor under none of them. The
+untyped comparison flips sign: it is positive under TxPert's all-gene Pearson-delta ($+0.0089$) and
+negative under \textsc{gears}' correlation over each perturbation's twenty most-changed genes ($-0.0424$),
+both significant. Ranking genes by how much they change shows why: the untyped graph helps on most genes
+but hurts on the twenty that change most. The gated model has the same shape. We grouped genes in two
+ways, both planned in advance. Over nine groups ($36$ tests) it passes correction \emph{for} the graph only
+on the two groups of genes that change least ($+0.0078$ and $+0.0064$, five of five seeds each, Bonferroni
+$0.049$ and $0.024$); over ten equal groups ($40$ tests) it passes on five, none among the four that change
+most. Its shortfall on the twenty genes that change most ($-0.0420$) passes correction over the twenty scores
+but not over the finer gene groups (Bonferroni $0.062$). These are secondary tests and the
+whole-response result stays negative, so we report them beside the negative result, not instead of it.
 
-\paragraph{The audit's ratios, at their actual sizes.} Every number in that paragraph is measured against a matched control, which is the right design but produces a ratio, and in a near-null setting a ratio can be large while the quantity it divides is negligible. Three caveats follow, each weakening our earlier reading. First, STRING is $85.4\%$ of the graph's $8{,}029{,}296$ protein-protein edges, against $1.5\%$ for BioPlex, $1.2\%$ for CORUM and $0.6\%$ for HuRI; the remaining $11.3\%$ is BioGRID, which the audit did not remove. Removing STRING therefore removes most of the graph. Per $1\%$ of edges removed it moves the prediction by $0.0043$, against HuRI's $0.0025$ and BioPlex's $0.0014$, a lead of $1.7$ to $3\times$ rather than the two orders of magnitude the raw differences suggest; only CORUM stays far behind, at $0.00002$. Second, on \emph{sufficiency}, how far the prediction from the rationale's edges alone sits from the full prediction (smaller is better), the rationales do \emph{not} beat matched random rationales of the same size. Over $50$ audited predictions, the rationale's mean distance, $1.47$, is larger than the random rationales' by $+0.011$, or $0.8\%$ ($95\%$ CI $[+0.006,+0.016]$, $n{=}50$, $p{=}2.6\times10^{-5}$); it beats random in $4\%$ of cases. Third, on necessity, how much deleting the selected edges changes the prediction, the rationales beat their control by $49\%$, but both quantities are of order $10^{-7}$, so the audit's summary that ``$92\%$ of cases beat random on necessity'' is true and nearly empty: deleting the selected edges moves the prediction by about one part in ten million. The one comparison with a substantive gap is GInX \citep{amara2023ginx}, $0.084$ against random's $0.030$ at $20\%$ sparsity. It keeps only the top-ranked $20\%$ of edges, or a random $20\%$, and measures the same sufficiency distance, so a larger value is worse and it points the same way: the rationale is the less sufficient of the two. Cause E therefore stays at \emph{partly}: removing that edge type moves the prediction most largely because it holds most of the edges, and the rationale itself is no more sufficient than a random one of the same size.
+\paragraph{D. The graph-derived features.} The three counts give each protein's numbers of physical,
+functional and complex partners; the physical and functional counts are nonzero for $96.5\%$ and $98.4\%$
+of rows. The PINNACLE embedding is present for only $9.2\%$ of rows, because its CD4 T-cell context covers
+$1{,}119$ proteins; the other $90.8\%$ get zeros. With the input size unchanged, zeroing the counts and the
+embedding together changes \textsc{systema} by $-0.00357$ ($95\%$ CI $[-0.00427,-0.00286]$), zeroing the
+counts alone by $-0.00347$ ($[-0.00403,-0.00290]$), and zeroing PINNACLE alone by $+0.000006$. Corrected
+over these three versions, the $p$-values are $0.0005$, $0.0002$ and $0.64$. Nearly all of the effect comes
+from the three counts.
 
-\paragraph{C: the intervals behind the ordering of the models.} Ordered by \textsc{systema}: untyped $0.0904$, no graph $0.0861$, gated $0.0825$, typed $0.0740$. At $n{=}7$ on the frozen split, the typed static encoder costs $-0.0120$ \textsc{systema} ($95\%$ CI $[-0.0160,-0.0080]$, Bonferroni and Holm both $0.001$); the condition gate returns $+0.0085$, whose raw interval excludes zero but which does not survive correction (Bonferroni $0.186$), leaving the gated model at $-0.0036$ against no graph ($95\%$ CI $[-0.0093,+0.0022]$); and the untyped model is $+0.0043$ ($95\%$ CI $[+0.0017,+0.0069]$, paired $p=0.0068$).
+\paragraph{E. The edges.} In an audit with live gates, removing every functional-association edge changes
+the predicted program response the most ($0.365$, against at most $0.0021$ for BioPlex, HuRI and CORUM),
+largely because this type holds most of the edges: per $1\%$ of edges removed, it changes the prediction by
+$0.0043$, against $0.0025$ for HuRI and $0.0014$ for BioPlex. A prediction made from its rationale alone,
+the few edges picked out for it, is slightly farther from the full prediction than one made from the same
+number of random edges.
 
-\paragraph{C: when each model is scored.} Every model shares the same early-stopping rule on validation loss (patience $10$ epochs without improvement, cap $20$ epochs), and the rule ends them at very different epochs. On the five-seed frozen split the no-graph and untyped runs go to the cap, with best checkpoints at epochs $14$ to $19$ and $13$ to $19$; the typed runs stop after $11$ to $13$ epochs with the checkpoint from epoch $0$ in four of five seeds, and the gated runs with live gates after $11$ to $14$ with checkpoints from epochs $0$ to $3$. The typed and gated models are therefore scored as models that peaked, by validation loss, within their first four epochs. The rule is the same for every model, so this is not a difference in budget, but we did not test whether a longer schedule, or selecting on the endpoint rather than the loss, would change h2a or h1.
-
-\paragraph{D in full: what the ``no graph'' baseline contains.} The fixed feature vector of that model is graph-derived in two places: three PPI degree counts, whose physical and functional components are nonzero for $96.5\%$ and $98.4\%$ of rows (medians $53$ and $604$), and a $128$-d PINNACLE embedding \citep{li2024pinnacle} learned on a cell-type-specific interaction network. The comparison we and others label ``graph versus no graph'' therefore measures \emph{the extra value of message passing over a per-protein summary of the graph}, and the usual ablation cannot see that summary by construction.
-
-A complete version of the ablation is three-way, also stripping graph-derived node features, and we ran it (Appendix~\ref{app:ablate}): zeroing them, with input width and parameter count unchanged, costs $-0.0036$ \textsc{systema} over five paired seeds under family-wise correction ($p=0.0005$). Nearly all of it comes from the three degree counts. Zeroing PINNACLE alone moves \textsc{systema} by $+0.000006$, far less even than its $9.2\%$ coverage would predict: nine percent of the degree counts' effect would be of order $10^{-4}$, and this is fifty times smaller. Thin coverage is part of it; the rest is that the embedding carries almost nothing usable on the rows where it does resolve.
-
-Three degree counts carry a measured effect; the gated encoder (h1), which passes messages over the network they summarize, carries none we can detect. Whether the summary is worth \emph{more} is not settled: paired by seed, the graph-derived features' value minus h1 is $+0.0045$ ($95\%$ CI $[-0.0012,+0.0101]$, $p{=}0.093$; a post hoc test), positive in all five seeds. We do not claim that degree is a good predictor in absolute terms; $0.0036$ against a baseline of $0.0857$ is about four percent, and it passes correction largely because the no-graph model is our least noisy one. The claim is about experimental design: the model called ``no graph'' carries a measured graph effect, so a graph ablation should strip it too.
-
-\section{When a pre-registration freezes a mistake}
-\label{app:prereg}
-
-Our pre-registration contained a rule that the reference data themselves would have failed, and it nearly cost us the replication.
-
-\paragraph{The rule, and what it cost.} Under the original rule, before the amendment this section is about, we built DE matrices for six harmonized public candidates \citep{peidli2024scperturb}; the corrected rule later built ten (Table~\ref{tab:repl}). The pre-registration fixed the DE unit as ``two or more replicate pseudobulks per (target, condition)'', where a pseudobulk is the summed expression of a group of cells and a replicate is an independent group such as a donor, a batch or a guide RNA, depending on the dataset; each pseudobulk needed at least $25$ cells, and a dataset unable to meet the rule was to be dropped rather than switched to a different test. Four candidates fell out. The clause did what such clauses are for: when Replogle RPE1, the best-powered of those six candidates, yielded only $12$ of $2{,}393$ targets, we did not rescue it by splitting cells into random pseudo-replicates, which would have manufactured precision we did not have.
-
-\paragraph{The audit, and why the rule was wrong.} The clause was also wrong, and it took an audit rather than a result to see it. The response profiles of the reference screen, which we train on, are not built that way. It is a file published with the source screen, computed by its authors over all cells for each (perturbation, condition) against matched controls, with no per-replicate requirement. We had imposed on every candidate replication a standard we never imposed on the data the study rests on, and so discarded the best-powered replication then available for failing a test the reference itself would have failed. Under the reference's own standard, keeping the $25$-cell floor, the same file yields $2{,}122$ targets rather than $12$.
-
-\paragraph{The failure mode this illustrates.} Discussion of pre-registration in machine learning is almost entirely about the failure it prevents: analysis choices made after seeing the results. Pre-registration also has a failure of its own. It fixes the plan when the data are least understood, so a rule written then can be wrong in a way that stays invisible until something forces an audit. The commitment that gives pre-registration its value also makes such an error durable, because relaxing a pre-registered rule looks like the flexibility pre-registration exists to prevent. Our defense is procedural: the amendment is dated, it states that no replication model had been trained when it was written, and it is outcome-symmetric, admitting datasets that could support a positive replication as readily as a null. Any pre-registration in this setting should include an explicit audit step that checks each rule against how the reference data were themselves built, before the rule is frozen.
-
-\section{How large an effect we could have detected}
-\label{app:power}
-
-Measured noise sets how small an effect this design could detect, and the answer depends on what a claim must survive: new seeds, a re-drawn split, or new datasets. \paragraph{What we could have detected, simulated rather than approximated.} Power is the chance of detecting a real effect of a given size. We first reported a minimum detectable effect from a normal approximation on five paired per-seed differences, which assumed that the variation between seeds was the only variation. That assumption is no longer needed, because the variance is measured at three levels (Appendix~\ref{app:folds}), and the bar a result must clear here is not $p<0.05$ but a paired $t$-test followed by Bonferroni and Holm over a family of four, which has no closed form. So we simulate it: each replicate draws the whole family, one comparison at the effect under test and three true nulls, runs the pipeline's own test and correction, and we repeat $2{,}000$ times per point. Table~\ref{tab:floor} collects the result. Two calibrations check that the simulation measures what we think. With no true effect, the comparison passes correction at a rate of $0.013$: the corrected rate, not the nominal $0.05$. And the reference screen's corrected-significant graph benefit, the untyped model's $+0.0043$, needs $9$ seeds for $80\%$ power at its own measured spread of $0.0028$; we ran $7$, which the simulation puts at $70\%$ power, and it did survive both corrections.
-
-\begin{table}[h]
-\centering\small
-\caption{What it would take to detect an effect the size of the reference screen's corrected-significant graph benefit ($\Delta=0.0043$, the untyped model on \textsc{systema}) with $80\%$ power under this paper's correction rule. Every standard deviation is measured, not assumed. ``Power as run'' is at the seven seeds, or the seven datasets, we have; the fresh-partition row has no as-run value because we ran four levels, not a designed sweep, and its $18$ levels at five paired seeds is $180$ training runs.}
-\label{tab:floor}
-\begin{tabular}{llrrr}
-\toprule
-generalize over & variance component & sd & units needed & power as run \\
-\midrule
-seeds, this fold & seed, frozen split & $0.0043$ & $15$ seeds & $0.32$ \\
-seeds, any re-draw & seed, pooled & $0.0107$ & $73$ seeds & $0.05$ \\
-a fresh partition & level, re-draw, seed & $0.0048$ & $18$ levels & \\
-datasets, typed & between dataset & $0.0032$ & $10$ datasets & $0.58$ \\
-datasets, untyped & between dataset & $0.0205$ & $252$ datasets & $0.02$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-For h2a the training seed contributes $0.0107$ against the re-draw's $0.0003$: the noise we had blamed on re-drawing the split was mostly the seed. The floor also depends on what the claim must survive. On this split as run, at the split's spread between seeds rather than the comparison's own (Table~\ref{tab:floor}; that spread, $0.0043$, is the seed-to-seed standard deviation of the typed comparison on the frozen split and only by coincidence equals the effect size), a $0.0043$ benefit would need $15$ seeds and we had $7$; a claim that must also survive re-drawing the split would need $73$. And the spread between datasets of the \emph{untyped} comparison is $0.0205$, five times the effect we measured on the reference screen, because the datasets disagree in sign. Detecting a $0.0043$ pooled benefit against that spread needs on the order of $250$ datasets. The harmonized resource we drew from has $44$ \citep{peidli2024scperturb}, and the largest cross-dataset perturbation studies we know of use single digits, so this limits any pooled cross-dataset claim in this area, not only ours.
-
-\paragraph{What the bound supports.} The smallest effect we could have detected on the frozen split at the seven seeds we ran is $0.0075$, rising to $0.0185$ if the claim must also survive re-drawing the split. Our headline null is an estimate of $-0.0009$, an order of magnitude inside the first of those. Appendix~\ref{app:floor} measures the setup directly: the untyped model passes at $0.02$ response SDs, and the gated model passes at no injected size up to $0.40$.
-
-\paragraph{Graph models vary more across seeds.} The no-graph model is stable across seeds and every graph model is not. On the frozen split the standard deviation of \textsc{systema} across seeds is $0.00051$ for the no-graph model against $0.00545$ for the gated model ($10.8\times$), $0.00488$ for the typed model ($9.6\times$) and $0.00301$ for the untyped model ($5.9\times$); on the harder split, all at $n{=}5$, the ratios rise to $31.7\times$ for the gated model, $20.6\times$ for the untyped model and $17.4\times$ for the typed model, against a no-graph standard deviation of $0.00028$. For the gated model the spread rises with no detectable change in the mean. Message passing over a mostly noisy neighborhood plausibly gives the optimizer a high-variance pathway to fit; whatever the cause, the added variance widens the interval that a benefit must clear, which checklist item 10 generalizes.
-
-\section{What the setup can detect: a planted-signal test}
+\section{The planted-signal test}
 \label{app:floor}
 
-The simulation in Appendix~\ref{app:power} says what this pipeline should be able to detect; this appendix measures what it does detect. We add a known graph-dependent component to the real responses at a ladder of sizes and report the smallest one recovered. For each target, the component is the mean response of its protein-interaction neighbors, computed over \emph{training rows only}, scaled so its spread matches the training responses' and multiplied by $\delta$, so $\delta$ reads as a fraction of a response standard deviation. A model that can read the graph can then predict a held-out target from its neighbors. Six ladder steps, two models, four paired seeds each: $48$ training runs, no failures.
+For each target, the planted signal is the mean training response of its graph neighbors, scaled to the
+spread of the training responses and multiplied by $\delta$, so $\delta$ is a fraction of a response
+standard deviation. No validation response enters it. A model that reads the graph can then predict a
+held-out target from its neighbors. In a control step, each target instead gets another target's
+neighbors at the largest $\delta$, which keeps the signal's size but breaks its link to the graph. We ran
+six steps, $\delta=0.02$, $0.05$, $0.10$, $0.20$ and $0.40$ plus the control, with four paired seeds
+each, corrected as one family of six.
 
-Two properties make the number meaningful, and both were fixed before any run. No validation response reaches any injected value, including through the scaling constant, which a software test checks by changing a validation response and requiring the whole injection matrix to stay bit-identical. And one step is a \emph{negative control} in which each target receives some \emph{other} target's neighborhood at the largest $\delta$, which keeps the injected component's size and distribution but destroys its relation to the graph. Rows outside the training and validation sets are left bit-identical, so the sequestered split is untouched.
+The untyped model's difference from no graph passes correction at every planted size, from $0.02$
+($+0.0088$, Bonferroni $0.003$), and not in the control ($-0.0001$). The gated model's passes at none: even
+at $0.40$ it is $+0.0045$ (Bonferroni $1.000$). All $24$ gated runs kept live gates (minimum mean
+$0.0240$). Both models start with a gap at $\delta=0$ (four seeds): the untyped model is already $+0.0048$
+ahead of no graph, the gated model $0.0009$ behind. Subtracting each model's own starting gap, a post hoc
+step, leaves what the planting added, and there neither passes correction: at $0.40$ the untyped model
+adds $+0.0135$ ($p{=}0.032$) and the gated model $+0.0053$ ($p{=}0.035$), both uncorrected. One limit
+applies: the planted signal is a neighbor mean, the shape a message-passing model is built to find, and a
+real biological effect need not look like that.
 
-\begin{table}[h]
-\centering\small
-\caption{Injected-signal ladder. $\Delta$ is the untyped model's \textsc{systema} minus the no-graph model's,
-paired over four seeds, corrected as one family of six with Bonferroni and Holm both required.
-``recovered'' means $\Delta$ passes both corrections, which does not require the increment to. ``increment'' subtracts the same seed's gap with no injection, and is post hoc. The last row is the
-negative control: the same injection size over a scrambled neighborhood.}
-\label{tab:floor2}
-\begin{tabular}{lrrrrrl}
-\toprule
-condition & $\delta$ & $\Delta$ & $95\%$ CI & $p_{\mathrm{Bonf}}$ & increment & verdict \\
-\midrule
-no injection & $0$ & $+0.0048$ & $[-0.0000,+0.0097]$ & & & zero point \\
-injected & $0.02$ & $+0.0088$ & $[+0.0071,+0.0105]$ & $0.003$ & $+0.0040$ & recovered \\
-injected & $0.05$ & $+0.0081$ & $[+0.0052,+0.0110]$ & $0.018$ & $+0.0033$ & recovered \\
-injected & $0.10$ & $+0.0041$ & $[+0.0026,+0.0056]$ & $0.020$ & $-0.0007$ & recovered \\
-injected & $0.20$ & $+0.0090$ & $[+0.0072,+0.0109]$ & $0.003$ & $+0.0042$ & recovered \\
-injected & $0.40$ & $+0.0183$ & $[+0.0112,+0.0254]$ & $0.022$ & $+0.0135^{*}$ & recovered \\
-\textbf{scrambled} & $0.40$ & $\mathbf{-0.0001}$ & $[-0.0021,+0.0018]$ & $1.000$ & $-0.0050^{*}$ & \textbf{not recovered} \\
-\bottomrule
-\end{tabular}
-\\[2pt]{\footnotesize $^{*}$ the only two increments whose own interval excludes zero ($p=0.03$ and $p=0.02$).}
-\end{table}
-
-The floor is at or below $0.02$ response standard deviations, the smallest size we injected: every
-injected step is recovered under both corrections.
-
-\paragraph{The control is what makes that readable.} At the same size, a scrambled neighborhood gives a gap of $-0.0001$ with an interval of width $0.004$ around zero, so the gaps above come from the graph being read, not from the injection being large. The absolute scores make the same point from the other side (Table~\ref{tab:floorabs}).
-
-\begin{table}[h]
-\centering\small
-\caption{Mean \textsc{systema} per model over four seeds, and the change against the same model with no
-injection. Injected structure that follows the graph makes the task easier for \emph{both} models; the
-same amount of structure that does not follow it makes the task slightly harder for both.}
-\label{tab:floorabs}
-\begin{tabular}{lrrrr}
-\toprule
-condition & no graph & untyped & $\Delta$ no graph & $\Delta$ untyped \\
-\midrule
-no injection      & $0.0856$ & $0.0904$ & & \\
-$\delta{=}0.02$   & $0.0879$ & $0.0967$ & $+0.0023$ & $+0.0063$ \\
-$\delta{=}0.05$   & $0.0921$ & $0.1003$ & $+0.0065$ & $+0.0098$ \\
-$\delta{=}0.10$   & $0.1056$ & $0.1097$ & $+0.0200$ & $+0.0193$ \\
-$\delta{=}0.20$   & $0.1275$ & $0.1365$ & $+0.0418$ & $+0.0461$ \\
-$\delta{=}0.40$   & $0.1679$ & $0.1862$ & $+0.0823$ & $+0.0958$ \\
-\textbf{scrambled $0.40$} & $0.0830$ & $0.0828$ & $\mathbf{-0.0027}$ & $\mathbf{-0.0076}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{What the injection added, over what was already there.} Each step is tested against zero, and this split already carries a graph benefit of $+0.0048$ with no injection at all (its interval just reaches zero), so a step can pass on that benefit alone. Subtracting the same seed's un-injected gap leaves the increment column of Table~\ref{tab:floor2}, a weaker claim than the primary one: only $\delta{=}0.40$ has an increment whose own interval excludes zero. So this pipeline detects graph-dependent structure at $0.02$, but at four seeds it cannot separate an \emph{added} benefit from the one already present until $\delta{=}0.40$. That subtraction is post hoc, and it was written and committed while two steps were still training.
-
-\paragraph{Do not compare steps by their own intervals.} The intervals in the $\Delta$ column are within one step and paired on the seed, so they are tight, and the $\delta{=}0.10$ step's $+0.0041$ sits outside its neighbors' intervals on both sides. That comparison is not licensed: each step is a different dataset, and the quantity with the right error bars for comparing across steps is the increment, whose intervals are two to four times wider and overlap at every step.
-
-\paragraph{The simulation and the ladder measure different instruments.} Appendix~\ref{app:power} put the smallest detectable effect at $0.0075$ \textsc{systema} on this split at seven seeds, and the $\delta{=}0.02$ step produced a gap of $+0.0088$ detected at four. The two are close, but the simulation runs at the frozen split's spread between seeds of $0.0043$, while the ladder pairs on identical injected data and carries $0.00106$ at that step, four times less. The ladder beats the simulation because its paired differences are four times less noisy.
-
-\paragraph{The scrambled control carries a finding of its own.} Its increment over the zero point is $-0.0050$ ($[-0.0083,-0.0016]$, $p=0.02$): injecting graph-shaped structure that follows the \emph{wrong} graph destroys the real benefit that was there. This bears on three readings of a negative result: the prior is uninformative, the encoder discards it, or the graph is wrong. Only a wrong graph removes a benefit that the correct graph provides, which is what the scrambled control does here.
-
-\paragraph{The floor of the model the null is about.} The ladder above uses the untyped model, chosen in advance for cost and sensitivity, so it bounds the \emph{pipeline} rather than the gated encoder. Re-running the identical six steps with the gated model against the no-graph model, on the same frozen split, the same four seeds and the same injected matrices, with $\lambda_{\mathrm{graph}}{=}0$ so the gate stays live, recovers \emph{nothing at any injected size} (Table~\ref{tab:floorgated}).
-
-\begin{table}[h]
-\centering\small
-\caption{The same six steps read with the \emph{gated} model, the model this paper's null concerns.
-$\Delta$ is the model's \textsc{systema} minus the no-graph model's, paired over four seeds, corrected
-as one family of six. The untyped columns repeat Table~\ref{tab:floor2} for comparison.}
-\label{tab:floorgated}
-\begin{tabular}{lrrrr}
-\toprule
-condition & untyped $\Delta$ & $p_{\mathrm{Bonf}}$ & gated $\Delta$ & $p_{\mathrm{Bonf}}$ \\
-\midrule
-$\delta{=}0.02$ & $+0.0088$ & $\mathbf{0.003}$ & $-0.0057$ & $1.000$ \\
-$\delta{=}0.05$ & $+0.0081$ & $\mathbf{0.018}$ & $-0.0007$ & $1.000$ \\
-$\delta{=}0.10$ & $+0.0041$ & $\mathbf{0.020}$ & $-0.0058$ & $1.000$ \\
-$\delta{=}0.20$ & $+0.0090$ & $\mathbf{0.003}$ & $-0.0030$ & $1.000$ \\
-$\delta{=}0.40$ & $+0.0183$ & $\mathbf{0.022}$ & $+0.0045$ & $1.000$ \\
-\textbf{scrambled $0.40$} & $-0.0001$ & $1.000$ & $-0.0014$ & $0.603$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The control still does not pass, and all $24$ runs kept a live gate (minimum mean $0.0240$ against the $10^{-3}$ dead-gate threshold), so no run is undecidable.
-
-\paragraph{Variance explains the small steps, not the largest.} The gated model's per-seed paired standard deviation is $1.7$ to $9.5\times$ the untyped model's across the five injected steps, largest at the small ones and consistent with the $10.8\times$ per-model seed spread of Appendix~\ref{app:power}; on the scrambled control the two models are equally noisy ($0.96\times$). That noise buries the small steps. It does not account for the largest one. At $\delta{=}0.40$ the gated model carries only $1.7\times$ the untyped model's spread while its estimate is $4.1\times$ smaller, and handing it the untyped model's standard deviation outright still leaves it short ($t{=}2.00$, $p{=}0.14$, $0.84$ corrected over six). At that step the shortfall is the mean, not the noise. Matching the untyped model's standard error at four seeds would take $11$ seeds at $\delta{=}0.40$ and $63$ to $358$ at the other four.
-
-\paragraph{On the increment, neither model passes correction.} The untyped model enters this ladder already $+0.0048$ ahead of no graph with no injection, and the gated model enters at $-0.0009$. Subtracting each model's own zero point leaves what the injection added, and there no increment excludes zero until the largest step: $+0.0135$ ($p{=}0.032$) for the untyped model and $+0.0053$ ($95\%$ CI $[+0.0007,+0.0099]$, $p{=}0.035$) for the gated one, both uncorrected, neither surviving correction over six. The untyped increment is $2.5\times$ the gated one, and that ratio is the whole of the measured difference in sensitivity to the injected signal. ``Passes at $0.02$ against nothing up to $0.40$'' is a statement about levels and should be read as one.
-
-The claim this supports is narrower than blindness to graph structure: \emph{at four paired seeds}, the gated encoder's advantage over no graph passes correction at no injected size up to $0.40$ response SDs, twenty times the size at which the untyped model's does. Our headline null is measured with that instrument, so it describes what this encoder can resolve at this budget, not whether a PPI prior helps.
-
-\paragraph{Two limits, both fixed before the ladder ran.} First, the untyped ladder measures the \emph{best} model's floor. Amendment 6.5 registered the untyped model against the no-graph model rather than the gated model, on cost ($2.3$ to $2.5$ GPU-hours per run against $7.5$ to $16$) and on sensitivity: when the ladder was registered, the untyped model was the only one with a corrected-significant positive, so a floor measured with it bounds the best detector we had, and weaker models need at least as much signal. It says the pipeline can carry a graph effect of $0.02$ response SDs to a detectable comparison; it does \emph{not} say the typed encoder can.
-
-Second, the injected component is the mean response of a target's PPI neighbors, which is, up to scaling, what a message-passing layer computes. The ladder therefore measures sensitivity to a signal shaped like the architecture's own built-in assumption, the most favorable case there is. The scrambled control rules out the models responding to the size of the injection regardless of the graph; it does not rule out that the injected signal has exactly the form this architecture is built to find. A real graph effect in biology need not be a neighbor mean, and a floor measured against one does not transfer to one that is not.
-
-\paragraph{The scrambled damage is measured at one size.} We measured it at a single injection size, $0.40$ response SDs, which is large. Whether it scales down is not settled here, and a second control step at $\delta{=}0.10$ would not settle it: proportional damage would be $-0.0012$ there, against a minimum detectable effect at four seeds of $0.0044$ on this control's own seed spread, $0.0082$ on the injected steps' median, and $0.0080$ once the enlarged ladder family is corrected for. Separating proportional from absent damage needs $25$ seeds on the control's spread and $81$ on the steps', against the four the ladder ran. We report the claim at the size we measured and leave the scaling open; an underpowered step would have produced a null that meant nothing, the mistake our architecture search already made (Appendix~\ref{app:archsearch}).
-
-\section{The negative result under other groups' scores}
-\label{app:metrics}
-
-Other groups' results differ from ours in splits and scores at once. The score half can be checked without retraining anything, because every model's per-row predictions for the frozen validation set are stored. We re-scored all four models at all five seeds under five endpoints, scores that other papers report, each checked against the paper that reports it: Pearson-$\Delta$ over all genes, which TxPert reports (Table~\ref{tab:family}'s Pearson-delta is computed on the programs instead); Pearson correlation and mean squared error over each perturbation's top-$20$ differentially expressed genes, which \textsc{gears} reports \citep{roohani2024gears}; the E-distance as scPerturb computes it \citep{peidli2024scperturb}; and the energy distance with plain Euclidean distances. The differentially expressed subset is taken from the \emph{observed} response, never from the prediction.
-
-Two cautions apply to the distance endpoints. First, scPerturb computes its E-distance from squared Euclidean distances, and in that form the statistic reduces algebraically to $2\lVert \bar{X}-\bar{Y}\rVert^2$: a difference of means, blind to a difference in spread. We report it for comparability and treat the plain-Euclidean energy distance as the evidence about distributions. Second, this pipeline predicts one pseudobulk response per (target, condition), so both distances compare the distribution of \emph{responses across held-out perturbations}, never populations of cells; claims about single-cell distributions stay out of reach.
-
-Five endpoints times four comparisons is twenty simultaneous tests, and correcting only within each endpoint and then reporting whichever endpoint was kind is the look-elsewhere error. We fixed the correction in the pre-registration before scoring the split: we compute both, within each endpoint and across all twenty cells, and a claim of survival requires the one across all twenty, Bonferroni and Holm together. Table~\ref{tab:metrics} reports all twenty cells.
-
-\begin{table}[h]
-\centering\small
-\caption{Every model re-scored under endpoints that other groups report, on the same split and the same
-five seeds. Values are paired per-seed means, oriented so that a positive number favors the first-named
-model (errors and distances are negated before the comparison is formed). $\star$ marks the cells that
-survive Bonferroni and Holm over all twenty. The five columns are on different scales and should not be
-compared across columns: the three correlation endpoints have no units and run to a few hundredths, and
-the two distance endpoints, in squared and unsquared units of the program-space response, run to
-hundreds and to single digits. Only the sign, the star and the ordering within a column carry across.}
-\label{tab:metrics}
-\begin{tabular}{lrrrrr}
-\toprule
- & Pearson-$\Delta$ & top-$20$ $r$ & top-$20$ MSE & E-dist. & energy dist. \\
-comparison & (TxPert) & (\textsc{gears}) & (\textsc{gears}) & (scPerturb) & (plain) \\
-\midrule
-h2a \ (typed $-$ no graph)   & $-0.0197$          & $-0.0463$          & $-0.0515$ & $-506.5$ & $-2.010^{\star}$ \\
-h2b \ (gated $-$ typed)      & $+0.0218$          & $+0.0043$          & $-0.0082$ & $+508.9$ & $+4.404$ \\
-untyped $-$ no graph         & $+0.0089^{\star}$  & $-0.0424^{\star}$  & $-0.0581$ & $+21.8$  & $+1.319$ \\
-h1 \ (gated $-$ no graph)    & $+0.0021$          & $-0.0420^{\star}$  & $-0.0597$ & $+2.4$   & $+2.394$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The typed graph's lack of benefit is not an artifact of our score: h2a is negative or indistinguishable everywhere, and h1 passes correction in the graph's favor on none of the five endpoints; on \textsc{gears}' top-$20$ correlation h1 passes correction against the graph ($-0.0420$). The \emph{untyped} result does not survive the change of endpoint. On the row that asks whether any graph beats no graph, TxPert's endpoint says yes and \textsc{gears}' says no, both at $p<0.005$ after correcting over all twenty cells.
-
-\paragraph{The fourth surviving cell.} Four of the twenty cells survive both corrections, and the paragraph above discusses three. The fourth, just under the $0.05$ bar, is the energy distance's h2a ($-2.010$, Bonferroni $0.0498$), on the endpoint we named above as the evidence about distributions: the typed graph is worse there as well. Nothing on that endpoint passes in the graph's favor. h2b's $+4.404$ and h1's $+2.394$ point that way at raw $p{=}0.016$ and $p{=}0.080$ and clear neither correction (Bonferroni $0.314$ for h2b, $1.000$ for h1).
-
-\paragraph{Where the sign flips.} TxPert's all-gene Pearson-$\Delta$ and \textsc{gears}' top-$20$ correlation are the same statistic over different gene sets, so the disagreement has a location. Varying the size of the scored set from each perturbation's top $20$ observed DE genes to all $10{,}282$ gives Table~\ref{tab:ksweep}.
-
-\begin{table}[h]
-\centering\small
-\caption{The same paired comparisons, scored on each perturbation's top-$k$ observed DE genes. $\star$
-marks survival of Bonferroni and Holm within each row's family of four comparisons. The untyped comparison is
-significantly \emph{negative} up to $k{=}100$ and significantly \emph{positive} from $k{=}1000$; it
-crosses zero between $250$ and $500$.}
-\label{tab:ksweep}
-\begin{tabular}{rrrrr}
-\toprule
-top-$k$ DE genes & h2a & h2b & untyped $-$ none & h1 \\
-\midrule
-$20$     & $-0.0463^{\star}$ & $+0.0043$ & $-0.0424^{\star}$ & $-0.0420^{\star}$ \\
-$50$     & $-0.0437^{\star}$ & $+0.0163$ & $-0.0236^{\star}$ & $-0.0273^{\star}$ \\
-$100$    & $-0.0434^{\star}$ & $+0.0241$ & $-0.0143^{\star}$ & $-0.0192$ \\
-$250$    & $-0.0397^{\star}$ & $+0.0295$ & $-0.0032$         & $-0.0102$ \\
-$500$    & $-0.0376^{\star}$ & $+0.0317$ & $+0.0019$         & $-0.0059$ \\
-$1000$   & $-0.0345^{\star}$ & $+0.0322$ & $+0.0063^{\star}$ & $-0.0023$ \\
-$2500$   & $-0.0299^{\star}$ & $+0.0307^{\star}$ & $+0.0097^{\star}$ & $+0.0008$ \\
-$5000$   & $-0.0249^{\star}$ & $+0.0275^{\star}$ & $+0.0108^{\star}$ & $+0.0026$ \\
-all      & $-0.0197^{\star}$ & $+0.0218^{\star}$ & $+0.0089^{\star}$ & $+0.0021$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Both effects are real and both pass correction. The untyped graph makes the broad transcriptional response more accurate and the genes each perturbation moves most \emph{less} accurate, and the crossover of the cumulative score sits between the $250$th and $500$th DE gene. Which of the two a paper reports is a choice of $k$, and $k$ is a convention: $20$ because that is what \textsc{gears} reports, all genes because that is what TxPert reports. We cannot say which a reader should prefer. Our own null is stated on \textsc{systema}, one endpoint among several that do not agree, and readers should hold it to the same standard. The typed comparison h2a is the one row here that does not depend on the choice: it is negative and corrected-significant at every $k$ we tried. With live gates the gated model follows the untyped model's shape, with as large a deficit on the most-moved genes and a smaller gain elsewhere: corrected-significant harm at $k\leq50$, a sign change between $1{,}000$ and $2{,}500$, and no corrected benefit at any $k$.
-
-\paragraph{The crossover is a property of the cumulative statistic.} Every top-$k$ set contains all the smaller ones, so a sign change in Table~\ref{tab:ksweep} only bounds where the per-gene effect turned. Re-scoring the same stored predictions on \emph{disjoint} rank intervals, the differences between consecutive rows of that table, separates the two (Table~\ref{tab:bins}). The untyped model's significant deficit is confined to each perturbation's twenty most-moved genes, where it is large ($-0.0424$), negative in $5/5$ seeds, and passes both corrections over all $36$ cells. By rank $101$ the comparison per interval is already positive in $5/5$ seeds, and from rank $251$ down to the $10{,}282$nd gene every interval is positive and passes both corrections. The cumulative crossover sits at $250$ to $500$ only because each running average carries the top-$20$ deficit forward until enough positive mass accumulates to cancel it; the per-gene effect turns between rank $100$ and $250$. Table~\ref{tab:ksweep} therefore says that the untyped graph helps everywhere except on the handful of genes each perturbation moves most, not that it helps only beyond the $500$th gene. The gated model shows the same shape (Table~\ref{tab:bins}, last column), with a deficit as large at the top and a smaller gain below: negative on the most-moved genes, positive from rank $251$ on, and corrected-significant only in the two least-moved intervals ($+0.0078$ and $+0.0064$, five of five seeds each, Bonferroni $0.049$ and $0.024$). That is the one place in this paper where h1 passes correction in the graph's favor. It is a pre-registered secondary slicing, the whole-profile h1 stays null on every endpoint, and the top-$20$ interval points the other way, so we report it beside the null rather than in place of it.
-
-\begin{table}[h]
-\centering\small
-\caption{The same paired comparisons on \emph{disjoint} rank intervals of $|$observed response$|$, most
-moved first. $\star$ marks survival of Bonferroni and Holm over all $36$ cells of this binning,
-a wider family than Table~\ref{tab:ksweep}'s four, which is why h2a stars nowhere here despite being
-negative in every interval. ``seeds'' counts how many of the five give a positive untyped comparison. The omitted fourth comparison is h2b, which stars in no interval. h1 stars in exactly two, both positive and both among the least-moved genes; its top-$20$ deficit ($-0.0420$) misses Bonferroni over this family ($0.062$) though it clears over Table~\ref{tab:metrics}'s twenty.}
-\label{tab:bins}
-\begin{tabular}{rrcrr}
-\toprule
-rank interval & untyped $-$ none & seeds & h2a & h1 \\
-\midrule
-$1$ to $20$        & $-0.0424^{\star}$ & $0/5$ & $-0.0463$ & $-0.0420$ \\
-$21$ to $50$       & $-0.0043$         & $1/5$ & $-0.0446$ & $-0.0133$ \\
-$51$ to $100$      & $-0.0013$         & $2/5$ & $-0.0448$ & $-0.0086$ \\
-$101$ to $250$     & $+0.0074$         & $5/5$ & $-0.0379$ & $-0.0018$ \\
-$251$ to $500$     & $+0.0095^{\star}$ & $5/5$ & $-0.0357$ & $+0.0003$ \\
-$501$ to $1000$    & $+0.0126^{\star}$ & $5/5$ & $-0.0308$ & $+0.0031$ \\
-$1001$ to $2500$   & $+0.0137^{\star}$ & $5/5$ & $-0.0252$ & $+0.0046$ \\
-$2501$ to $5000$   & $+0.0147^{\star}$ & $5/5$ & $-0.0153$ & $+0.0078^{\star}$ \\
-$5001$ to $10{,}282$ & $+0.0096^{\star}$ & $5/5$ & $-0.0051$ & $+0.0064^{\star}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Two cautions apply to Table~\ref{tab:bins}. First, the \emph{level} of a correlation within an interval is not comparable across intervals: genes are selected by the same observed response that the correlation is computed against, so range restriction and selection on a noisy statistic both bias it. Only the comparison within an interval is clean, because both models are scored on the identical genes of the identical rows and neither model's prediction enters the selection. Second, the resolution of the binning decides whether the harm is visible at all. At decile resolution it disappears, since the top decile spans $1{,}028$ genes and the twenty damaged ones are diluted to a positive $+0.0064$ that passes nothing; a coarser analysis of the same predictions would have concluded that the graph never hurts.
-
-\section{Reproducibility details}
+\section{Reproducibility and corrections}
 \label{app:repro}
 
-Every number in \S\ref{sec:null} is read from stored result files rather than from logs: the five-seed family and both corrections from the multi-seed robustness report, and the second-metric replication from the second-metric report. Figure~\ref{fig:lambda} is drawn from the twenty-two-epoch sweep file; its row counts come from that sweep's run logs. The shorter twelve- and three-epoch sweeps stop before the $10^{-5}$ run's mean gate crosses the dead-gate threshold, so they do not support the caption. The gate-health precondition is a separate probe that prints how far the gates have collapsed relative to their initialization; we read it before any downstream analysis, because at $\sim$$10^{-7}$ every edge deletion is a floating-point no-op and every rationale comparison returns undecidable by construction.
+Most numbers come from stored result files. The exceptions are the $103$ times ratio and the size of the
+dead gates, printed by \path{src/tcell_pipeline/probe_graph_gradients.py}; the pilot's $71\%$ and $98\%$,
+from a pilot run whose output was not saved; the row counts behind Figure~\ref{fig:lambda}, from its run
+logs; the feature coverage shares in Appendix~\ref{app:causes}, computed when the features were built;
+and the dataset sizes, from the build records. \path{paper/icbinb/verify_numbers.py} re-derives the tables from the
+result files and checks each number in the text against its surrounding words, and
+\path{docs/reproduction.md} gives the command that regenerates each file. Figure~\ref{fig:lambda} is drawn
+by \path{paper/icbinb/make_lambda_sweep.py}. In the code the four models are \texttt{expression\_only},
+\texttt{typed\_static}, \texttt{condition\_gated} and \texttt{untyped\_gnn}. The $379$ training runs ran on
+A100 80GB GPUs ($0.4$ to $12$ GPU-hours each in the main family), each up to $20$ epochs at batch size $8$
+with early stopping on validation loss; the sweep in Figure~\ref{fig:lambda} runs a fixed $22$ epochs at
+batch size $4$.
 
-\paragraph{Compute and schedules.} The $379$ training runs ran on A100 80GB GPUs ($0.4$ to $12$ GPU-hours each in the headline family), each up to $20$ epochs at batch size $8$ with early stopping on validation loss; the sweep in Figure~\ref{fig:lambda} instead runs a fixed $22$ epochs at batch size $4$, and the architecture search $5$ epochs.
-
-\paragraph{Where each number lives.} \path{paper/icbinb/verify_numbers.py} re-derives the tables, reading one small result file per table, and checks the prose numbers against their surrounding words: for example \path{screening_lambda0/robustness_5seed.json} for Table~\ref{tab:family}, \path{screening_n7_live/robustness_5seed.json} for every $n{=}7$ number, and \path{camera_ready/facts.json} for the training lengths, gates and paralog residual. Figures~\ref{fig:lambda} to~\ref{fig:causes} are drawn from those files by \path{paper/icbinb/make_lambda_sweep.py} and \path{paper/icbinb/make_result_figures.py}. \path{docs/reproduction.md} gives the command that regenerates each file. None of the corrections below needed a model to be retrained.
-
-\paragraph{Corrections after review.} This version corrects the reviewed one in the following places; the headline null ($-0.0009$, $n{=}5$) is unchanged. (i) Five of the seven gated runs behind the $n{=}7$ family were copies of the dead-gate runs. With live runs throughout, h1 at $n{=}7$ is $-0.0036$ ($95\%$ CI $[-0.0093,+0.0022]$) rather than $-0.0043$ with an interval excluding zero, and h2b is $+0.0085$ rather than $+0.0077$. (ii) Appendix~\ref{app:metrics} had re-scored the gated model from its dead-gate predictions. From the live ones, h2b's energy-distance survival disappears and h1 gains two corrected positive rank intervals. (iii) The nested variance decomposition did not subtract seed noise from its level term, and its h1 frozen cell carried five dead-gate runs. Corrected, h2a's level component is zero and the fresh-partition row of Table~\ref{tab:floor} needs $18$ levels rather than $24$. (iv) We had described per-edge normalization of the penalty as equivalent to removing it, the rationale's sufficiency gap as favoring the rationale, and the split as leaving no close paralog; all three are corrected above. (v) Smaller fixes: the per-run cost range, the epoch count and the early-stopping asymmetry it hid, the live gate range, the functional-edge median, two Holm values, the PINNACLE contexts actually used, a Hartung-Knapp sensitivity check for the pooled estimates, the training rows behind Figure~\ref{fig:lambda}, and statements that the untyped model had never been run. (vi) A plain-language revision after acceptance withdrew or corrected five statements the evidence did not support: with dead gates the graph model is not literally the no-graph model, because its readout still pools the neighbors' own features, so we now say only that no messages pass; seeds $5$ and $6$ were added after the five-seed untyped result failed Bonferroni, which is now disclosed; the claim that the $n\geq4$ bar was fixed before any training run is withdrawn, since we could not verify it; on single-condition datasets the gated model does not reduce to the typed model, because its gate still reads edge features; and cause E's source ablation measures how far the full prediction moves, not the rationale's sufficiency. The same revision states the degree normalization of Appendix~\ref{app:mechanism} exactly, names the loss term the penalty's size is measured against, scopes Table~\ref{tab:ksweep}'s family to a row, counts the architecture search's untyped runs as four, and prints the energy-distance Bonferroni value unrounded.
+\paragraph{Corrections after review.} This version corrects the reviewed one; the main result ($-0.0009$,
+$n{=}5$) is unchanged.
+\begin{itemize}
+\setlength{\itemsep}{0pt}
+\item Five of the seven gated runs behind the seven-seed comparisons were copies of earlier runs whose
+gates were dead. With
+live runs, the gated model against no graph at $n{=}7$ is $-0.0036$ ($95\%$ CI $[-0.0093,+0.0022]$) rather
+than $-0.0043$ with an interval excluding zero, and the gates' improvement over the typed model is
+$+0.0085$ rather than $+0.0077$.
+\item The re-scoring under other groups' scores and the gene groups had used dead-gate predictions. With
+live ones, two significant results disappear (gated against typed under one score, and the gated model's
+shortfall on the twenty most-changed genes over the gene groups), and the gated model passes correction
+for the graph on two of nine gene groups and on five of ten, up from two.
+\item A split-variance analysis did not subtract seed noise, and one of its cells used five dead-gate
+runs; it is now omitted.
+\item We had said that dividing the penalty by the number of edges was equivalent to removing it, that the
+rationales were closer to the full prediction than random edges, and that the split left no close
+relatives; all three are corrected.
+\item Smaller fixes: the cost per run, the training lengths, the live gate range, the functional-edge
+median, two Holm values, the PINNACLE contexts used in the replication, a Hartung-Knapp check for the
+pooled estimates, the training rows behind Figure~\ref{fig:lambda}, and statements that the untyped model
+had never been run.
+\item Two later revisions, for plain language, withdrew eight statements the evidence did not support:
+that with dead gates the graph model \emph{is} the no-graph model (its readout still pools the neighbors'
+own features); that seeds $5$ and $6$ were planned (they were added after the five-seed untyped result
+failed Bonferroni); that a rule requiring four paired seeds behind any claimed benefit was fixed before
+any training run (we could not verify it); that
+on single-condition datasets the gated model reduces to the typed model (its gate still reads edge
+features); that the source ablation measures the rationale's sufficiency (it measures how far the full
+prediction moves); that the untyped model differs from the typed one only in types and gates; that the
+gates can switch off single unhelpful edges; and that the evidence labels do not explain the typed model's
+shortfall. They also corrected the pilot's timing (the $98\%$ was after two epochs, not one), one interval
+bound in Appendix~\ref{app:causes} ($-0.00290$, printed as $-0.00291$) and the reason given for the
+collapse (the direction of the push, not only its size). They removed the architecture figure, three
+result figures, the architecture search table, a case study of our pre-registration, the power analysis,
+the split-variance analysis and all appendix tables; the previous version's source, in the public
+repository's history, reports them (its figure files are not in the repository).
+\item The last revision also withdrew our description of the four comparisons as pre-registered: only two
+were, and we added the main test, the untyped comparison and the four-way correction after seeing early
+results. It corrected one value in Table~\ref{tab:repl}, Frangieh's typed result, from $+0.0255$ to
+$+0.0256$; a rounded copy of the result had been rounded again.
+\end{itemize}
 
 \section{Glossary}
 \label{app:glossary}
 
-\paragraph{Biology.} \emph{T cell}: an immune cell; \emph{CD4$^{+}$} or helper T cells coordinate immune responses by signaling to other cells. \emph{Primary cells}: cells taken directly from a donor, as opposed to a \emph{cell line} grown indefinitely in culture, such as K562 (a leukemia line), RPE1 (retinal pigment epithelial cells) or Jurkat (a T-cell leukemia line). \emph{Stimulation}: activating T cells in culture, mimicking how they respond to an infection; the reference screen measures cells at rest and at two times after it. \emph{Expression}: how much RNA a cell makes from a gene. \emph{Perturb-seq}: an experiment that perturbs genes, usually one per cell, here with CRISPR, and reads out every gene's expression in that cell. \emph{CRISPRi} (interference) knocks a gene down, \emph{CRISPRa} (activation) switches it on, and a knockout disrupts it. \emph{Guide RNA}: the molecule that directs CRISPR to its target gene. \emph{Target}: the perturbed gene. \emph{Response}, or \emph{DE profile}: the change in every gene's expression against unperturbed control cells. \emph{Pseudobulk}: the summed expression of a group of cells. \emph{Paralog}: a gene related to another by duplication, often with a similar sequence. \emph{PPI}: protein-protein interaction. \emph{Protein complex}: proteins that bind together to act as one unit. \emph{Functional association}: a link inferred mostly from indirect evidence, such as shared expression patterns or co-mention in the literature. \emph{Degree}: the number of a protein's interaction partners.
+\paragraph{Biology.} \emph{T cell}: an immune cell; \emph{CD4$^{+}$} or helper T cells coordinate immune
+responses. \emph{Primary cells}: cells taken directly from a donor, as opposed to a \emph{cell line} grown
+in culture, such as K562 (a leukemia line) or RPE1 (retinal cells). \emph{Stimulation}: activating T cells
+in culture, as an infection would. \emph{Expression}: how much RNA a cell makes from a gene.
+\emph{Perturb-seq}: an experiment that perturbs genes, usually one per cell, and reads out every gene's
+expression in that cell. \emph{z-score}: a change divided by its uncertainty, so a large z-score is a
+change unlikely to be noise. \emph{CRISPRi} turns a gene down, \emph{CRISPRa} switches it on, and a
+\emph{knockout} disrupts it. \emph{Target}: the perturbed gene. \emph{Response}: the change in every gene's
+expression against unperturbed control cells. \emph{PPI}: protein-protein interaction. \emph{Protein
+complex}: proteins that bind together to act as one unit. \emph{Functional association}: a link inferred
+mostly from indirect evidence, such as shared expression patterns.
 
-\paragraph{Models and training.} \emph{Graph}: the protein-interaction network given to the model. \emph{Prior}: knowledge given to a model before training, here the graph. \emph{Encoder}: a part of a model that turns its inputs into a vector; unqualified, the graph encoder, which reads the graph. \emph{Embedding}: a vector of numbers that represents an object, such as a protein, for a model. \emph{Message passing}: each protein's internal state is updated from its graph neighbors' states. \emph{Edge type}: the kind of evidence behind an edge (physical binding, shared complex, functional association). \emph{Gate}: a learned weight between $0$ and $1$ that scales one edge's message, so $0$ switches the edge off; a gate below $10^{-3}$ counts as dead. \emph{The four models}: no graph (no message passing), typed (message passing with edge types and every gate fixed at $1$), gated (the same with learned gates) and untyped (a plain graph convolution with no types or gates). \emph{h1, h2a, h2b}: the pre-registered comparisons gated $-$ no graph, typed $-$ no graph and gated $-$ typed; the fourth is untyped $-$ no graph. \emph{Programs}: groups of genes that change together; the models predict and are scored on changes in these, and $K$ is their number. \emph{Row}: one (target, condition) response profile, one example for the model. \emph{Loss}: the number that training lowers, mostly the prediction error on training rows. \emph{Penalty}, or \emph{regularizer}: an extra term added to the loss to favor some property, such as few active edges. \emph{Parameter}: a number in the model that training adjusts. \emph{Epoch}: one pass over the training data. \emph{Checkpoint}: a saved copy of a model during training. \emph{Ablation}: removing one part of a model to measure what it contributes. \emph{Rationale}: the small set of edges that the explanation module picks out for a prediction; its \emph{sufficiency} is how far the prediction from those edges alone sits from the full prediction (smaller is better), and its \emph{necessity} is how much deleting them changes the prediction.
+\paragraph{Models and training.} \emph{Graph}: the network of protein interactions given to the model.
+\emph{Edge}: a link between two proteins in the graph, with the evidence behind it. \emph{Neighborhood}: the
+proteins near a target in the graph that the encoder reads. \emph{Prior}: knowledge given to a model before
+training. \emph{Encoder}: the part of a model that turns its inputs into numbers; here, the part that reads
+the graph. \emph{Embedding}: a list of numbers that represents an object, such as a protein. \emph{Message
+passing}: each protein updates its internal state from its graph neighbors' states. \emph{Evidence type}:
+the kind of evidence behind an edge. \emph{Gate}: a learned number between $0$ and $1$ that scales the
+messages on one edge; $0$ switches the edge off. A gate is \emph{dead} below $10^{-3}$; a run's gates are
+dead when their mean is, and \emph{live} otherwise. \emph{Programs}: groups of genes that change together; the models predict
+changes in these, and $K$ is their number. \emph{Row}: one (target, condition) response, one example for
+the model. \emph{Baseline}: a simple model that others are compared with. \emph{Loss}: the number that
+training lowers. \emph{Penalty}, or \emph{regularizer}: an extra term in the loss that favors some
+property, such as few active edges. \emph{Parameter}: a number in the model that training adjusts.
+\emph{Batch}: the few rows used in one training step. \emph{Epoch}: one pass over the training data.
+\emph{Checkpoint}: a saved copy of a model during training. \emph{Rationale}: the few edges picked out to
+explain a prediction.
 
-\paragraph{Evaluation and statistics.} \emph{\textsc{systema}}: the correlation between predicted and observed responses after the average training response is subtracted from both, computed on the programs and averaged over held-out profiles. \emph{Pearson-delta}: the same correlation without that subtraction. \emph{Centroid accuracy}: the fraction of held-out profiles whose prediction is closer to their own observed profile than to any other. \emph{E-distance} and \emph{energy distance}: distances between two sets of responses. \emph{Split}, or \emph{fold}: the division of targets into training and validation; the \emph{frozen} split is the one every main result uses, a \emph{re-draw} repeats a split's recipe with a new random seed, and the \emph{sequestered} split is a third set of targets held back and never scored. \emph{Seed}: the random number that fixes one training run's random choices. \emph{Paired}: two models compared on the same seed, so run-to-run noise they share cancels. \emph{Point estimate}: the single best-guess value, here a mean over seeds. \emph{Confidence interval (CI)}: a range of values consistent with the data; one that crosses zero means no detectable difference. \emph{$p$-value}: how often a difference at least this large would arise by chance if there were none; a \emph{raw} $p$ is one before correction. \emph{Bonferroni and Holm corrections}: two ways of adjusting $p$-values when several comparisons are tested at once; we require both. \emph{Family}: a set of comparisons corrected together. \emph{Null}: no detectable difference; in a simulation, a \emph{true null} is a comparison with no real effect. \emph{Bound}: the upper end of a confidence interval, the largest effect the data still allow. \emph{Contrast}: a comparison between two models. \emph{Endpoint}: a score used to judge predictions. \emph{Power}: the chance of detecting a real effect of a given size; a test is \emph{underpowered} when that chance is low, and the \emph{minimum detectable effect} is the smallest effect it reliably detects. \emph{Zero point}: in the planted-signal test, a model's difference from no graph with nothing planted; the \emph{increment} is the difference at a planted size minus the same seed's zero point. \emph{Pre-registration}: a written plan of the comparisons and decision rules, fixed before the runs it covers. \emph{Post hoc}: an analysis chosen after seeing data. \emph{Meta-analysis}: pooling one comparison across datasets; a \emph{fixed-effect} pool assumes one shared true effect, a \emph{random-effects} pool lets it differ between datasets, $I^2$ is the share of the spread between datasets that reflects real differences rather than noise, the $Q$ test asks whether that spread exceeds chance, and the \emph{Hartung-Knapp} adjustment corrects a random-effects interval for having few datasets, usually widening it.
+\paragraph{Evaluation and statistics.} \emph{\textsc{systema}}: the correlation between predicted and
+observed responses after the average training response is subtracted from both. \emph{Pearson-delta}: the
+same correlation without that subtraction. \emph{Centroid accuracy}: the fraction of held-out responses
+whose prediction is closer to their own observed response than to any other. \emph{Split}: the division of
+targets into training and validation; a \emph{re-draw} repeats a split's recipe with a new random choice.
+\emph{Seed}: the random number that fixes one training run's random choices. \emph{Paired}: two models
+compared on the same seed. \emph{Confidence interval (CI)}: a range of values consistent with the data; one
+that crosses zero means no detectable difference. \emph{Standard deviation}: the typical spread of a set of
+numbers. \emph{$p$-value}: how often a difference at least this large would arise by chance if there were
+none; \emph{uncorrected} means before correction. \emph{Bonferroni and Holm corrections}: two ways of
+adjusting $p$-values when several comparisons are tested at once; Bonferroni is the stricter.
+\emph{Significant}, or \emph{passes correction}: survives the Bonferroni correction (\S\ref{sec:setup}).
+\emph{Family}: a set of comparisons corrected together. \emph{Pre-registration}: a written plan of the
+comparisons and decision rules, fixed before the runs it covers. \emph{Post hoc}: an analysis chosen after
+seeing the data. \emph{Pooling}: combining one comparison across datasets; a \emph{fixed-effect} pool
+assumes one true effect, a \emph{random-effects} pool lets it differ between datasets, and the
+\emph{Hartung-Knapp} adjustment corrects a random-effects interval for having few datasets.
 
 \end{document}

@@ -28,13 +28,12 @@ absent from the registry is indistinguishable from a table that passed, so the o
 artifact, or only a partial one, are NAMED NO-OPS carrying the reason. A missing artifact file
 is likewise reported as SKIPPED rather than passing silently: three tables used to be guarded by
 `if path.exists():`, which reads as coverage on a machine where the artifact was never built.
-Run --coverage to see the state of all eleven at once.
+Run --coverage to see the state of every check at once.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 import sys
 from collections import Counter
@@ -131,7 +130,7 @@ def table(label: str):
 
 
 # =================================================================================================
-# The eleven tables
+# The checks, one per table plus the prose checks
 # =================================================================================================
 _FAMILY_ROOT = "data/results/screening_lambda0"          # the REPAIRED gate root, not screening/
 _FAMILY_KEY = {"ts": "typed_static", "cg": "condition_gated", "ug": "untyped_gnn",
@@ -149,262 +148,155 @@ _CONTRAST_OF = {("typed_static", "expression_only"): "h2a",
 # size lands in that corpus 65% of the time and 91% of the paper's real values still "pass" after
 # being perturbed by one digit. Scoped to the handful of artifacts a section actually uses, the same
 # test admits a random value 3-8% of the time. Measured, not assumed, on 2026-08-26.
+# Rebuilt 2026-10-28 for the shortened plain-language paper: one entry per section it still has.
 _R = "data/results/"
 PROSE_REGIONS = {
-    # screening_lambda0 is here because the repair sentence quotes the live headline beside the
-    # pre-repair one it replaced.
-    "sec:confound": [_R + "screening/robustness_5seed.json", _R + "q4_lambda_sweep_22ep.json",
-                     _R + "camera_ready/facts.json", _R + "screening_lambda0/robustness_5seed.json",
-                     _R + "q4_lambda_sweep_12ep.json", _R + "screening_lambda0/lambda_sweep_empirical.json"],
-    "sec:null": [_R + "screening_lambda0/robustness_5seed.json",
-                 _R + "screening_lambda0/second_metric_5seed.json",
-                 _R + "screening_c080c10_h1/robustness_5seed.json",
-                 _R + "screening_c075c15_n5/robustness_5seed.json",
-                 _R + "screening/robustness_5seed.json"],
-    "sec:repl": [_R + "replication/pooled_with_reference.json", _R + "replication/pooled.json",
-                 _R + "screening_n7_live/robustness_5seed.json",
-                 _R + "replication/pooled_k128_subset.json",
-                 _R + "camera_ready/pooled_k128_subset_hksj.json",
-                 _R + "camera_ready/pooled_with_reference_hksj.json"],
-    "sec:causes": [_R + "screening_n7_live/robustness_5seed.json", _R + "feature_ablation_report.json",
-                   _R + "camera_ready/facts.json",
-                   _R + "replication/pooled_with_reference.json", _R + "a2_ladder/floor.json",
-                   _R + "rationale_audit_lambda0/audit_report.json",
-                   # AUTO 2026-08-26: sec:causes now cites B1a's uncorrected p, the m=1 caveat that
-                   # App.~C insists on and the body had dropped. prose:derived checks the value; this
-                   # entry is what lets prose:all account for it in the right section.
-                   _R + "screening_b1/b1_message_form.json"],
-    # AUTO 2026-08-26: App.~B now argues about Figure 2's sweep, and App.~H received the
-    # "repair does not manufacture the null" paragraph, which cites the CONFOUNDED root.
-    "app:floor": [_R + "a2_ladder/floor.json", _R + "c1_ladder/floor_condition_gated.json",
-                  _R + "c1_ladder/c1_power_posthoc.json", _R + "a2_ladder/b3_power.json",
-                  _R + "screening_n7_live/robustness_5seed.json"],
-    # AUTO 2026-08-26: App.~H received the "repair does not manufacture the null" paragraph,
-    # which cites the pre-repair (CONFOUNDED) root; prose:derived checks the value itself.
-    "app:power": [_R + "screening/robustness_5seed.json",
-                  _R + "a2_power_v2/power_simulation.json", _R + "l4_v2/vardecomp_h2a.json",
-                  _R + "l4_v2/vardecomp_h1_vs_no_graph.json", _R + "a2_power/arch_search_bound.json",
-                  _R + "screening_lambda0/robustness_5seed.json",
-                  _R + "screening_c075c15_n5/robustness_5seed.json",
-                  _R + "screening_c080c10_h1/robustness_5seed.json", _R + "a2_ladder/floor.json"],
-    "app:metrics": [_R + "a3_external_live/rescored.json", _R + "a3_external_live/k_sweep.json",
-                    _R + "b2_deciles_live/deciles.json"],
-    "app:mechanism": [_R + "screening_a1/a1_mechanism.json", _R + "screening_b1/b1_message_form.json",
-                      _R + "a2_power/arch_search_bound.json", _R + "camera_ready/facts.json",
-                      _R + "screening_n7_live/robustness_5seed.json"],
-    # Added 2026-08-26. Twelve sections had no mapping at all, holding 260 literals between them,
-    # more than the 245 the check already covered. "Nothing unaccounted" was only ever true inside
-    # the mapped set, which is exactly the kind of partial coverage this file exists to refuse.
-    "sec:setup": [_R + "screening/summary.json", _R + "screening_lambda0/robustness_5seed.json",
-                  _R + "camera_ready/facts.json",
-                  "data/splits/manifest.json"],
-    "sec:approach": [_R + "screening_lambda0/robustness_5seed.json"],
-    # Related Work (2026-10-01) quotes no number. Mapped to nothing, so a number added to it later
-    # fails rather than going unchecked.
+    # Related Work quotes no number. Mapped to nothing, so a number added to it later fails rather
+    # than going unchecked.
     "sec:related": [],
+    "sec:setup": [_R + "screening/summary.json", _R + "screening_lambda0/robustness_5seed.json",
+                  _R + "camera_ready/facts.json", "data/splits/manifest.json"],
+    "sec:approach": [_R + "screening_lambda0/robustness_5seed.json"],
     # sec:outcome carries no numeric literal of its own; mapped anyway so that no section is silently
     # outside the check, which is how 260 literals went unexamined until 2026-08-26.
     "sec:outcome": [_R + "screening_lambda0/robustness_5seed.json"],
-    "sec:checklist": [_R + "screening_lambda0/robustness_5seed.json", _R + "a2_ladder/floor.json",
-                      _R + "c1_ladder/floor_condition_gated.json", _R + "feature_ablation_report.json",
-                      _R + "screening_n7_live/robustness_5seed.json",
-                      _R + "replication/pooled_with_reference.json", _R + "b2_deciles_live/deciles.json",
-                      _R + "a3_external_live/k_sweep.json", _R + "camera_ready/facts.json"],
-    "sec:limits": [_R + "screening_lambda0/robustness_5seed.json", _R + "a2_ladder/floor.json",
-                   _R + "c1_ladder/floor_condition_gated.json"],
-    "app:arch": [_R + "screening_lambda0/robustness_5seed.json", _R + "feature_ablation_report.json"],
-    # AUTO 2026-08-26: App.~B now argues about Figure 2's sweep as well as its own table.
-    "app:archsearch": [_R + "a2_power/arch_search_bound.json", _R + "camera_ready/facts.json",
-                       "data/results/q4_lambda_sweep_22ep.json"] +
-                      sorted(str(q.relative_to(ROOT)) for q in (ROOT / "data/results/arch_search").glob("*.json")),
-    "app:repl": [_R + "replication/pooled_with_reference.json", _R + "replication/pooled.json",
+    # screening_lambda0 is here because the repair sentence quotes the live headline beside the
+    # pre-repair one it replaced.
+    "sec:confound": [_R + "screening/robustness_5seed.json", _R + "q4_lambda_sweep_22ep.json",
+                     _R + "camera_ready/facts.json", _R + "screening_lambda0/robustness_5seed.json"],
+    "sec:null": [_R + "screening_lambda0/robustness_5seed.json",
+                 _R + "screening_c080c10_h1/robustness_5seed.json",
+                 _R + "screening_c075c15_n5/robustness_5seed.json",
+                 _R + "screening_c080c10_r2/robustness_5seed.json",
+                 _R + "screening_c080c10_r3/robustness_5seed.json",
+                 _R + "screening_n7_live/robustness_5seed.json"],
+    "sec:repl": [_R + "replication/pooled.json", _R + "replication/pooled_k128_subset.json",
+                 _R + "camera_ready/pooled_k128_subset_hksj.json",
+                 _R + "camera_ready/pooled_with_reference_hksj.json",
+                 _R + "screening_n7_live/robustness_5seed.json",
+                 _R + "replication/pooled_with_reference.json"],
+    "sec:causes": [_R + "screening_n7_live/robustness_5seed.json", _R + "feature_ablation_report.json",
+                   _R + "screening_lambda0/robustness_5seed.json",
+                   _R + "screening_b1/b1_message_form.json"],
+    "sec:limits": [_R + "a2_ladder/floor.json", _R + "c1_ladder/floor_condition_gated.json"],
+    # The checklist and everything after it up to the appendix (Conclusion, statements). Mapped to
+    # nothing: its one number, 103, is declared below.
+    "sec:checklist": [],
+    "app:arch": [],
+    "app:mechanism": [_R + "screening_a1/a1_mechanism.json", _R + "screening_b1/b1_message_form.json",
+                      _R + "a2_power/arch_search_bound.json", _R + "camera_ready/facts.json",
+                      _R + "screening_n7_live/robustness_5seed.json"],
+    "app:repl": [_R + "replication/pooled.json", _R + "replication/pooled_with_reference.json",
                  _R + "replication/pooled_k128_subset.json",
-                 _R + "replication/frangieh_on_target_qc.json",
                  _R + "camera_ready/pooled_k128_subset_hksj.json",
                  _R + "camera_ready/pooled_with_reference_hksj.json",
                  _R + "camera_ready/pooled_hksj.json",
                  _R + "screening_lambda0/robustness_5seed.json",
-                 _R + "screening_n7_live/robustness_5seed.json",
-                 _R + "screening/robustness_5seed.json"] +
+                 _R + "screening_n7_live/robustness_5seed.json"] +
                 sorted(str(q.relative_to(ROOT)) for q in
-                       (ROOT / "data/results/replication").glob("*/robustness_5seed.json")) +
-                sorted(str(q.relative_to(ROOT)) for q in
-                       (ROOT / "data/intermediate/replication").glob("*.DE_stats_v2.*.json")),
-    "app:ablate": [_R + "feature_ablation_report.json",
-                   _R + "screening_lambda0/robustness_5seed.json",
-                   _R + "screening_c080c10_h1/robustness_5seed.json",
-                   _R + "screening_c075c15_n5/robustness_5seed.json"],
-    "app:causes": [_R + "feature_ablation_report.json", _R + "rationale_audit_lambda0/audit_report.json",
-                   _R + "comparators/comparators_vs_h1.json",
-                   _R + "comparators/tabular_baselines_vs_h1.json",
-                   _R + "screening_lambda0/second_metric_5seed.json",
-                   _R + "screening_lambda0/robustness_5seed.json",
-                   _R + "screening_n7_live/robustness_5seed.json",
-                   _R + "a2_power/rationale_bound.json", _R + "camera_ready/facts.json"],
-    "app:prereg": [_R + "replication/pooled_with_reference.json", _R + "l4_v2/vardecomp_h2a.json",
-                   _R + "l4_v2/vardecomp_h1_vs_no_graph.json", _R + "a2_power_v2/power_simulation.json",
-                   _R + "camera_ready/facts.json",
-                   _R + "screening_lambda0/robustness_5seed.json",
-                   _R + "screening_c080c10_h1/robustness_5seed.json",
-                   _R + "screening_c075c15_n5/robustness_5seed.json",
-                   _R + "screening_c080c10_r2/robustness_5seed.json",
-                   _R + "screening_c080c10_r3/robustness_5seed.json",
-                   "data/splits/manifest.json", _R + "splits_c075c15/manifest.json",
-                   _R + "splits_c080c10/manifest.json"] +
-                  sorted(str(q.relative_to(ROOT)) for q in
-                         (ROOT / "data/intermediate/replication").glob("*.provenance.json")),
-    # The fold, re-draw and per-fold-bound material, gathered here from the pre-registration,
-    # feature-ablation and power appendices for the camera-ready; the artifacts it quotes.
+                       (ROOT / "data/results/replication").glob("*/robustness_5seed.json")
+                       if not q.parent.name.startswith("_")),
     "app:folds": [_R + "camera_ready/facts.json",
                   _R + "screening_lambda0/robustness_5seed.json",
                   _R + "screening_c080c10_h1/robustness_5seed.json",
                   _R + "screening_c075c15_n5/robustness_5seed.json",
                   _R + "screening_c080c10_r2/robustness_5seed.json",
                   _R + "screening_c080c10_r3/robustness_5seed.json",
-                  _R + "l4_v2/vardecomp_h2a.json", _R + "l4_v2/vardecomp_h1_vs_no_graph.json",
                   "data/splits/manifest.json", _R + "splits_c075c15/manifest.json",
-                  _R + "splits_c080c10/manifest.json", _R + "splits_c070/manifest.json"],
-    # AUTO 2026-10-01: App.~K now lists the corrections, so it quotes both sides of each: the live
-    # artifacts and the dead-gate / uncorrected ones they replaced.
-    # AUTO 2026-10-27: the plain-language rewrite added a glossary. It states no result, so it maps to
-    # nothing and any number added to it later fails rather than going unchecked.
-    "app:glossary": [],
-    "app:repro": [_R + "reproducibility/repro_real_report.json",
-                  _R + "reproducibility/manifest_real.json",
+                  _R + "splits_c080c10/manifest.json"],
+    # Causes A, B, D and E in detail, which since 2026-10-28 also hold what the separate feature-ablation
+    # and other-scores appendices used to say.
+    "app:causes": [_R + "feature_ablation_report.json", _R + "rationale_audit_lambda0/audit_report.json",
+                   _R + "screening_lambda0/second_metric_5seed.json",
+                   _R + "screening_lambda0/robustness_5seed.json",
+                   _R + "a2_power/rationale_bound.json", _R + "camera_ready/facts.json",
+                   _R + "a3_external_live/rescored.json", _R + "b2_deciles_live/deciles.json"],
+    "app:floor": [_R + "a2_ladder/floor.json", _R + "c1_ladder/floor_condition_gated.json"],
+    # The corrections list quotes both sides of each correction: the live artifacts and the dead-gate
+    # ones they replaced.
+    "app:repro": [_R + "camera_ready/facts.json",
+                  _R + "replication/FrangiehIzar2021_RNA/robustness_5seed.json",
                   _R + "screening_lambda0/robustness_5seed.json",
                   _R + "screening_n7_live/robustness_5seed.json",
-                  _R + "screening_untyped_n7/robustness_5seed.json",
-                  _R + "a2_power_v2/power_simulation.json", _R + "a2_power/power_simulation.json"],
+                  _R + "screening_untyped_n7/robustness_5seed.json"],
+    # The glossary states no result, so it maps to nothing and any number added to it fails.
+    "app:glossary": [],
 }
 
 # Literals that are NOT results and therefore cannot be re-derived from a results artifact. Every one
 # carries the reason it is exempt. This list is the point of the check: a number nobody has accounted
-# for FAILS, so a new unexplained figure cannot enter the paper unnoticed.
+# for FAILS, so a new unexplained figure cannot enter the paper unnoticed. Pruned on 2026-10-28 to the
+# literals the shortened paper still prints: an unused exemption is a hole, because it would pass the
+# same literal anywhere.
 PROSE_DECLARED = {
     # --- constants of the method, not results -------------------------------------------------
     "95": "the confidence level in '95% CI'. A constant of the method.",
-    # --- model architecture, fixed in pre-registration Amendment 4.2, not a results artifact ---
-    "2{,}396{,}160": "typed message parameters; Amendment 4.2 fixes this count.",
-    "599{,}040": "shared-weight message parameters; Amendment 4.2.",
-    "5{,}254{,}884": "total model parameters before the cut; Amendment 4.2.",
-    "3{,}457{,}764": "total model parameters after the cut; Amendment 4.2.",
-    "34": "the parameter cut as a percentage, derived from the two totals above.",
-    # --- properties of the inputs, recorded in build provenance rather than in a results file ---
-    "9{,}730": "targets in the genome-wide screen; from the DE build provenance.",
-    "44": "datasets in the harmonized scPerturb resource; a cited property of that resource.",
-    # AUTO 2026-08-26: was "86". The artifact (a2_power/rationale_bound.json) measures
-    # 6,857,702 / 8,029,296 = 85.41%, which rounds to 85, not 86. The 86 traced only to a code
-    # comment carrying a different edge total. The paper now says 85 in all four places.
-    # AUTO 2026-08-26: derived from TWO artifacts, so prose:all (which matches within one
-    # section's artifact values) structurally cannot cover them. prose:derived recomputes each
-    # from a2_ladder/floor.json and c1_ladder/floor_condition_gated.json and matches the words
-    # around it; these entries exist only so prose:all stops reporting them as unaccounted.
-    "0.96": "gated/untyped paired sd ratio on the scrambled control; recomputed by prose:derived.",
-    # 2026-10-01: post hoc paired tests the paper now quotes in place of two untested comparisons.
-    # Each is a difference of two artifacts' per-seed deltas, recomputed by prose:derived.
-    "+0.0871": "RPE1 untyped-minus-typed paired difference (Appendix D); recomputed by prose:derived.",
-    "+0.1562": "upper 95% bound of that RPE1 difference; recomputed by prose:derived.",
-    "-0.0012": "lower 95% bound of the features-minus-h1 paired difference (Appendix G); recomputed by "
-               "prose:derived. Elsewhere it is the harder split's h2a, which that region's artifact covers.",
-    "4.1": "untyped/gated mean ratio at delta=0.40; recomputed by prose:derived.",
-    "0.84": "Bonferroni-over-six p if the gated arm had the untyped sd; recomputed by prose:derived.",
-    "63": "seeds to match the untyped se, lowest of the four small rungs; recomputed by prose:derived.",
-    "358": "seeds to match the untyped se, highest rung; recomputed by prose:derived.",
-    "22": "epochs in the lambda sweep of Figure 1 (q4_lambda_sweep_22ep.json); a run setting.",
-    "85": "share of PPI edges that are functional_assoc; measured at 85.41% in rationale_bound.json.",
-    "8{,}029{,}296": "protein-protein edge count of the built graph; a property of the graph build.",
-    "11.3": "BioGRID share of protein-protein edges; the tier the source ablation did not cover.",
-    # --- ratios derived in the sentence that states them; their components ARE gated -----------
-    "103": "ratio of the graph term to the response term, derived in the same sentence.",
-    "79": "D3 divided by the 0.0176 gap. Amendment 7.4 fixes this as DESCRIPTIVE only.",
-    "31.7": "per-arm seed-spread ratio, derived from two gated standard deviations.",
-    "20.6": "per-arm seed-spread ratio, derived as above.",
-    "17.4": "per-arm seed-spread ratio, derived as above.",
-    "5.9": "per-arm seed-spread ratio, derived as above.",
-    # --- B1a SECONDARY contrasts. PROVENANCE GAP, recorded rather than hidden: these were -------
-    # --- computed for the B1a report but never persisted into b1_message_form.json, which -------
-    # --- carries only D3. They live in RESULTS_SUMMARY.md, which is weaker than this project's --
-    # --- own standard of re-deriving every number from a persisted artifact. -------------------
-    "+0.0037": "gcnnorm minus untyped_gnn; in RESULTS_SUMMARY.md, not in b1_message_form.json.",
-    "-0.0047": "CI bound of gcnnorm minus expression_only; same provenance gap.",
-    "+0.0062": "CI bound of gcnnorm minus expression_only; same provenance gap.",
-    "0.71": "p for gcnnorm minus expression_only; same provenance gap.",
-    "0.22": "p for gcnnorm minus untyped_gnn; same provenance gap.",
-    # --- power quantities derived from the measured spreads ------------------------------------
-    "0.0096": "minimum detectable effect at five seeds, derived from the measured spread.",
-    "0.0075": "minimum detectable effect at seven seeds, derived as above.",
-    "0.0185": "minimum detectable effect across re-draws, derived as above.",
-    "21": "seeds needed to detect the whole residual, derived from the MDE in the same sentence.",
-    "77": "seeds needed to detect half of it, derived as above.",
-    "250": "datasets needed against the between-dataset spread, derived as above.",
-    # --- split-construction statistics, computed while drawing the folds and never persisted ----
-    "0.796": "median train-to-sequestered cosine of the frozen fold; computed during split construction.",
-    "0.759": "median train-to-sequestered cosine, second fold; same provenance.",
-    "0.741": "median train-to-sequestered cosine, third fold; same provenance.",
-    "0.793": "median train-to-sequestered cosine of a re-draw; same provenance.",
-    "0.862": "median train-to-sequestered cosine of a re-draw; same provenance.",
-    "0.103": "the range the difficulty statistic moved over; derived from the cosines above.",
-    "0.056": "the designed range of that statistic; a design parameter.",
-    # --- rationale-audit quantities normalised per 1% of edges removed, a derivation ------------
-    "0.0043": "prediction change per 1% of STRING edges removed; derived from the raw source-ablation delta.",
-    "0.0025": "the same for HuRI; derived as above.",
-    "0.0014": "the same for BioPlex; derived as above.",
-    "1.47": "the sufficiency scale the audit reports against; a property of that scale.",
-    "0.011": "rationale minus random sufficiency; derived from the audit's aggregate.",
-    # --- biology QC: WAS a discrepancy, now recomputed and anchored above. Kept as a note because
-    # --- the figures in the paper before 2026-08-26 matched no artifact at all.
-    # The IFNGR1 clause that used to need declaring here was REMOVED from the paper on 2026-08-26,
-    # because no artifact held its figures and the gene set it rested on is not defined anywhere in
-    # this repository. Its three literals are gone with it, so there is nothing left to exempt.
-    # --- quantities with no persisted artifact --------------------------------------------------
-    "+0.011": "rationale minus random sufficiency; derived from the audit aggregate, not stored.",
-    "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
-    "0.013": "the simulation's false-positive rate under no true effect; not persisted in its JSON.",
-    # --- ARCHITECTURE DIMENSIONS. Fixed in the model definition, not produced by any run. --------
+    # --- model architecture and run settings ---------------------------------------------------
+    "1280": "ESM-2 650M embedding width; a property of the pretrained encoder.",
     "128": "PINNACLE embedding width, the program-basis K, and the validation rows of Figure 1's sweep "
            "(lambda_sweep.py --n-val). Model and run settings.",
-    "1280": "ESM-2 650M embedding width; a property of the pretrained encoder.",
-    "1412": "total perturbation-feature width; the sum of the components listed beside it.",
     "256": "hidden width of the intervention and graph vectors; a model constant.",
     "512": "the neighbourhood sampling cap, NEIGHBORHOOD_CAP, and the training rows of Figure 1's sweep "
            "(lambda_sweep.py --n-train, recorded in data/logs/campaign/q4b_card*.log); run settings.",
+    "22": "epochs in the lambda sweep of Figure 1 (q4_lambda_sweep_22ep.json); a run setting.",
     # --- DATASET SIZES. Properties of the inputs, recorded in build provenance not in results. ---
     "33{,}983": "DE rows in the reference screen.",
     "10{,}282": "genes scored per row in the reference screen.",
     "11{,}526": "distinct gene targets in the reference screen.",
-    "2{,}393": "targets present in Replogle RPE1's source file, before any rule was applied.",
-    "248": "targets present in Frangieh's source file, before any rule was applied.",
-    "1{,}028": "genes in one decile of 10,282; a binning arithmetic, not a measurement.",
     "1{,}119": "proteins in PINNACLE's CD4 context; a property of that resource.",
-    "7{,}216": "validation rows after a re-draw; a split-construction count.",
-    "3{,}632": "validation rows before it; a split-construction count.",
+    # --- graph properties ------------------------------------------------------------------------
+    "85": "share of PPI edges that are functional_assoc; measured at 85.41% in rationale_bound.json.",
     # --- BUILD-TIME FEATURE COVERAGE. Computed while assembling the feature stores, never persisted.
-    "99.4": "share of DE rows for which ESM-2 resolves; feature-store coverage.",
     "96.5": "share with nonzero physical PPI degree; feature-store coverage.",
     "98.4": "share with nonzero functional PPI degree; feature-store coverage.",
-    "29.5": "share with nonzero complex degree; feature-store coverage.",
     "90.8": "share receiving a ZERO PINNACLE vector; the complement of its 9.2% coverage.",
-    "604": "median functional-assoc degree; a property of the graph build.",
-    "53": "median physical PPI degree; a property of the graph build.",
+    # --- ratios derived in the sentence that states them; their components ARE gated -----------
+    "103": "ratio of the graph term to the response term, derived in the same sentence.",
+    "79": "D3 divided by the 0.0176 gap. Amendment 7.4 fixes this as DESCRIPTIVE only.",
+    # --- the per-edge-normalized pilot wrote no JSON; its table is in a tracked doc --------------
+    "98": "dead-gate share after TWO epochs with the penalty normalized per edge (98.2%, 'by epoch 1' "
+          "0-indexed); the 2026-07-21 pilot table in docs/h1-optimization-notes.md. The pilot JSON was not "
+          "persisted. The paper said 'after one epoch' until 2026-10-28; an ML review caught it.",
+    "71": "dead-gate share after ONE epoch in the same pilot (71.2%, 'by epoch 0'); same table, same reason.",
+    # --- post hoc paired tests, each a difference of two artifacts' per-seed deltas ----------------
+    "0.098": "Bonferroni of the degree-scaled variant's p over all four registered message variants "
+             "(4 x 0.0245, Amendment 7.3); recomputed by prose:derived.",
+    "+0.0101": "upper 95% bound of the features-minus-gated paired difference (Section 5.1); recomputed "
+               "by prose:derived.",
+    "-0.00427": "95% CI bound of zeroing all graph-derived features; prose:derived recomputes it from the "
+                "variant's mean and sd (feature_ablation_report.json stores no interval).",
+    "-0.00286": "the other bound of that interval; recomputed the same way.",
+    "-0.00403": "95% CI bound of zeroing the counts alone; recomputed the same way.",
+    "-0.00290": "the other bound of that interval; recomputed the same way. The accepted paper printed it "
+                "as -0.00291; the per-seed values give -0.0029046, and this check caught it on 2026-10-28.",
+    "-0.00291": "the superseded value of that bound, quoted only in the corrections list beside -0.00290.",
+    "+0.0255": "the superseded Table 3 value for Frangieh's typed result, quoted only in the corrections list "
+               "beside +0.0256: pooled_with_reference.json stores the mean rounded to five places (0.02555), "
+               "which formats as +0.0255; the unrounded per-dataset mean 0.025553 is +0.0256. tab:repl now "
+               "reads the per-dataset files. Caught by an adversarial review on 2026-10-28.",
+    # --- the replication DE build under the ORIGINAL replicate rule; docs/replication-dataset-survey.md 7bis
+    "12": "Replogle RPE1 targets kept under the original replicate rule (App. C); the DE build table in "
+          "docs/replication-dataset-survey.md section 7bis, a build record rather than a result. Also the "
+          "upper end of the per-run GPU-hours in App. G, which prose:camera anchors.",
+    "2{,}393": "Replogle RPE1 targets in the harmonized file, the denominator of that same table.",
+    "-0.0012": "lower 95% bound of the features-minus-gated paired difference (Section 5.1); recomputed "
+               "by prose:derived. Elsewhere it is the harder split's typed loss, which those regions' "
+               "artifacts cover.",
+    # --- the degree-scaled model against no graph (App. B). Not stored as a contrast, but derivable: ---
+    # --- prose:derived pairs b1_message_form.json's D3 and typed-vs-no-graph deltas by seed. -------
+    "-0.0047": "lower 95% bound of gcnnorm minus expression_only; recomputed by prose:derived.",
+    "+0.0062": "upper bound of that interval; recomputed by prose:derived. Also Pearson-delta's gated minus "
+               "typed in App. E, which that region's artifact covers.",
+    # --- rationale-audit quantities normalised per 1% of edges removed, a derivation ------------
+    "0.0043": "prediction change per 1% of STRING edges removed; derived from the raw source-ablation delta.",
+    "0.0025": "the same for HuRI; derived as above.",
+    "0.0014": "the same for BioPlex; derived as above.",
+    # --- quantities with no persisted artifact --------------------------------------------------
+    "0.001": "the centroid-accuracy floor, written as an approximation, not a measured value.",
     # --- COMPUTE BUDGET, read off the run registry rather than a results artifact ----------------
     "379": "training lanes behind the paper; a count of runs.",
-    "2.3": "App.~I's untyped-lane cost, 2.3 to 2.5 GPU-hours; camera_ready/facts.json has 2.31-2.53.",
-    # AUTO 2026-10-01: "7.5" used to pass by matching a DEAD-GATE lane's gpu_hours in the n=7 root.
-    "7.5": "gated-lane cost as Amendment 6.5 recorded it (7.5-16 GPU-hours, docs/replication-prereg.md); "
-           "App.~I quotes that registered rationale, it does not re-measure it.",
-    # AUTO 2026-10-01: the per-edge-normalized pilot wrote no JSON; its table is in a tracked doc.
-    "98": "dead-gate share after one epoch with the penalty normalized per edge (98.2%); the "
-          "2026-07-21 pilot table in docs/h1-optimization-notes.md. The pilot JSON was not persisted.",
-    # --- DERIVED, and anchored as arithmetic in prose:headline rather than stored anywhere -------
-    "0.0026": "half-width of the n=7 CI; prose:headline re-derives it as (ci_high - ci_low) / 2.",
-    "0.0034": "half-width of the n=5 CI; re-derived the same way.",
-    "0.0146": "spread of the three re-draws' no-graph means; prose:headline re-derives it as max - min.",
-    "0.072": "floor of the band the four arms occupy, TRUNCATED so the band contains typed_static "
-             "at 0.0726; prose:headline re-derives it with that truncation.",
     # --- design choices ------------------------------------------------------------------------
     "24": "gated lanes in the C1 campaign; a design count, six rungs times four seeds.",
-    "101": "rank-interval boundary in the B2 binning; a binning choice, not a measurement.",
-    "251": "rank-interval boundary in the B2 binning; as above.",
 }
 
 
@@ -508,9 +400,9 @@ def _prose_all(tex):
 def _prose_assertions(tex):
     """Claims the paper makes in WORDS rather than numbers, which are still checkable.
 
-    "none dropped", "no failures", "gates live throughout", "fold sizes consistent" are assertions
-    about the data, not rhetoric, and until 2026-08-26 nothing checked any of them. A number that
-    goes stale gets caught by the checks above; a sentence that goes stale did not.
+    "none dropped", "all four of its seeds are negative", "every gate live throughout training" are
+    assertions about the data, not rhetoric, and until 2026-08-26 nothing checked any of them. A number
+    that goes stale gets caught by the checks above; a sentence that goes stale did not.
 
     Each entry states the claim as the paper makes it and the artifact condition that must hold."""
     flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
@@ -529,16 +421,26 @@ def _prose_assertions(tex):
                      f"to the new wording, or delete the check if the claim was dropped")
         return False
 
-    n7 = load("data/results/screening_n7_live/robustness_5seed.json")
-    pm = n7["contrasts"]["promotion_margin"]
-    if said("none dropped"):
+    def signs(c):
+        """Per-seed differences as the paper states them, first model minus second."""
+        return [d for d in c["deltas"]]
+
+    n7 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
+    pm = n7["promotion_margin"]
+    if said("At seven seeds, none dropped"):
         need(not pm["dropped"] and len(pm["seeds_used"]) == 7, "seeds 0 to 6, none dropped",
              f"seeds_used={pm['seeds_used']} dropped={pm['dropped']}")
+    if said("all seven seeds positive"):
+        need(len(signs(pm)) == 7 and min(signs(pm)) > 0, "untyped at n=7: all seven seeds positive",
+             f"per-seed {[round(d, 4) for d in signs(pm)]}")
+    if said("worse in all seven seeds"):
+        need(len(signs(n7["h2a"])) == 7 and max(signs(n7["h2a"])) < 0,
+             "typed at n=7: worse in all seven seeds", f"per-seed {[round(d, 4) for d in signs(n7['h2a'])]}")
 
-    fold = n7["fold"]
-    if said("observed fold sizes"):
-        need(bool(fold.get("fold_sizes_consistent")), "fold sizes consistent across all seven seeds",
-             f"fold_sizes_consistent={fold.get('fold_sizes_consistent')}")
+    rp = load("data/results/replication/ReplogleWeissman2022_rpe1/robustness_5seed.json")["contrasts"]
+    if said("all four seeds positive"):
+        d = signs(rp["promotion_margin"])
+        need(len(d) == 4 and min(d) > 0, "RPE1 untyped: all four seeds positive", f"per-seed {d}")
 
     nm = load("data/results/replication/NormanWeissman2019_filtered/robustness_5seed.json")
     nmc = nm["contrasts"]["promotion_margin"]
@@ -548,11 +450,10 @@ def _prose_assertions(tex):
              "Norman: four of four seeds negative, none dropped",
              f"{neg}/{len(nmc['deltas'])} negative, dropped={nmc['dropped']}")
 
-    if said("no failures"):
-        landed = sum(len(list((ROOT / f"data/results/a2_ladder/{r}/{a}").glob("[0-9].parquet")))
-                     for r in ("d020", "d050", "d100", "d200", "d400", "permuted_d400")
-                     for a in ("untyped_gnn", "expression_only"))
-        need(landed == 48, "48 training runs, no failures", f"{landed} parquets landed, expected 48")
+    b1 = load("data/results/screening_b1/b1_message_form.json")["contrasts"]["D3"]
+    if said("five of five seeds) and so recovers"):
+        need(len(b1["deltas"]) == 5 and min(b1["deltas"]) > 0, "degree-scaled variant: five of five seeds",
+             f"per-seed {b1['deltas']}")
 
     # Frangieh is the one gated replication, and the paper says its gates were live throughout.
     if said("every gate live throughout training"):
@@ -568,8 +469,27 @@ def _prose_assertions(tex):
              "Frangieh: every gate demonstrably live throughout training",
              f"per-seed minima {[round(x, 4) for x in mins]} against the {GATE_DEAD} threshold")
 
-    return fails, (f"full: {5} worded assertions checked against artifacts (dropped seeds, fold "
-                   f"consistency, Norman's seed signs, the ladder's 48 lanes, Frangieh's live gates)")
+    # Appendix C: ten candidates built, eight pass the on-target check, the two failures are the
+    # T-cell screens, and the seven trained ones are the passes other than Papalexi.
+    verdicts = {f.name.split(".")[0]: json.loads(f.read_text())["verdict"]
+                for f in sorted((ROOT / "data/intermediate/replication").glob("*.DE_stats_v2.qc.json"))}
+    failed = sorted(k for k, v in verdicts.items() if not v.startswith("PASS"))
+    if said("We built ten public datasets in our format. Eight passed"):
+        need(len(verdicts) == 10 and len(failed) == 2, "ten built, eight pass",
+             f"{len(verdicts)} built, {len(verdicts) - len(failed)} pass")
+    if said("The two that failed, Datlinger and Shifrut"):
+        need([k[:8] for k in failed] == ["Datlinge", "ShifrutM"], "the two failures are Datlinger and Shifrut",
+             f"failed {failed}")
+    if said("the other seven were trained to completion"):
+        trained = sorted(p.parent.name for p in (ROOT / "data/results/replication").glob("*/robustness_5seed.json")
+                         if not p.parent.name.startswith("_"))   # "_snapshot_*" holds old copies
+        passed = sorted(k for k in verdicts if k not in failed and not k.startswith("Papalexi"))
+        need(trained == passed and len(trained) == 7, "the seven trained datasets are the passes but Papalexi",
+             f"trained {trained} against passes {passed}")
+
+    return fails, ("full: 11 worded assertions checked against artifacts (seeds dropped and their signs, "
+                   "Norman's seeds, Frangieh's live gates, which candidates pass the on-target check "
+                   "and which were trained)")
 
 
 @table("prose:style")
@@ -677,256 +597,75 @@ def _refs_attribution(tex):
 
 @table("prose:derived")
 def _prose_derived(tex):
-    """Quantities the paper DERIVES from two artifacts rather than reading off one.
+    """Quantities the paper DERIVES from two artifacts rather than reading off one, and the words that
+    must go with them.
 
-    This is the blind spot prose:all cannot cover. That check passes a literal when the string
-    occurs anywhere in the section's artifact values at any of thirteen precisions, and app:floor
-    alone emits 4,013 such strings including every bare integer up to 32, so a one or two digit
-    number passes for free and a ratio between two artifacts passes whenever either operand happens
-    to round to it. That is how "4.0 to 9.5x the untyped arm's ON THE SAME RUNGS" survived to
-    2026-08-26: the real range over the six rungs is 0.96x to 9.46x, the stated band excluded
-    delta=0.40 and the scrambled control, and delta=0.40 is the rung the whole "nothing up to 0.40"
-    claim rests on. Every derivation below is recomputed from the artifacts and matched against the
-    words around it, so a reworded sentence fails loudly instead of quietly going unchecked."""
+    This is the blind spot prose:all cannot cover. That check passes a literal when the string occurs
+    anywhere in the section's artifact values at any of thirteen precisions, so a one or two digit
+    number passes for free and a ratio between two artifacts passes whenever either operand happens to
+    round to it. Every derivation below is recomputed from the artifacts and matched against the words
+    around it, so a reworded sentence fails loudly instead of quietly going unchecked. Rebuilt on
+    2026-10-28 for the shortened paper: the derivations behind the sections it removed (the ladder's
+    noise ratios, the variance decomposition, the energy-distance cells) went with those sections."""
     flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
     fails = []
-    u = load("data/results/a2_ladder/floor.json")
-    g = load("data/results/c1_ladder/floor_condition_gated.json")
-    uc, gc = u["contrasts"], g["contrasts"]
-    inj = [k for k in uc if not k.startswith("permuted")]
-    ratio = {k: gc[k]["sd"] / uc[k]["sd"] for k in uc}
 
     def need(claim, value, context):
-        """context carries {V}; we accept the paper writing it at 1 or 2 decimals."""
+        """context carries {V}; we accept the paper writing it at 0 to 4 decimals."""
         for txt in (f"{value:.4f}", f"{value:.3f}", f"{value:.2f}", f"{value:.1f}", f"{value:.0f}"):
             if context.replace("{V}", txt) in flat:
                 return
         fails.append(f"derived {claim}: recomputed {value:.4f}; the paper does not state it in "
                      f"context (looked for '{context.replace('{V}', f'{value:.4f}')}')")
 
-    need("paired sd ratio, lowest injected rung", min(ratio[k] for k in inj),
-         r"is ${V}$ to $9.5\times$ the untyped")
-    need("paired sd ratio, highest injected rung", max(ratio[k] for k in inj),
-         r"to ${V}\times$ the untyped model's across")
-    need("paired sd ratio, scrambled control", ratio["permuted_d400"],
-         r"models are equally noisy (${V}\times$)")
-    need("sd ratio at the largest rung", ratio["d400"],
-         r"gated model carries only ${V}\times$ the")
-    need("mean ratio at the largest rung", uc["d400"]["mean"] / gc["d400"]["mean"],
-         r"estimate is ${V}\times$ smaller")
-    need("seeds to match the untyped se at d400", 4 * ratio["d400"] ** 2,
-         r"would take ${V}$ seeds at")
-    need("seeds to match, other rungs low", min(4 * ratio[k] ** 2 for k in inj if k != "d400"),
-         r"and ${V}$ to $358$ at the other four")
-    need("seeds to match, other rungs high", max(4 * ratio[k] ** 2 for k in inj if k != "d400"),
-         r"to ${V}$ at the other four")
-
-    # The paper's claim that equalising the noise STILL would not clear. Student t, df=3, closed form.
-    m, sd, n = gc["d400"]["mean"], uc["d400"]["sd"], 4
-    t = m / (sd / math.sqrt(n))
-    x = t / math.sqrt(3.0)
-    p_two = 1.0 - (2.0 / math.pi) * (x / (1.0 + t * t / 3.0) + math.atan(x))
-    need("t if the gated arm had the untyped arm's sd", t, r"short ($t{=}{V}$")
-    need("that p, corrected over six", min(1.0, p_two * 6.0), r"$, ${V}$ corrected over six")
-
-    ui = u["post_hoc_increment_over_zero"]["d400"]["mean"]
-    gi = g["post_hoc_increment_over_zero"]["d400"]["mean"]
-    need("untyped increment over gated at d400", ui / gi,
-         r"increment is ${V}\times$ the gated one")
-
-    # The I^2 pair Appendix D quotes for Section 4.3's comparison must be like-for-like: BOTH over the
-    # seven replication screens.
-    p7 = load("data/results/replication/pooled.json")["pooled"]
-    need("untyped I2 over the seven replication screens", p7["promotion_margin"]["I2"] * 100,
-         r"against ${V}\%$, the pool on which")  # AUTO 2026-10-27: plain-language wording
-    need("typed I2 with the reference screen added",
-         load("data/results/replication/pooled_with_reference.json")["pooled"]["h2a"]["I2"] * 100,
-         r"raises its $I^2$ from $39.2\%$ to ${V}\%$")
-
-    # The K<128 confound claim in App.~D: one negative in three against none in five is what
-    # capacity alone would give by chance. Fisher exact, two-sided, from the per-dataset signs.
-    eff = load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]
-    all8 = load("data/results/replication/pooled_with_reference.json")["pooled"]["promotion_margin"]
-    hi = eff["effects"]                                       # the five K=128 datasets
-    lo = [e for e in all8["effects"] if e not in hi]           # the three that ran below K=128
-    a = sum(1 for e in hi if e < 0)                            # negatives among K=128
-    b = sum(1 for e in lo if e < 0)                            # negatives among K<128
-    n1, n2, neg = len(hi), len(lo), a + b
-    def hyp(k):
-        return (math.comb(n1, k) * math.comb(n2, neg - k)) / math.comb(n1 + n2, neg)
-    p_obs = hyp(a)
-    p_two = sum(hyp(k) for k in range(0, neg + 1)
-                if 0 <= neg - k <= n2 and k <= n1 and hyp(k) <= p_obs + 1e-12)
-    need("Fisher exact on sign against K", p_two, r"by chance ($p{=}{V}$, Fisher exact)")
-    if not (a == 0 and b == 1):
-        fails.append(f"derived K-confound table: expected 0 negatives among the five K=128 datasets "
-                     f"and 1 among the three below, got {a} and {b}")
-
-    # ---- App.~G: the nested variance decomposition, BOTH contrasts, and the level confound -------
-    vh2a = load("data/results/l4_v2/vardecomp_h2a.json")
-    vh1 = load("data/results/l4_v2/vardecomp_h1_vs_no_graph.json")
-    for lab, v, ctx in [
-        ("h2a sd_seed", vh2a["sd_seed"], r"{\text{seed}}={V}$ ($26$ df)"),
-        ("h2a sd_level", vh2a["sd_level"], r"{\text{level}}={V}$ ($3$ df)"),
-        ("h2a sd_redraw", vh2a["sd_redraw"], r"{\text{redraw}}={V}$ ($2$ df)"),
-        ("h1 sd_seed", vh1["sd_seed"], r"{\text{seed}}={V}$ ($22$ df)"),
-        ("h1 sd_level", vh1["sd_level"], r"{\text{level}}={V}$ ($2$ df)"),
-        ("h1 sd_redraw", vh1["sd_redraw"], r"{\text{redraw}}={V}$ ($2$ df)"),
-    ]:
-        for txt in (f"{v:.4f}", f"{v:.3f}") + (("0",) if v == 0 else ()):
-            if ctx.replace("{V}", txt) in flat:
-                break
-        else:
-            fails.append(f"derived {lab}: recomputed {v:.4f}; not stated in context "
-                         f"'{ctx.replace('{V}', f'{v:.4f}')}'")
-    need("h1 seed-over-level ratio", vh1["sd_seed"] / vh1["sd_level"], r"leads the difficulty setting by ${V}\times$")
-    need("h1 redraw component", vh1["sd_redraw"], r"h1's re-draw component is ${V}$ against")
-    need("h2a redraw component", vh2a["sd_redraw"], r"against h2a's ${V}$, roughly sevenfold")
-    if round(vh1["sd_redraw"] / vh2a["sd_redraw"]) != 7:
-        fails.append(f"derived: App.~G says sevenfold; the re-draw ratio is now "
-                     f"{vh1['sd_redraw'] / vh2a['sd_redraw']:.2f}")
-    if vh2a["sd_level"] != 0 and "h2a shows no difficulty effect at all" in flat:
-        fails.append(f"derived: App.~G says h2a's level component is zero; it is {vh2a['sd_level']:.5f}")
-
-    # The confound itself: the two contrasts' re-draws are NOT at the same level. If a future rebuild
-    # ever replicates both at one level this fires, and the paragraph must stop saying "confounded".
-    def redraw_levels(v):
-        from collections import Counter
-        c = Counter(k.split("|")[0] for k in v["cells"])
-        return sorted(k for k, n in c.items() if n > 1)
-    l1, l2a = redraw_levels(vh1), redraw_levels(vh2a)
-    if not (l1 == ["0.80/0.10"] and l2a == ["0.75/0.15"]):
-        fails.append(f"derived redraw-level confound: App.~G says h1's re-draws sit at 0.80/0.10 and "
-                     f"h2a's at 0.75/0.15; the artifacts now give {l1} and {l2a}")
-
-    # ---- App.~J: the two survivals the discussion used to skip, and h1's near-miss --------------
-    am = load("data/results/a3_external_live/rescored.json")["across_metric"]
-    def surv(o):
-        return o.get("p_bonferroni", 1) < 0.05 and o.get("p_holm", 1) < 0.05
-    n_surv = sum(1 for o in am.values() if surv(o))
-    if "Four of the twenty cells" not in flat or n_surv != 4:
-        fails.append(f"derived survival count: {n_surv} of {len(am)} cells survive both corrections; "
-                     f"App.~J says four of twenty")
-    ed = am["energy_distance/h2a"]
-    eb = am["energy_distance/h2b"]
-    eh1 = am["energy_distance/h1_vs_no_graph"]
-    need("energy h2a mean", abs(ed["mean"]), r"h2a ($-{V}$, Bonferroni")
-    need("energy h2a Bonferroni", ed["p_bonferroni"], r"Bonferroni ${V}$), on the endpoint")
-    need("energy h2b mean", eb["mean"], r"h2b's $+{V}$ and")
-    need("energy h1 mean", eh1["mean"], r"h1's $+{V}$ point")
-    need("energy h2b raw p", eb["p_value"], r"raw $p{=}{V}$ and")
-    need("energy h1 raw p", eh1["p_value"], r"and $p{=}{V}$ and clear")
-    need("energy h2b Bonferroni", eb["p_bonferroni"], r"(Bonferroni ${V}$ for h2b")
-    need("energy h1 Bonferroni", eh1["p_bonferroni"], r"${V}$ for h1)")
-    if surv(eb) or surv(eh1):
-        fails.append("derived: an energy-distance h2b or h1 cell now survives BOTH corrections, which "
-                     "App.~J says neither does. Rail 4 may fire. Re-read before editing.")
-
-    # ---- tab:bins: the caption now claims h2b stars nowhere and h1 in exactly one interval -----
-    head = load("data/results/b2_deciles_live/deciles.json")["schemes"]["head"]
-    def stars(contrast):
-        # cells are keyed "<interval>/<contrast>", flat, not nested
-        out = []
-        for key, o in head["cells"].items():
-            iv, _, c = key.rpartition("/")
-            if c != contrast or not isinstance(o, dict):
-                continue
-            if o.get("survives_family_wise", o.get("p_bonferroni", 1) < 0.05
-                     and o.get("p_holm", 1) < 0.05):
-                out.append((iv, o))
-        return out
-    s_h2b, s_h1 = stars("h2b"), stars("h1_vs_no_graph")
-    # AUTO 2026-10-01: re-scored with the live gates, h1 stars in the two least-moved intervals,
-    # both positive (rail 4), and its top-20 deficit no longer survives this 36-cell family.
-    if len(s_h2b) != 0 or sorted(i for i, _ in s_h1) != ["2501-5000", "5001-10282"] \
-            or any(o["mean"] <= 0 for _, o in s_h1):
-        fails.append(f"derived tab:bins: the text says h2b stars nowhere and h1 in exactly the two "
-                     f"least-moved intervals, both positive; artifacts give h2b {len(s_h2b)} and h1 "
-                     f"{[(i, round(o['mean'], 4)) for i, o in s_h1]}")
-    else:
-        by = dict(s_h1)
-        need("h1 2501-5000 mean", by["2501-5000"]["mean"], r"intervals ($+{V}$ and")
-        need("h1 5001-10282 mean", by["5001-10282"]["mean"], r"and $+{V}$, five of five")
-        need("h1 2501-5000 Bonferroni", by["2501-5000"]["p_bonferroni"], r"Bonferroni ${V}$ and $0.024")
-        need("h1 5001-10282 Bonferroni", by["5001-10282"]["p_bonferroni"], r"and ${V}$). That is the one")
-        top = head["cells"]["1-20/h1_vs_no_graph"]
-        need("h1 top-20 deficit", top["mean"], r"top-$20$ deficit (${V}$) misses")
-        need("h1 top-20 Bonferroni", top["p_bonferroni"], r"this family (${V}$) though")
-        for phrase, claim in [("h2b, which stars in no interval", "h2b stars nowhere"),
-                              ("h1 stars in exactly two", "h1 stars in exactly two intervals")]:
-            if phrase not in flat:
-                fails.append(f"derived tab:bins wording: the artifacts support '{claim}' but the "
-                             f"caption no longer says it (looked for '{phrase}')")
-
-    # ---- App.~B's single-seed argument, and App.~H's pre-repair headline ----------------------
-    sweep = load("data/results/q4_lambda_sweep_22ep.json")
-    z = [r for r in sweep["runs"] if r["lambda_graph"] == 0][0]["trajectory"][-1]
-    need("live gate at lambda=0 in the sweep", z["val_gate"], r"from ${V}$ to $\sim$$10^{-7}$")
-    if len(sweep["runs"]) != len({r["lambda_graph"] for r in sweep["runs"]}):
-        fails.append("derived: the lambda sweep now has more than one run per point, so Figure 1's "
-                     "caption must stop saying 'one run at one seed'")
-    pre = load("data/results/screening/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]["mean"]
-    need("pre-repair h1", abs(pre), r"h1 barely moved, from $-{V}$ to $-0.0009$")  # AUTO 2026-10-27: plain-language wording
-
-    # ---- App.~B: the search's epoch budget, and App.~C's m=1 p --------------------------------
-    asb = load("data/results/a2_power/arch_search_bound.json")
-    if asb["epochs_run"] != [5]:
-        fails.append(f"derived arch-search epochs: artifact says {asb['epochs_run']}, App.~B says five")
-    b1 = load("data/results/screening_b1/b1_message_form.json")["contrasts"]["D3"]
-    need("B1a uncorrected p", b1["p_value"], r"uncorrected $p{=}{V}$")
-    need("B1a recovery share", b1["recovery_share"] * 100,
-         r"recovers ${V}\%$ of the gap between the typed and untyped models")  # AUTO 2026-10-27
-
-    # Figure 1(b)'s caption reads the epoch at which each weight's mean gate first falls below the
-    # dead-gate threshold, and says none recovers. Epochs are 0-indexed in the artifact.
+    # ---- Figure 1: what the caption says about the sweep --------------------------------------------
+    runs = load("data/results/q4_lambda_sweep_22ep.json")["runs"]
+    z = [r for r in runs if r["lambda_graph"] == 0][0]["trajectory"][-1]
+    need("gate at lambda=0 at the end of the sweep", z["val_gate"], r"Without the penalty the gates end at ${V}$")
+    if len(runs) != len({r["lambda_graph"] for r in runs}) or "one seed per setting" not in flat.lower():
+        fails.append("derived: the lambda sweep now has more than one run per point, or the caption no "
+                     "longer says so; Figure 1's caption must match")
+    pen = sorted((r for r in runs if r["lambda_graph"] > 0), key=lambda r: r["lambda_graph"])
+    count = {8: "eight", 9: "nine", 7: "seven"}
+    if f"Across the {count.get(len(pen), len(pen))} penalty strengths we tried" not in flat:
+        fails.append(f"derived Figure 1: the sweep has {len(pen)} penalized weights; the caption's count differs")
     ordinal = {1: "second", 2: "third", 3: "fourth", 4: "fifth", 11: "twelfth"}
-    pen = [r for r in load("data/results/q4_lambda_sweep_22ep.json")["runs"] if r["lambda_graph"] > 0]
 
     def first_dead(r):
         return next((e["epoch"] for e in r["trajectory"] if e["val_gate"] < GATE_DEAD), None)
     fd = {r["lambda_graph"]: first_dead(r) for r in pen}
     hi = {v for k, v in fd.items() if k >= 1e-3}
-    if len(hi) != 1 or f"up are dead from the {ordinal.get(min(hi))} epoch" not in flat:
+    if len(hi) != 1 or f"those from $10^{{-3}}$ up are dead from the {ordinal.get(min(hi))} epoch" not in flat:
         fails.append(f"derived Figure 1 crossing: weights >= 1e-3 first dead at 0-indexed epochs "
                      f"{sorted(hi)}; the caption does not say so")
-    if f"$10^{{-5}}$ from the {ordinal.get(fd.get(1e-5))}" not in flat:
-        fails.append(f"derived Figure 1 crossing: 1e-5 first dead at 0-indexed epoch {fd.get(1e-5)}; "
-                     f"the caption does not say so")
+    if pen[0]["lambda_graph"] != 1e-5 or \
+            f"the weakest, $10^{{-5}}$, from the {ordinal.get(fd.get(1e-5))}" not in flat:
+        fails.append(f"derived Figure 1 crossing: the weakest weight is {pen[0]['lambda_graph']:g}, first dead "
+                     f"at 0-indexed epoch {fd.get(pen[0]['lambda_graph'])}; the caption does not say so")
     recovers = [k for k, r in ((r["lambda_graph"], r) for r in pen) if fd[k] is None or any(
         e["val_gate"] >= GATE_DEAD for e in r["trajectory"] if e["epoch"] >= fd[k])]
     if recovers or "none recovers" not in flat:
         fails.append(f"derived Figure 1: the caption says no penalized run recovers; weights {recovers} "
                      f"are live at some epoch after their first dead one")
 
-    # Per-dataset survivor counts, over TWO sets that must not be mixed: Figure 3's caption counts the
-    # reference screen and the seven replication screens apart (both contrasts survive on the
-    # reference; on the replication screens the typed one on none, the untyped one on two, in opposite
-    # directions), while the Conclusion and Table 3 count the untyped arm over all eight (three, in
-    # both directions). An earlier caption put "no replication screen" and "three times" in one
-    # sentence, mixing the two sets.
-    pd = load("data/results/replication/pooled_with_reference.json")["per_dataset"]
-    ref = "reference_screen_n7"
-    rep_screens = [k for k in pd["h2a"] if k != ref]
-    typed_surv = [k for k in rep_screens if pd["h2a"][k]["survives_family_wise"]]
-    unt = [v["mean"] for v in pd["promotion_margin"].values() if v["survives_family_wise"]]
-    unt7 = [pd["promotion_margin"][k]["mean"] for k in rep_screens
-            if pd["promotion_margin"][k]["survives_family_wise"]]
-    ref_both = pd["h2a"][ref]["survives_family_wise"] and pd["promotion_margin"][ref]["survives_family_wise"]
-    if not ref_both or "Both contrasts clear correction on the reference screen" not in flat:
-        fails.append(f"derived Figure 3: on the reference screen h2a survives "
-                     f"{pd['h2a'][ref]['survives_family_wise']}, untyped "
-                     f"{pd['promotion_margin'][ref]['survives_family_wise']}; the caption says both")
-    if typed_surv or "the typed contrast clears it on none" not in flat:
-        fails.append(f"derived Figure 3: typed survivors on replication screens {typed_surv}")
-    if not (len(unt7) == 2 and min(unt7) < 0 < max(unt7)) or "the untyped one on two, in opposite directions" not in flat:
-        fails.append(f"derived Figure 3: untyped survivors on the replication screens {unt7}, "
-                     f"expected two in opposite directions")
-    if not (len(unt) == 3 and min(unt) < 0 < max(unt)) or "clears correction on three datasets in disagreeing" not in flat:
-        fails.append(f"derived Conclusion: untyped survivors over all eight {unt}, expected three in both directions")
+    # ---- Section 4.1: the main comparison before the repair ----------------------------------------
+    pre = load("data/results/screening/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]["mean"]
+    need("pre-repair main comparison", abs(pre), r"barely moved, from $-{V}$ to $-0.0009$")
 
-    # Comparisons the paper once asserted on two marginal estimates, now quoted as the paired tests
-    # they are. Each pairs two artifacts' per-seed deltas on the SAME seeds and baseline lanes, so the
-    # shared arm cancels seed by seed.
+    # ---- Appendix B: the search's budget, and the degree-scaled variant --------------------------------
+    asb = load("data/results/a2_power/arch_search_bound.json")
+    if asb["epochs_run"] != [5] or "one seed and five epochs each" not in flat:
+        fails.append(f"derived arch-search epochs: artifact says {asb['epochs_run']}, App.~B says five")
+    gap = load("data/results/screening_b1/b1_message_form.json")["gap_untyped_minus_typed"]["mean"]
+    if not (0.4 < asb["observed_spread"] / gap < 0.6) or "about half the" not in flat:
+        fails.append(f"derived: App.~B calls the search's range about half the gap; it is "
+                     f"{asb['observed_spread'] / gap:.2f} of it")
+    b1 = load("data/results/screening_b1/b1_message_form.json")
+    d3 = b1["contrasts"]["D3"]
+    need("B1a uncorrected p", d3["p_value"], r"uncorrected $p{=}{V}$")
+    need("B1a recovery share", d3["recovery_share"] * 100,
+         r"recovers ${V}\%$ of the gap between the typed and untyped models")
+    # "still does not beat no graph" needs the degree-scaled model's interval against no graph to reach zero.
     def paired(diffs):
         from scipy import stats
         n = len(diffs)
@@ -934,103 +673,315 @@ def _prose_derived(tex):
         sd = (sum((d - m) ** 2 for d in diffs) / (n - 1)) ** 0.5
         h = stats.t.ppf(0.975, n - 1) * sd / n ** 0.5
         return m, m - h, m + h, 2 * stats.t.sf(abs(m / (sd / n ** 0.5)), n - 1)
+    d3s = dict(zip(d3["seeds_used"], d3["deltas"]))                                       # gcnnorm - typed
+    tn = dict(zip(b1["context_typed_vs_nograph"]["seeds_used"], b1["context_typed_vs_nograph"]["deltas"]))
+    common = sorted(set(d3s) & set(tn))
+    m, lo, hi_, pv = paired([d3s[s] + tn[s] for s in common])
+    # Section 4.2's heading also says "still does not beat no graph", about the gated model; this anchor
+    # must name the repaired model, or the heading would satisfy it after the sentence was deleted.
+    if "The repaired model still does not beat no graph" not in flat or lo > 0:
+        fails.append(f"derived degree-scaled minus no graph: {m:+.4f} [{lo:+.4f},{hi_:+.4f}]; the paper's "
+                     f"'still does not beat no graph' is missing or false")
+    if f"still no better than no graph (${m:+.4f}$, $95\\%$ CI $[{lo:+.4f},{hi_:+.4f}]$)" not in flat:
+        fails.append(f"derived degree-scaled minus no graph: the paper does not state {m:+.4f} "
+                     f"[{lo:+.4f},{hi_:+.4f}] as App.~B's paired difference")
 
-    def oriented_deltas(c, arm):
+    # ---- Section 4.3, Table 4, Conclusion: which datasets pass correction, and in which direction ------
+    pd = load("data/results/replication/pooled_with_reference.json")["per_dataset"]
+    ref = "reference_screen_n7"
+    rep = [k for k in pd["h2a"] if k != ref]
+    typed_rep = [k for k in rep if pd["h2a"][k]["survives_family_wise"]]
+    unt = [v["mean"] for v in pd["promotion_margin"].values() if v["survives_family_wise"]]
+    if typed_rep or "the typed graph shows no benefit on seven more datasets" not in flat:
+        fails.append(f"derived Conclusion: typed survivors on the replication screens {typed_rep}")
+    if not (len(unt) == 3 and min(unt) < 0 < max(unt)) or \
+            "passes correction on three of the eight datasets, and they disagree in sign" not in flat:
+        fails.append(f"derived Section 4.3: untyped survivors over all eight {unt}, expected three in both directions")
+    up, down = sum(1 for x in unt if x > 0), sum(1 for x in unt if x < 0)
+    for phrase in ("for the better on two datasets and for the worse on one",
+                   "helps on two datasets and hurts on one"):
+        if (up, down) != (2, 1) or phrase not in flat:
+            fails.append(f"derived: '{phrase}' against {up} positive and {down} negative survivors")
+    seeds = {k: pd["promotion_margin"][k]["n_seeds"] for k in pd["promotion_margin"]}
+    if seeds.pop(ref) != 7 or set(seeds.values()) != {4} or \
+            "The T-cell screen has seven seeds per model, the others four" not in flat:
+        fails.append(f"derived Table 3 caption: seeds per dataset {seeds}")
+
+    # ---- Section 5.1 D: graph-derived features against the gated model, paired by seed --------------
+    def oriented(c, arm):
         sg = 1.0 if c["better"] == arm else -1.0
         return {int(s): sg * d for s, d in zip(c["seeds_used"], c["deltas"])}
-
-    # (i) Cause D: graph-derived features' value (intact - zeroed) against h1 (gated - no graph).
-    # The paper said "worth more than message passing"; paired, the interval crosses zero.
-    h1s = oriented_deltas(load("data/results/screening_lambda0/robustness_5seed.json")
-                          ["contrasts"]["h1_vs_no_graph"], "condition_gated")
+    h1s = oriented(load("data/results/screening_lambda0/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"],
+                   "condition_gated")
     abl = next(v for v in load("data/results/feature_ablation_report.json") if v["variant"] == "nograph")
     feat = {int(s): -d for s, d in abl["per_seed"].items()}
     common = sorted(set(h1s) & set(feat))
-    fd = [feat[s] - h1s[s] for s in common]
-    m, lo, hi, pv = paired(fd)
-    want = f"features' value minus h1 is ${m:+.4f}$ ($95\\%$ CI $[{lo:+.4f},{hi:+.4f}]$, $p{{=}}{pv:.3f}$"
+    fdiff = [feat[s] - h1s[s] for s in common]
+    m, lo, hi_, pv = paired(fdiff)
+    want = (f"the features' effect minus the gated model's is ${m:+.4f}$ ($95\\%$ CI $[{lo:+.4f},{hi_:+.4f}]$, "
+            f"$p{{=}}{pv:.3f}$)")
     if len(common) != 5 or want not in flat:
-        fails.append(f"derived features minus h1: paired over seeds {common}; the paper does not say '{want}'")
-    # Both ways: the sign count the paper states must be the one the data give, so a reworded count
-    # ("four of five") fails as surely as a wrong "all five".
-    if not (len(fd) == 5 and min(fd) > 0) or "positive in all five seeds" not in flat:
-        fails.append(f"derived features minus h1: the paper must say 'positive in all five seeds' exactly "
-                     f"when the data do; differences {[round(d, 5) for d in fd]}")
-    if "comes out ahead in all five seeds, but its interval crosses zero" not in flat or not (min(fd) > 0 and lo < 0 < hi):
-        fails.append(f"derived Section 5.1 D: the body's reading of the paired test no longer matches "
-                     f"(differences {[round(d, 4) for d in fd]}, CI [{lo:+.4f},{hi:+.4f}])")
-    # Each place that sets the two effects side by side (the abstract, Table 3 row D) must carry the
+        fails.append(f"derived features minus gated: paired over seeds {common}; the paper does not say '{want}'")
+    if "comes out ahead in all five seeds, but its interval crosses zero" not in flat or \
+            not (min(fdiff) > 0 and lo < 0 < hi_):
+        fails.append(f"derived Section 5.1 D: the reading of the paired test no longer matches "
+                     f"(differences {[round(d, 4) for d in fdiff]}, CI [{lo:+.4f},{hi_:+.4f}])")
+    # Each place that sets the two effects side by side (the abstract, Table 4 row D) must carry the
     # caveat exactly when the paired interval crosses zero. Checked per place: a phrase-anywhere test
     # let either copy cover for the other's removal (2026-10-01, two planted faults missed).
-    for ctx in ("has no detectable effect (the two do not differ significantly)",
+    for ctx in ("had no detectable effect (the two effects do not differ significantly)",
                 "has no detectable effect, and the two do not differ significantly"):
-        if (lo < 0 < hi) != (ctx in flat):
-            fails.append(f"derived features minus h1: '{ctx}' is {'present' if ctx in flat else 'missing'}, "
-                         f"but the paired interval is [{lo:+.4f},{hi:+.4f}]")
+        if (lo < 0 < hi_) != (ctx in flat):
+            fails.append(f"derived features minus gated: '{ctx}' is {'present' if ctx in flat else 'missing'}, "
+                         f"but the paired interval is [{lo:+.4f},{hi_:+.4f}]")
     if lo <= 0:
         # Not established, so no sentence may assert it, however it is worded: any comparative that
-        # reaches "message passing" fails unless the sentence frames the comparison as open. A fixed
-        # phrase list was beaten by a paraphrase ("matter more than message passing") on 2026-10-01.
+        # reaches the gated model fails unless the sentence frames the comparison as open. A fixed phrase
+        # list was beaten by a paraphrase ("matter more than message passing") on 2026-10-01, and the
+        # plain-language paper names the model rather than "h1", so the target covers both.
         comparative = re.compile(r"\b(?:more|larger|greater|bigger|stronger|outweighs?|beats?|exceeds?|"
-                                 r"surpass\w*|outperform\w*)\b[^.;:]{0,60}?\b(?:message passing|h1\b)", re.I)
+                                 r"surpass\w*|outperform\w*)\b[^.;:]{0,60}?\b(?:message passing|h1\b|"
+                                 r"the gated (?:graph|model))", re.I)
         hedged = re.compile(r"\b(?:whether|not settled|not established|no detectable|cannot say)\b", re.I)
         for sentence in re.split(r"(?<=[.;:])\s+", flat):
             hit = comparative.search(sentence)
             if hit and not hedged.search(sentence):
-                fails.append(f"derived features minus h1: the paper asserts '{hit.group(0)}', but the paired "
-                             f"interval [{lo:+.4f},{hi:+.4f}] crosses zero")
-        if re.search(r"discards? outweighs", flat):
-            fails.append("derived features minus h1: 'what the ablation discards outweighs what it measures' "
-                         "is the untested comparison again")
+                fails.append(f"derived features minus gated: the paper asserts '{hit.group(0)}', but the "
+                             f"paired interval [{lo:+.4f},{hi_:+.4f}] crosses zero")
 
-    # (ii) Replogle RPE1: untyped against typed, post hoc (Appendix D).
-    rp = load("data/results/replication/ReplogleWeissman2022_rpe1/robustness_5seed.json")["contrasts"]
-    ug, ts = oriented_deltas(rp["promotion_margin"], "untyped_gnn"), oriented_deltas(rp["h2a"], "typed_static")
-    common = sorted(set(ug) & set(ts))
-    m, lo, hi, pv = paired([ug[s] - ts[s] for s in common])
-    fam = sorted([rp["promotion_margin"]["p_value"], rp["h2a"]["p_value"], pv])   # the dataset's two + this one
-    holm = max(min(1.0, (len(fam) - i) * q) for i, q in enumerate(fam) if q <= pv)
-    want = (f"the untyped-minus-typed difference there is ${m:+.4f}$ ($95\\%$ CI $[{lo:+.4f},{hi:+.4f}]$, "
-            f"$p{{=}}{pv:.3f}$), a post hoc test that does not survive correction over the dataset's family "
-            f"(Bonferroni ${min(1.0, len(fam) * pv):.3f}$, Holm ${holm:.3f}$)")
-    if min(1.0, len(fam) * pv) <= 0.05 and holm <= 0.05:
-        fails.append("derived RPE1 untyped minus typed: it now survives both corrections; the paper says it does not")
-    if want not in flat:
-        fails.append(f"derived RPE1 untyped minus typed: the paper does not say '{want}'")
+    # ---- Appendix E, D: the feature-ablation intervals, from each variant's mean and sd --------------
+    from scipy import stats
+    fa = {v["variant"]: v for v in load("data/results/feature_ablation_report.json")}
+    for variant, lead in (("nograph", "the embedding together changes \\textsc{systema} by $"),
+                          ("nodegree", "zeroing the counts alone by $")):
+        v = fa[variant]
+        h = stats.t.ppf(0.975, v["n"] - 1) * v["sd"] / v["n"] ** 0.5
+        mid = "$ ($95\\%$ CI $[" if variant == "nograph" else "$ ($["
+        want = f"{lead}{v['mean']:+.5f}{mid}{v['mean'] - h:+.5f},{v['mean'] + h:+.5f}]$"
+        if want not in flat:
+            fails.append(f"derived feature ablation {variant}: the paper does not say '{want}'")
 
-    # (iii) B1a against no graph: "still does not beat no graph" needs an interval that reaches zero.
-    b1 = load("data/results/screening_b1/b1_message_form.json")
-    d3 = dict(zip(b1["contrasts"]["D3"]["seeds_used"], b1["contrasts"]["D3"]["deltas"]))   # gcnnorm - typed
-    tn = dict(zip(b1["context_typed_vs_nograph"]["seeds_used"], b1["context_typed_vs_nograph"]["deltas"]))
-    common = sorted(set(d3) & set(tn))
-    m, lo, hi, pv = paired([d3[s] + tn[s] for s in common])
-    if "still does not beat no graph" not in flat or lo > 0:
-        fails.append(f"derived B1a minus no graph: {m:+.4f} [{lo:+.4f},{hi:+.4f}]; the paper's 'still does "
-                     f"not beat no graph' is missing or false")
+    # ---- Appendix E, B: the four comparisons under Pearson-delta, and program cosine ---------------------
+    sm = load("data/results/screening_lambda0/second_metric_5seed.json")["metrics"]
+    pear = {c["contrast"]: c for c in sm["pearson"]["contrasts"]}
+    surv = []
+    for a, b, lab in (("typed_static", "expression_only", "typed $-$ no graph"),
+                      ("condition_gated", "typed_static", "gated $-$ typed"),
+                      ("untyped_gnn", "expression_only", "untyped $-$ no graph"),
+                      ("condition_gated", "expression_only", "gated $-$ no graph")):
+        c = pear.get(f"{a} - {b}")
+        sign = 1.0
+        if c is None:
+            c, sign = pear[f"{b} - {a}"], -1.0
+        elif c.get("A") not in (None, a):
+            sign = -1.0
+        if f"${sign * c['mean']:+.4f}$ ({lab}" not in flat:
+            fails.append(f"derived Pearson-delta {lab}: the artifact gives {sign * c['mean']:+.4f}, not stated in App.~E")
+        surv.append(bool(c.get("survives_both")))
+    if surv != [True, True, True, False] or "the first three pass both corrections and the last does not" not in flat:
+        fails.append(f"derived Pearson-delta: survival is {surv}; App.~E says the first three pass and the last does not")
+    need("Pearson-delta gated p", pear["condition_gated - expression_only"]["p_value"], r"(gated $-$ no graph, $p={V}$)")
+    pc = {c["contrast"]: c for c in sm["prog_cos"]["contrasts"]}["condition_gated - expression_only"]
+    if "Program cosine similarity" not in flat or f"agrees (${pc['mean']:+.4f}$, $p={pc['p_value']:.2f}$)" not in flat \
+            or pc["p_value"] < 0.05:
+        fails.append(f"derived program cosine: {pc['mean']:+.4f} p={pc['p_value']:.3f}; App.~E's statement differs")
 
-    # (iv) h1 at n=7 with its interval, now in Appendix G rather than Table 3.
-    n7h1 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
-    sg = 1.0 if n7h1["better"] == "condition_gated" else -1.0
-    lo7, hi7 = sorted((sg * n7h1["ci_low"], sg * n7h1["ci_high"]))
-    want = f"leaving the gated model at ${sg * n7h1['mean']:+.4f}$ against no graph ($95\\%$ CI $[{lo7:+.4f},{hi7:+.4f}]$)"
-    if want not in flat:
-        fails.append(f"derived n=7 h1: the paper does not say '{want}'")
+    # ---- Appendix E, B: other groups' scores, and the gene groups ---------------------------------------
+    am = load("data/results/a3_external_live/rescored.json")["across_metric"]
 
-    return fails, ("full: 52 cross-artifact derivations recomputed from a2_ladder/floor.json, "
-                   "c1_ladder/floor_condition_gated.json, the pooled artifacts, both variance "
-                   "decompositions, rescored.json, arch_search_bound.json, b1_message_form.json and "
-                   "the 22-epoch lambda sweep")
+    def survives(o):
+        return o.get("p_bonferroni", 1) < 0.05 and o.get("p_holm", 1) < 0.05
+    if len(am) != 20 or "correcting over all twenty tests" not in flat:
+        fails.append(f"derived: App.~E says twenty tests; the re-scoring has {len(am)}")
+    for_graph = [k for k, o in am.items() if k.endswith("/h1_vs_no_graph") and survives(o) and o["mean"] > 0]
+    if for_graph or "passes correction in the graph's favor under none of them" not in flat:
+        fails.append(f"derived: the gated model passes in the graph's favor under {for_graph}")
+    pdx, top = am["pearson_delta/promotion_margin"], am["pearson_delta_top20/promotion_margin"]
+    want = (f"positive under TxPert's all-gene Pearson-delta (${pdx['mean']:+.4f}$) and negative under "
+            f"\\textsc{{gears}}' correlation over each perturbation's twenty most-changed genes "
+            f"(${top['mean']:+.4f}$), both significant")
+    if not (survives(pdx) and survives(top) and pdx["mean"] > 0 > top["mean"]) or want not in flat:
+        fails.append(f"derived: the untyped sign flip between scores; the paper does not say '{want}'")
+    h1top = am["pearson_delta_top20/h1_vs_no_graph"]
+    if not (survives(h1top) and h1top["mean"] < 0) or "passes correction over the twenty scores" not in flat:
+        fails.append(f"derived: the gated model's top-20 loss over the twenty scores, survives={survives(h1top)}")
+
+    head = load("data/results/b2_deciles_live/deciles.json")["schemes"]["head"]
+
+    def stars(contrast):
+        out = []
+        for key, o in head["cells"].items():
+            iv, _, c = key.rpartition("/")
+            if c == contrast and isinstance(o, dict) and o.get("survives_family_wise"):
+                out.append((iv, o))
+        return out
+    s_h1 = stars("h1_vs_no_graph")
+    if sorted(i for i, _ in s_h1) != ["2501-5000", "5001-10282"] or any(o["mean"] <= 0 for _, o in s_h1) \
+            or "only on the two groups of genes that change least" not in flat:
+        fails.append(f"derived gene groups: the gated model passes in {[(i, round(o['mean'], 4)) for i, o in s_h1]}; "
+                     f"App.~E says only the two least-changed groups, both positive")
+    else:
+        by = dict(s_h1)
+        need("gene group 2501-5000", by["2501-5000"]["mean"], r"change least ($+{V}$ and")
+        need("gene group 5001-10282", by["5001-10282"]["mean"], r"and $+{V}$, five of five seeds each")
+        need("gene group 2501-5000 Bonferroni", by["2501-5000"]["p_bonferroni"], r"Bonferroni ${V}$ and $0.024")
+        need("gene group 5001-10282 Bonferroni", by["5001-10282"]["p_bonferroni"], r"and ${V}$); over ten equal groups")
+        if not all(len(o["deltas"]) == 5 and min(o["deltas"]) > 0 for o in by.values()):
+            fails.append("derived gene groups: 'five of five seeds each' no longer holds")
+    t20 = head["cells"]["1-20/h1_vs_no_graph"]
+    need("gated top-20 loss", t20["mean"], r"change most (${V}$) passes correction")
+    need("gated top-20 Bonferroni over the gene groups", t20["p_bonferroni"], r"finer gene groups (Bonferroni ${V}$)")
+    if t20.get("survives_family_wise"):
+        fails.append("derived: the gated top-20 loss now survives over the gene groups; App.~E says it does not")
+
+    # ---- Section 5.2 and Appendix F: the planted-signal test --------------------------------------------
+    u = load("data/results/a2_ladder/floor.json")
+    g = load("data/results/c1_ladder/floor_condition_gated.json")
+    inj = [k for k in u["contrasts"] if not k.startswith("permuted")]
+    if not all(u["contrasts"][k]["survives_family_wise"] for k in inj) or \
+            u["contrasts"]["permuted_d400"]["survives_family_wise"] or \
+            "passes correction at every planted size" not in flat:
+        fails.append("derived planted signal: the untyped model no longer passes at every size and not the control")
+    if any(c.get("survives_family_wise") for c in g["contrasts"].values()) or \
+            "The gated model's passes at none" not in flat:
+        fails.append("derived planted signal: a gated step now passes; the paper says none does")
+    gh = g["gate_health"]
+    if gh["status"] != "live" or gh["min_gate_mean"] <= GATE_DEAD or len(gh["lanes"]) != 24 or \
+            "All $24$ gated runs kept live gates" not in flat:
+        fails.append(f"derived planted signal: gate health {gh['status']}, minimum {gh['min_gate_mean']:.4f}, "
+                     f"{len(gh['lanes'])} lanes")
+    # stated twice, so anchored at each place: one copy cannot cover for the other's corruption
+    need("untyped starting gap, Section 5.2", u["zero_point"]["mean"], r"but it was already $+{V}$ ahead of no graph")
+    need("untyped starting gap, App. F", u["zero_point"]["mean"], r"the untyped model is already $+{V}$ ahead of no graph")
+    if g["zero_point"]["mean"] >= 0:
+        fails.append("derived planted signal: the gated model no longer starts behind no graph")
+    need("gated starting gap", abs(g["zero_point"]["mean"]), r"the gated model ${V}$ behind")
+    ui, gi = u["post_hoc_increment_over_zero"]["d400"], g["post_hoc_increment_over_zero"]["d400"]
+    if min(1.0, 6 * ui["p_value"]) <= 0.05 or min(1.0, 6 * gi["p_value"]) <= 0.05 or \
+            "and there neither passes correction" not in flat:
+        fails.append("derived planted signal: an increment at 0.40 now survives correction over six")
+    need("untyped increment at 0.40", ui["mean"], r"the untyped model adds $+{V}$ ($p{=}")
+    need("untyped increment p", ui["p_value"], r"($p{=}{V}$) and the gated model")
+    need("gated increment at 0.40", gi["mean"], r"and the gated model $+{V}$ ($p{=}")
+    need("gated increment p", gi["p_value"], r"($p{=}{V}$), both uncorrected")
+
+    # ---- 2026-10-28 review fixes: claims three reviews made the paper state, each re-derived ----------
+    sc = load("data/results/screening_lambda0/robustness_5seed.json")["contrasts"]
+    n7c = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
+    # the untyped gain needs seven seeds: it fails correction at five and passes at seven
+    if sc["promotion_margin"]["survives_family_wise"] or not n7c["promotion_margin"]["survives_family_wise"]:
+        fails.append("derived: the paper says the untyped gain fails correction at five seeds and passes at seven")
+    for phrase in ("only after we added two runs per model to the first five",
+                   "we added two after the five-seed result fell short of correction"):
+        if phrase not in flat:
+            fails.append(f"derived: '{phrase}' is no longer in the paper; update this check")
+    # the pooled typed interval cannot rule out a gain as large as the untyped one
+    p7 = load("data/results/replication/pooled.json")["pooled"]["h2a"]
+    if not p7["random_ci"][1] > n7c["promotion_margin"]["mean"] or \
+            "but not one as large as the untyped model's gain on the T-cell screen" not in flat:
+        fails.append(f"derived: the typed pooled upper bound {p7['random_ci'][1]:+.4f} against the untyped "
+                     f"gain {n7c['promotion_margin']['mean']:+.4f}; the paper's reading differs")
+    # Frangieh is the only replication dataset with a trained gated model
+    gated = sorted(q.parent.name for q in (ROOT / "data/results/replication").glob("*/robustness_5seed.json")
+                   if not q.parent.name.startswith("_")
+                   and json.loads(q.read_text())["contrasts"]["h1_vs_no_graph"].get("n"))
+    if gated != ["FrangiehIzar2021_RNA"] or "the only one on which we trained the gated model" not in flat:
+        fails.append(f"derived: gated replication lanes {gated}; the paper says only Frangieh")
+    # the degree-scaled variant was the first of four registered, and over four it would not pass
+    b1p = load("data/results/screening_b1/b1_message_form.json")["contrasts"]["D3"]["p_value"]
+    if min(1.0, 4 * b1p) <= 0.05 or "corrected over all four it would not pass" not in flat:
+        fails.append(f"derived: degree-scaled p {b1p:.4f} over four is {min(1.0, 4 * b1p):.3f}")
+    need("degree-scaled Bonferroni over four", min(1.0, 4 * b1p), r"would not pass Bonferroni over all four (${V}$)")
+    # random labels recover about half of the typed shortfall, and neither mechanism model passes
+    a1f = load("data/results/screening_a1/a1_mechanism.json")
+    share = a1f["family"]["D2"]["mean"] / abs(sc["h2a"]["mean"])
+    if not (0.4 < share < 0.6) or any(a1f["family"][k]["survives_family_wise"] for k in ("D1", "D2")) \
+            or "random labels recover about half of it" not in flat:
+        fails.append(f"derived: random labels recover {share:.2f} of the typed shortfall; App. B says about half")
+    if a1f["family_size"] != 2 or "family of two). One shares" not in flat:
+        fails.append("derived: App. B corrects the two mechanism models as a family of two")
+    # the shared-module interval caps what the extra parameters can explain at about two fifths
+    cap = a1f["family"]["D1"]["ci_high"] / abs(sc["h2a"]["mean"])
+    if not (0.35 <= cap <= 0.45) or "(at most about two fifths, by the interval)" not in flat:
+        fails.append(f"derived: the shared-module bound is {cap:.2f} of the typed shortfall; App. B says two fifths")
+    # the K=128 subset leaves out exactly Norman and the two Tian datasets
+    k128 = load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]["datasets"]
+    left = sorted(set(load("data/results/replication/pooled_with_reference.json")["per_dataset"]
+                      ["promotion_margin"]) - set(k128))
+    if left != ["NormanWeissman2019_filtered", "TianKampmann2021_CRISPRa", "TianKampmann2021_CRISPRi"] or \
+            "which leaves out Norman and the two Tian datasets" not in flat:
+        fails.append(f"derived: the K=128 subset leaves out {left}")
+    # App. C's amendment sentence: what the ORIGINAL replicate rule kept of Replogle RPE1, read from the
+    # public survey's measured-outcome table (a build record, so its two literals are declared above)
+    srv = (ROOT / "docs/replication-dataset-survey.md").read_text()
+    row = re.search(r"\| ReplogleWeissman2022 \(RPE1\) \| \d+ \| \*\*(\d+)\*\* / ([\d,]+) \|", srv)
+    if row is None:
+        fails.append("derived App. C: the survey's measured-outcome row for RPE1 is gone; the amendment "
+                     "sentence has no source")
+    elif (f"kept only ${row.group(1)}$ of Replogle RPE1's ${row.group(2).replace(',', '{,}')}$ targets"
+          not in flat):
+        fails.append(f"derived App. C: the original rule kept {row.group(1)} of {row.group(2)} RPE1 targets; "
+                     f"the paper says otherwise")
+    # the live re-scoring: two survivals lost, gene groups gained (corrections list)
+    am_dead = load("data/results/a3_external/rescored.json")["across_metric"]
+    am_live = load("data/results/a3_external_live/rescored.json")["across_metric"]
+    lost = sorted(k for k in am_dead if survives(am_dead[k]) and not survives(am_live[k]))
+    hd = load("data/results/b2_deciles/deciles.json")["schemes"]
+    hl = load("data/results/b2_deciles_live/deciles.json")["schemes"]
+    def h1_pass(sch):
+        return sorted(k.split("/")[0] for k, o in sch["cells"].items()
+                      if k.endswith("/h1_vs_no_graph") and o.get("survives_family_wise"))
+    top_lost = (hd["head"]["cells"]["1-20/h1_vs_no_graph"]["survives_family_wise"]
+                and not hl["head"]["cells"]["1-20/h1_vs_no_graph"]["survives_family_wise"])
+    if lost != ["energy_distance/h2b"] or not top_lost or len(h1_pass(hl["head"])) != 2 or \
+            (len(h1_pass(hd["deciles"])), len(h1_pass(hl["deciles"]))) != (2, 5) or \
+            "two significant results disappear" not in flat or "on five of ten, up from two" not in flat:
+        fails.append(f"derived corrections: lost {lost}, top-20 lost {top_lost}, deciles "
+                     f"{h1_pass(hd['deciles'])} -> {h1_pass(hl['deciles'])}")
+    # the typed model peaks at its first epoch in four of five seeds
+    tr = load("data/results/camera_ready/facts.json")["training"]["typed_static"]
+    first = sum(1 for lane in tr.values() if lane["best_epoch"] == 0)
+    for phrase in ("scored after its first epoch in four of five seeds",
+                   "peaks at its very first epoch in four of five seeds"):
+        if first != 4 or len(tr) != 5 or phrase not in flat:
+            fails.append(f"derived: the typed best epoch is the first in {first} of {len(tr)} seeds; '{phrase}'")
+    # the feature ablation's p-values are Bonferroni over its three versions
+    for v in fa.values():
+        if abs(v["p_bonf"] - min(1.0, 3 * v["p_raw"])) > 1e-12:
+            fails.append(f"derived: feature ablation {v['variant']} p_bonf is not three times p_raw")
+    if len(fa) != 3 or "Corrected over these three versions" not in flat:
+        fails.append("derived: App. E says the feature-ablation p-values are corrected over three versions")
+    # a rationale alone sits slightly FARTHER from the full prediction than random edges
+    suf = load("data/results/a2_power/rationale_bound.json")["sufficiency"]
+    if not (suf["gap"] > 0 and suf["p_value"] < 0.05) or ("is slightly farther from the full prediction than "
+                                                          "one made from the same number of random edges") not in flat:
+        fails.append(f"derived: rationale sufficiency gap {suf['gap']:+.4f} p={suf['p_value']:.2g}; App. E differs")
+    # the planted-signal starting gaps are four-seed values
+    if u["zero_point"]["n"] != 4 or g["zero_point"]["n"] != 4 or "at $\\delta=0$ (four seeds)" not in flat:
+        fails.append("derived planted signal: the starting gaps are not four-seed values, or the paper no longer says so")
+    # the other pre-registered grouping: ten equal groups by descending change, a family of 40
+    dec = load("data/results/b2_deciles_live/deciles.json")["schemes"]["deciles"]
+    names = [b[2] for b in dec["bins"]]
+    passed = [nm for nm in names if dec["cells"][f"{nm}/h1_vs_no_graph"].get("survives_family_wise")]
+    if dec["family_size"] != 40 or len(names) != 10 or len(passed) != 5 or set(passed) & set(names[:4]) or \
+            "over ten equal groups ($40$ tests) it passes on five, none among the four that change most" not in flat:
+        fails.append(f"derived deciles: the gated model passes in {passed} of {names} (family {dec['family_size']})")
+    if head["family_size"] != 36 or len(head["bins"]) != 9 or "Over nine groups ($36$ tests)" not in flat:
+        fails.append(f"derived gene groups: {len(head['bins'])} groups, family {head['family_size']}")
+
+    return fails, ("full: 72 cross-artifact derivations and their wording, recomputed from the sweep, the "
+                   "pooled and per-dataset replication files, the feature ablation, the second metric, the "
+                   "re-scoring, the gene groups, both planted-signal ladders and b1_message_form.json")
 
 
 @table("prose:headline")
 def _prose_headline(tex):
     """The load-bearing numbers that live in PROSE, not in any table.
 
-    WHY THIS EXISTS. 329 of the paper's numeric literals sit in tables and every one is re-derived by
-    the checks below. About 570 sit in prose, and until 2026-08-26 exactly TWO of those were checked
-    against an artifact. The rest were guarded by the literal inventory alone, which catches a number
-    that CHANGES during an edit and passes one that was WRONG when it was snapshotted. That gap was
-    not hypothetical: the paper reported Holm 0.021 where screening_untyped_n7 gives 0.02046976.
+    WHY THIS EXISTS. Until 2026-08-26 almost none of the paper's prose numbers were checked against an
+    artifact; they were guarded by the literal inventory alone, which catches a number that CHANGES
+    during an edit and passes one that was WRONG when it was snapshotted. That gap was not hypothetical:
+    the paper reported Holm 0.021 where screening_untyped_n7 gives 0.02046976.
 
     EACH CLAIM IS ANCHORED TO THE WORDS AROUND IT, and the first version of this check was not. It
     asserted only that the artifact value appeared SOMEWHERE in the paper, which is too weak when the
@@ -1044,304 +995,165 @@ def _prose_headline(tex):
     once and only ONE occurrence is corrupted, the surviving correct one still satisfies the check.
     The literal INVENTORY covers that case, because it counts occurrences and a changed digit shows
     up as one dropped and one introduced. The two checks are complementary and neither is sufficient
-    alone. Verified by planting five errors, one per claim shape: all five fire."""
+    alone. Rebuilt 2026-10-28 for the shortened plain-language paper: one anchor per number it prints."""
     flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
-    L = load("data/results/screening_lambda0/robustness_5seed.json")["contrasts"]
-    N7 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
-    P8 = load("data/results/replication/pooled_with_reference.json")
-    P7 = load("data/results/replication/pooled.json")["pooled"]["h2a"]
-    FL = load("data/results/a2_ladder/floor.json")
-    FA = load("data/results/feature_ablation_report.json")
-    HD = load("data/results/screening_c075c15_n5/robustness_5seed.json")["contrasts"]
-    pm = N7["promotion_margin"]
-    ng = next(v for v in FA if v["variant"] == "nograph")
-    pd8 = P8["per_dataset"]["promotion_margin"]
-    p8 = P8["pooled"]["promotion_margin"]
+    R = "data/results/"
+    L = load(R + "screening_lambda0/robustness_5seed.json")
+    LC, LP = L["contrasts"], L["per_config"]
+    N7 = load(R + "screening_n7_live/robustness_5seed.json")["contrasts"]
+    INT = load(R + "screening_c080c10_h1/robustness_5seed.json")
+    HD = load(R + "screening_c075c15_n5/robustness_5seed.json")["contrasts"]
+    R2 = load(R + "screening_c080c10_r2/robustness_5seed.json")["contrasts"]
+    R3 = load(R + "screening_c080c10_r3/robustness_5seed.json")["contrasts"]
+    P8 = load(R + "replication/pooled_with_reference.json")
+    P7 = load(R + "replication/pooled.json")["pooled"]["h2a"]
+    K128 = load(R + "replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]
+    FA = {v["variant"]: v for v in load(R + "feature_ablation_report.json")}
+    FL = load(R + "a2_ladder/floor.json")
+    C1 = load(R + "c1_ladder/floor_condition_gated.json")
+    A1 = load(R + "screening_a1/a1_mechanism.json")["family"]
+    AB = load(R + "a2_power/arch_search_bound.json")
+    B1 = load(R + "screening_b1/b1_message_form.json")
+    RPE = load(R + "replication/ReplogleWeissman2022_rpe1/robustness_5seed.json")["contrasts"]["promotion_margin"]
+    FRG = load(R + "replication/FrangiehIzar2021_RNA/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
+    SPF, SPI, SPH = (load("data/splits/manifest.json"), load(R + "splits_c080c10/manifest.json"),
+                     load(R + "splits_c075c15/manifest.json"))
+    pm7, pm5 = N7["promotion_margin"], LC["promotion_margin"]
+    pd8 = P8["per_dataset"]
+    ng, nod, nop = FA["nograph"], FA["nodegree"], FA["nopinnacle"]
+    d3 = B1["contrasts"]["D3"]
+    means5 = sorted(v["mean"] for v in LP.values())
 
     def f4(x):
         return f"{x:+.4f}"
 
-    # (what, context with {v} where the artifact value belongs, artifact value)
+    def f5(x):
+        return f"{x:+.5f}"
+
+    def h1(c):
+        return c["h1_vs_no_graph"]
+
     claims = [
-        ("h1 headline",        "systema}={v}$",                 f4(L["h1_vs_no_graph"]["mean"])),
-        ("h2a frozen fold",    "of the frozen ${v}$",           f4(L["h2a"]["mean"])),
-        ("untyped n=7 mean",   "${v}$ \\textsc{systema} at $n{=}7$", f4(pm["mean"])),
-        ("untyped Bonferroni", "Bonferroni ${v}$ and Holm",     f"{pm['p_bonferroni']:.3f}"),
-        ("untyped Holm",       "and Holm ${v}$",                f"{pm['p_holm']:.3f}"),
-        ("n=7 h2a",            "encoder costs ${v}$ \\textsc{systema}", f4(N7["h2a"]["mean"])),
-        ("n=7 h2b",            "returns ${v}$, whose raw",      f4(N7["h2b"]["mean"])),
-        ("Replogle RPE1",      "RPE1 (${v}$)",                  f4(pd8["ReplogleWeissman2022_rpe1"]["mean"])),
-        ("Norman",             "Norman (${v}$)",                f4(pd8["NormanWeissman2019_filtered"]["mean"])),
-        ("pooled RE",          "give ${v}$",                    f4(p8["random_effect"])),
-        ("pooled I^2",         "I^2{=}{v}\\%",                  f"{p8['I2'] * 100:.1f}"),
-        ("typed pooled RE",    "worth ${v}$",                   f4(P7["random_effect"])),
-        ("three-way ablation", "costs ${v}$",                   f4(ng["mean"])),
-        ("ablation corrected", "family-wise correction ($p={v}$)", f"{ng['p_bonf']:.4f}"),
-        ("harder-split h2a",   "to ${v}$ ($p=",                 f4(HD["h2a"]["mean"])),
-        ("measured floor",     "at ${v}$ response SDs",         f"{FL['floor']:.2f}"),
+        # --- abstract and Section 4 -------------------------------------------------------------------
+        ("main comparison",          "\\textsc{systema}, was ${v}$", f4(h1(LC)["mean"])),
+        ("model scores, Methods",    "the four models score between ${v}$ (Table",
+         f"{means5[0]:.4f}$ and ${means5[-1]:.4f}"),
+        ("graph features, abstract", "lowered its score by ${v}$, a drop that survives", f"{abs(ng['mean']):.4f}"),
+        ("intermediate split, body", "the intermediate split: ${v}$, positive in all five seeds", f4(h1(INT["contrasts"])["mean"])),
+        ("gated n=7, body",          "With seven seeds it is ${v}$, also not significant", f4(h1(N7)["mean"])),
+        ("re-draws, body",           "gave ${v}$, and none of the three passes", f"{f4(h1(R2)['mean'])}$ and ${f4(h1(R3)['mean'])}"),
+        ("intermediate split p",     "with uncorrected $p{=}{v}$", f"{h1(INT['contrasts'])['p_value']:.3f}"),
+        ("harder split typed loss",  "there the difference is ${v}$, $95\\%$ CI", f4(HD["h2a"]["mean"])),
+        ("harder split typed CI",    "CI $[{v}]$, $p=", f"{HD['h2a']['ci_low']:+.4f},{HD['h2a']['ci_high']:+.4f}"),
+        ("harder split typed p",     "$p={v}$, and one seed reverses sign", f"{HD['h2a']['p_value']:.2f}"),
+        ("typed pooled",             "worth ${v}$ \\textsc{systema}, with a random-effects", f4(P7["random_effect"])),
+        ("typed pooled CI",          "random-effects $95\\%$ CI of $[{v}]$", f"{P7['random_ci'][0]:+.4f},{P7['random_ci'][1]:+.4f}"),
+        ("untyped n=7",              "(${v}$ \\textsc{systema} at $n{=}7$", f4(pm7["mean"])),
+        ("untyped n=7 Bonferroni",   "Bonferroni ${v}$ and Holm", f"{pm7['p_bonferroni']:.3f}"),
+        ("untyped n=7 Holm",         "and Holm ${v}$) and on", f"{pm7['p_holm']:.3f}"),
+        ("RPE1 untyped",             "RPE1 (${v}$, all four seeds positive)", f4(pd8["promotion_margin"]["ReplogleWeissman2022_rpe1"]["mean"])),
+        ("Norman untyped",           "Norman (${v}$; all four of its seeds", f4(pd8["promotion_margin"]["NormanWeissman2019_filtered"]["mean"])),
+        ("RPE1 typed",               "scores lower than no graph (${v}$, not significant)", f4(pd8["h2a"]["ReplogleWeissman2022_rpe1"]["mean"])),
+        # The K=128 pool stays in the body: reviewers need not read appendices (SUBMISSION.md), and it is
+        # the one estimate that speaks to whether Norman's sign is about its smaller K.
+        ("untyped all-eight, body",  "Pooled over all eight datasets, the untyped gain is ${v}$ ($p{=}",
+         f4(P8["pooled"]["promotion_margin"]["random_effect"])),
+        ("untyped all-eight p, body", "the untyped gain is $+0.0091$ ($p{=}{v}$)", f"{P8['pooled']['promotion_margin']['random_p']:.2f}"),
+        ("K=128 pool, body",         "and the two Tian datasets, it is ${v}$ ($p{=}", f4(K128["random_effect"])),
+        ("K=128 pool p, body",       "it is $+0.0141$ ($p{=}{v}$). Our plan", f"{K128['random_p']:.4f}"),
+        # --- Section 5 -----------------------------------------------------------------------------------
+        ("graph features, body",     "lowers \\textsc{systema} by ${v}$, a drop that survives correction", f"{abs(ng['mean']):.4f}"),
+        ("planted floor",            "down to the smallest we tried, ${v}$, but", f"{FL['floor']:.2f}"),
+        ("largest planted size",     "passed correction at no size up to ${v}$ response standard deviations", f"{FL['rungs']['d400']['delta']:.2f}"),
+        # --- Appendix B --------------------------------------------------------------------------------
+        ("typed loss, n=7",          "the typed model scores ${v}$ against no graph", f4(N7["h2a"]["mean"])),
+        ("shared module",            "moves \\textsc{systema} by ${v}$", f4(A1["D1"]["mean"])),
+        ("shared module CI",         "against the typed model ($95\\%$ CI $[{v}]$)", f"{A1['D1']['ci_low']:+.4f},{A1['D1']['ci_high']:+.4f}"),
+        ("random types",             "moves it by ${v}$", f4(A1["D2"]["mean"])),
+        ("random types CI",          "moves it by $+0.0065$ ($[{v}]$)", f"{A1['D2']['ci_low']:+.4f},{A1['D2']['ci_high']:+.4f}"),
+        ("search runs",              "Its ${v}$ runs used", str(AB["n_cells"])),
+        ("search range",             "The search's whole range, ${v}$, was narrower", f"{AB['observed_spread']:.4f}"),
+        ("search seed-noise span",   "scores to differ by about ${v}$.", f"{AB['expected_spread_from_seed_noise_alone']:.4f}"),
+        ("untyped minus typed gap",  "about half the ${v}$ gap between", f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
+        ("degree-scaled gain",       "gains ${v}$ \\textsc{systema} over the typed model", f4(d3["mean"])),
+        ("degree-scaled CI",         "over the typed model ($95\\%$ CI $[{v}]$", f"{d3['ci_low']:+.4f},{d3['ci_high']:+.4f}"),
+        # --- Appendix C --------------------------------------------------------------------------------
+        ("typed pooled, App C",      "the typed graph's ${v}$ has a random-effects", f4(P7["random_effect"])),
+        ("typed pooled FE CI",       "a fixed-effect CI of $[{v}]$", f"{P7['fixed_ci'][0]:+.4f},{P7['fixed_ci'][1]:+.4f}"),
+        ("untyped all-eight pool",   "Over all eight datasets the untyped comparison is ${v}$ ($p{=}", f4(P8["pooled"]["promotion_margin"]["random_effect"])),
+        ("untyped all-eight p",      "is $+0.0091$ ($p{=}{v}$)", f"{P8['pooled']['promotion_margin']['random_p']:.2f}"),
+        ("K=128 pool, App C",        "with $K{=}128$ it is ${v}$ ($[", f4(K128["random_effect"])),
+        ("K=128 pool CI, App C",     "it is $+0.0141$ ($[{v}]$", f"{K128['random_ci'][0]:+.4f},{K128['random_ci'][1]:+.4f}"),
+        ("RPE1 CI",                  "untyped gain has $95\\%$ CI $[{v}]$", f"{RPE['ci_low']:+.4f},{RPE['ci_high']:+.4f}"),
+        ("RPE1 p",                   "($p{=}{v}$, Bonferroni and Holm both", f"{RPE['p_value']:.3f}"),
+        ("RPE1 Bonferroni and Holm", "Holm both ${v}$ in that dataset's family", f"{RPE['p_bonferroni']:.3f}"),
+        ("RPE1 family size",         "dataset's family of {v})", "two" if RPE["family_size"] == 2 else str(RPE["family_size"])),
+        ("Frangieh gated",           "the gated model against no graph is ${v}$ ($95\\%$ CI", f4(FRG["mean"])),
+        ("Frangieh gated CI",        "is $+0.0033$ ($95\\%$ CI $[{v}]$)", f"{FRG['ci_low']:+.4f},{FRG['ci_high']:+.4f}"),
+        ("untyped n=5",              "the untyped comparison was ${v}$ ($95\\%$ CI", f4(pm5["mean"])),
+        ("untyped n=5 CI",           "was $+0.0045$ ($95\\%$ CI $[{v}]$", f"{pm5['ci_low']:+.4f},{pm5['ci_high']:+.4f}"),
+        ("untyped n=5 Holm",         "Holm ${v}$ and Bonferroni", f"{pm5['p_holm']:.3f}"),
+        ("untyped n=5 Bonferroni",   "Bonferroni ${v}$, clearing neither", f"{pm5['p_bonferroni']:.3f}"),
+        ("untyped n=7, App C",       "the estimate is ${v}$ and it passes both corrections", f4(pm7["mean"])),
+        ("gated n=7, App C",         "At seven seeds the gated model against no graph is ${v}; our main test",
+         f"{f4(h1(N7)['mean'])}$ ($95\\%$ CI $[{f4(h1(N7)['ci_low'])},{f4(h1(N7)['ci_high'])}]$)"),
+        # --- Appendix D --------------------------------------------------------------------------------
+        ("main split threshold",     "(centered cosine $\\geq {v}$)", f"{SPF['seq_cosine_threshold']:.2f}"),
+        ("main split cap",           "No group may hold more than ${v}\\%$ of targets", f"{SPF['group_size_cap_frac'] * 100:.0f}"),
+        ("intermediate split",       "{v} (intermediate)", f"${SPI['seq_cosine_threshold']:.2f}$ with ${SPI['group_size_cap_frac'] * 100:.0f}\\%$"),
+        ("harder split",             "and {v} (harder)", f"${SPH['seq_cosine_threshold']:.2f}$ with ${SPH['group_size_cap_frac'] * 100:.0f}\\%$"),
+        ("gated on three splits",    "no graph is ${v}$ on the main, intermediate and harder splits",
+         f"{f4(h1(LC)['mean'])}$, ${f4(h1(INT['contrasts'])['mean'])}$ and ${f4(h1(HD)['mean'])}"),
+        ("Bonferroni on three splits", "none passes correction (Bonferroni ${v}$)",
+         f"{h1(LC)['p_bonferroni']:.3f}$, ${h1(INT['contrasts'])['p_bonferroni']:.3f}$ and ${h1(HD)['p_bonferroni']:.3f}"),
+        ("typed on three splits",    "The typed model's shortfall is ${v}$.",
+         f"{f4(LC['h2a']['mean'])}$, ${f4(INT['contrasts']['h2a']['mean'])}$ and ${f4(HD['h2a']['mean'])}"),
+        ("intermediate typed p",     "passes no correction ($p={v}$) because", f"{INT['contrasts']['h2a']['p_value']:.2f}"),
+        ("intermediate typed sd",    "spread across seeds is ${v}$ there", f"{INT['per_config']['typed_static']['sd']:.4f}"),
+        ("main typed sd",            "against ${v}$ on the main split", f"{LP['typed_static']['sd']:.4f}"),
+        ("three re-draws",           "give the gated model ${v}, all uncorrected",
+         f"{f4(h1(INT['contrasts'])['mean'])}$ ($p={h1(INT['contrasts'])['p_value']:.3f}$), "
+         f"${f4(h1(R2)['mean'])}$ ($p={h1(R2)['p_value']:.3f}$) and ${f4(h1(R3)['mean'])}$ ($p={h1(R3)['p_value']:.3f}$)"),
+        # The re-draw roots ran fewer models, so their own p_bonferroni uses a smaller family; the paper
+        # corrects at m=4, the pre-registered family, so this re-derives it that way.
+        ("re-draws over four",       "over the family of four (${v}$)",
+         f"{min(1.0, 4 * h1(INT['contrasts'])['p_value']):.3f}$, ${min(1.0, 4 * h1(R2)['p_value']):.3f}$, "
+         f"${min(1.0, 4 * h1(R3)['p_value']):.3f}"),
+        # --- Appendix E --------------------------------------------------------------------------------
+        ("features zeroed",          "the embedding together changes \\textsc{systema} by ${v}$ ($95\\%$ CI", f5(ng["mean"])),
+        ("three ablation p-values",  "the $p$-values are ${v}$. Nearly all",
+         f"{ng['p_bonf']:.4f}$, ${nod['p_bonf']:.4f}$ and ${nop['p_bonf']:.2f}"),
+        ("counts zeroed",            "zeroing the counts alone by ${v}$ ($[", f5(nod["mean"])),
+        ("PINNACLE zeroed",          "zeroing PINNACLE alone by ${v}$. Corrected", f"{nop['mean']:+.6f}"),
+        ("no-graph baseline",        "about four percent of the no-graph model's ${v}$;", f"{LP['expression_only']['mean']:.4f}"),
+        # --- Appendix F --------------------------------------------------------------------------------
+        ("planted 0.02",             "from $0.02$ (${v}$, Bonferroni", f4(FL["contrasts"]["d020"]["mean"])),
+        ("planted 0.02 Bonferroni",  "Bonferroni ${v}$), and not in the control", f"{FL['contrasts']['d020']['p_bonferroni']:.3f}"),
+        ("planted control",          "not in the control (${v}$)", f4(FL["contrasts"]["permuted_d400"]["mean"])),
+        ("gated at 0.40",            "even at $0.40$ it is ${v}$ (Bonferroni", f4(C1["contrasts"]["d400"]["mean"])),
+        ("gated at 0.40 Bonferroni", "(Bonferroni ${v}$). All", f"{C1['contrasts']['d400']['p_bonferroni']:.3f}"),
+        ("gated minimum gate",       "(minimum mean ${v}$)", f"{C1['gate_health']['min_gate_mean']:.4f}"),
     ]
     fails = []
-    SM = load("data/results/screening_lambda0/second_metric_5seed.json")["metrics"]
-    INT = load("data/results/screening_c080c10_h1/robustness_5seed.json")["contrasts"]
-    P7full = load("data/results/replication/pooled.json")["pooled"]["h2a"]
-    pdh2a = P8["per_dataset"]["h2a"]
-    N7pc = load("data/results/screening_n7_live/robustness_5seed.json")["per_config"]
-    pear = {c["contrast"]: c for c in SM["pearson"]["contrasts"]}
-    pcos = {c["contrast"]: c for c in SM["prog_cos"]["contrasts"]}
-    cg_eo_p = pear.get("condition_gated - expression_only")
-    cg_eo_c = pcos.get("condition_gated - expression_only")
-    ts_eo_p = pear.get("typed_static - expression_only")
-
-    claims += [
-        # --- sec:null -------------------------------------------------------------------------
-        # 2026-10-01 restructure: the five-seed deltas, p-values and Pearson values moved out of the
-        # prose into Table~\ref{tab:family}, whose check re-derives delta, CI, p, FWER and Pearson for
-        # every row; the three fold estimates are plotted in Figure~\ref{fig:floor}a from the same roots
-        # tab:folds checks. Only what the prose still states is anchored here.
-        ("Pearson h1 p",       "$p={v}$ for the gated graph",      f"{cg_eo_p['p_value']:.2f}" if cg_eo_p else "?"),
-        ("prog-cos h1",        "agrees (${v}$, $p=",             f4(cg_eo_c["mean"]) if cg_eo_c else "?"),
-        ("harder h2a CI low",  "$95\\%$ CI $[{v},",                f4(HD["h2a"]["ci_low"])),
-        ("harder h2a CI high", ",{v}]$, $p=",                      f4(HD["h2a"]["ci_high"])),
-        ("harder h2a p",       "$p={v}$, clearing neither",        f"{HD['h2a']['p_value']:.2f}"),
-        ("intermediate h2a",   "h2a is ${v}$, within",             f4(INT["h2a"]["mean"])),
-        ("intermediate h2a p", "($p={v}$) because",                f"{INT['h2a']['p_value']:.2f}"),
-        # AUTO 2026-10-27: Section 4.2 now quotes the intermediate split's h1 beside the frozen one.
-        ("intermediate h1, body", "on the first it is ${v}$, positive in all five seeds",
-         f4((lambda c: c["mean"] if c["better"] == "condition_gated" else -c["mean"])(INT["h1_vs_no_graph"]))),
-        ("intermediate h1 p, body", "with uncorrected $p{=}{v}$", f"{INT['h1_vs_no_graph']['p_value']:.3f}"),
-        # --- sec:repl -------------------------------------------------------------------------
-        ("typed pooled FE CI", "fixed-effect $95\\%$ CI $[{v},",   f4(P7full["fixed_ci"][0])),
-        ("typed pooled I^2",   "$I^2{=}{v}\\%$, $Q$",              f"{P7full['I2']*100:.1f}"),
-        ("typed pooled Q p",   "$Q$ $p{=}{v}$",                    f"{P7full['Q_p']:.2f}"),
-        ("RPE1 typed arm",     "the other way (${v}$)",            f4(pdh2a["ReplogleWeissman2022_rpe1"]["mean"])),
-        ("pooled 8 p",         "$p{=}{v}$) at $I^2",               f"{p8['random_p']:.2f}"),
-        # --- sec:causes: per-arm means at n=7 --------------------------------------------------
-        ("n7 mean untyped",    "untyped ${v}$, no graph",                   f"{N7pc['untyped_gnn']['mean']:.4f}"),
-        ("n7 mean expr",       "no graph ${v}$, gated",           f"{N7pc['expression_only']['mean']:.4f}"),
-        ("n7 mean gated",      "gated ${v}$, typed",           f"{N7pc['condition_gated']['mean']:.4f}"),
-        ("n7 mean typed",      ", typed ${v}$. At",               f"{N7pc['typed_static']['mean']:.4f}"),
-    ]
-    A1 = load("data/results/screening_a1/a1_mechanism.json")
-    AB = load("data/results/a2_power/arch_search_bound.json")
-    B1 = load("data/results/screening_b1/b1_message_form.json")
-    DEC = load("data/results/b2_deciles/deciles.json")["schemes"]["head"]
-    a1f, a1c = A1["family"], A1["context"]
-
-    claims += [
-        # --- app:mechanism ---------------------------------------------------------------------
-        ("A1 D1 (parameter cut)", "moves \\textsc{systema} by ${v}$",     f4(a1f["D1"]["mean"])),  # AUTO 2026-10-27: plain wording
-        ("A1 D2 (permuted)",      "moves it by ${v}$",             f4(a1f["D2"]["mean"])),
-        ("A1 shared vs untyped",  "{gcn} (${v}$ and",              f4(a1c["shared_vs_untyped"]["mean"])),
-        ("A1 permuted vs untyped","and ${v}$) and below",          f4(a1c["permuted_vs_untyped"]["mean"])),
-        ("A1 shared vs nograph",  "baseline (${v}$ and",           f4(a1c["shared_vs_nograph"]["mean"])),
-        ("A1 permuted vs nograph","and ${v}$), so the deficit",    f4(a1c["permuted_vs_nograph"]["mean"])),
-        ("arch search spread",    "spans ${v}$ across all",        f"{AB['observed_spread']:.4f}"),
-        ("arch search cells",     "across all ${v}$ of its runs", str(AB["n_cells"])),
-        ("B1a gap",               "frozen split is ${v}$",            f"{B1['gap_untyped_minus_typed']['mean']:.4f}"),
-        ("B1a D3 uncorrected p",  "the uncorrected $p={v}$",       f"{B1['contrasts']['D3']['p_value']:.4f}"),
-        # --- app:metrics -----------------------------------------------------------------------
-        ("B2 top-20 deficit",     "it is large (${v}$)",           f4(DEC["cells"]["1-20/promotion_margin"]["mean"])),
-        ("B2 family size",        "over all ${v}$ cells",          str(DEC["family_size"])),
-    ]
-    VD = load("data/results/l4/vardecomp_h2a.json")
-    B3 = load("data/results/a2_ladder/b3_power.json")
-    ZP = FL["zero_point"]
-    inc = FL["post_hoc_increment_over_zero"]
-    C1 = load("data/results/c1_ladder/floor_condition_gated.json")
-    c1inc = C1["post_hoc_increment_over_zero"]["d400"]
-
-    claims += [
-        # --- app:power -------------------------------------------------------------------------
-        ("per-fold limit frozen",  "upper limits are ${v}$ (frozen)",  f4(L["h1_vs_no_graph"]["ci_high"])),
-        ("per-fold limit interm",  "${v}$ (intermediate)",             f4(INT["h1_vs_no_graph"]["ci_high"])),
-        ("per-fold limit harder",  "and ${v}$ (harder)",               f4(HD["h1_vs_no_graph"]["ci_high"])),
-        ("vardecomp seed sd",      "seed contributes ${v}$ against",   f"{VD['sd_seed']:.4f}"),
-        ("vardecomp redraw sd",    "re-draw's ${v}$",                  f"{VD['sd_redraw']:.4f}"),
-        # --- app:floor -------------------------------------------------------------------------
-        ("ladder zero point",      "benefit of ${v}$ with no injection", f4(ZP["mean"])),
-        ("control gap",            "gives a gap of ${v}$ with",        f4(FL["contrasts"]["permuted_d400"]["mean"])),
-        ("control increment",      "zero point is ${v}$ ($[",          f4(inc["permuted_d400"]["mean"])),
-        ("control incr CI low",    "$[{v},",                           f4(inc["permuted_d400"]["ci_low"])),
-        ("control incr CI high",   ",{v}]$, $p=0.02$)",                f4(inc["permuted_d400"]["ci_high"])),
-        ("d020 gap",               "step produced a gap of ${v}$",     f4(FL["contrasts"]["d020"]["mean"])),
-        ("d100 delta",             "step's ${v}$ sits",                f4(FL["contrasts"]["d100"]["mean"])),
-        ("B3 MDE control sd",      "four seeds of ${v}$ on this",      f"{B3['mde']['control_sd_uncorrected']:.4f}"),
-        ("B3 MDE rungs median",    "spread, ${v}$ on the injected",    f"{B3['mde']['real_sd_uncorrected']:.4f}"),
-        ("B3 MDE corrected",       "and ${v}$ once the enlarged",      f"{B3['mde']['control_sd_bonferroni']:.4f}"),
-        ("B3 proportional pred",   "damage would be ${v}$ there",      f4(B3["predictions_at_target_delta"]["proportional"])),
-        ("C1 post-hoc increment",  "and ${v}$ ($95",                    f4(c1inc["mean"])),
-        ("C1 increment CI low",    "CI $[{v},",                        f4(c1inc["ci_low"])),
-        ("C1 increment CI high",   ",{v}]$, $p{=}0.035$)",              f4(c1inc["ci_high"])),
-    ]
-    SCR = load("data/results/screening/robustness_5seed.json")["contrasts"]   # pre-repair, on purpose
-    FAM = load(f"{_FAMILY_ROOT}/robustness_5seed.json")["contrasts"]        # Table 1's family
-    # The three fold RE-DRAWS are the c080c10 family. The c075c15_* roots are the harder-threshold
-    # folds and ran only typed_static and expression_only, so their h1 is null.
-    R2 = load("data/results/screening_c080c10_r2/robustness_5seed.json")["contrasts"]
-    R3 = load("data/results/screening_c080c10_r3/robustness_5seed.json")["contrasts"]
-
-    def dlist(c, sign=1):
-        """The per-seed deltas as the paper writes them: '$+0.0090$, $+0.0050$, ...'."""
-        return ", ".join(f"${sign * d:+.4f}$" for d in c["deltas"])
-
-    claims += [
-        # --- per-seed delta LISTS: one anchor covers every value in the list -------------------
-        ("n=7 untyped per-seed list", "none dropped: {v}.", dlist(pm)),
-        ("harder h2a per-seed list",  "show why: {v}.",     dlist(HD["h2a"])),
-        # --- the n=7 summary statistics ---------------------------------------------------------
-        ("n=7 mean",  "Mean ${v}$, sd",  f4(pm["mean"])),
-        ("n=7 sd",    "sd ${v}$, se",    f"{pm['sd']:.4f}"),
-        ("n=7 se",    "se ${v}$, paired", f"{pm['se']:.4f}"),
-        ("n=7 raw p", "paired $p={v}$ before", f"{pm['p_value']:.4f}"),
-        # --- the n=5 version of the same contrast ------------------------------------------------
-        ("n=5 untyped mean",  "contrast was ${v}$,",   f4(FAM["promotion_margin"]["mean"])),
-        ("n=5 untyped CI low","CI $[{v},",             f4(FAM["promotion_margin"]["ci_low"])),
-        ("n=5 untyped Holm",  "Holm ${v}$ and",        f"{FAM['promotion_margin']['p_holm']:.3f}"),
-        ("n=5 untyped Bonf",  "Bonferroni ${v}$, clearing neither", f"{FAM['promotion_margin']['p_bonferroni']:.3f}"),
-        # --- the architecture search bound -------------------------------------------------------
-        ("arch best cell",    "the best is ${v}$ against", f4(AB["best_delta"])),
-        ("arch worst cell",   "the worst is ${v}$,",       f4(AB["worst_delta"])),
-        ("arch seed sd",      "sd}={v}$ on the frozen split), their scores",        f"{AB['seed_sd_frozen']:.4f}"),  # AUTO 2026-10-27
-        ("arch expected span","expected to span ${v}$",    f"{AB['expected_spread_from_seed_noise_alone']:.4f}"),
-        ("arch seeds needed", "would need ${v}$ paired seeds", str(AB["seeds_that_would_be_needed_for_the_best_cell"])),
-        # --- the three fold re-draws -------------------------------------------------------------
-        ("redraw 2 h1",       "$p=0.025$), ${v}$ ($[",     f4(R2["h1_vs_no_graph"]["mean"])),
-        ("redraw 3 h1",       "and ${v}$ ($[-0.0024",      f4(R3["h1_vs_no_graph"]["mean"])),
-        # --- the unrepaired headline, from the pre-repair root -----------------------------------
-        ("unrepaired h1",     "h1 barely moved, from ${v}$ to", f4(SCR["h1_vs_no_graph"]["mean"])),  # AUTO 2026-10-27
-        # --- the genome-wide tightest point -------------------------------------------------------
-        # "tightest" is the TYPED contrast, not the untyped one; the body now points at Figure 3a and
-        # App.~D states the value.
-        ("gwps point",        "the tightest of the seven, is ${v}$", f4(pdh2a["ReplogleWeissman2022_K562_gwps"]["mean"])),
-        # --- the full eight-dataset ordering ------------------------------------------------------
-        ("Tian CRISPRa",      "Tian CRISPRa ${v}$,",  f4(pd8["TianKampmann2021_CRISPRa"]["mean"])),
-        ("Tian CRISPRi",      "Tian CRISPRi ${v}$,",  f4(pd8["TianKampmann2021_CRISPRi"]["mean"])),
-        ("Frangieh untyped",  "Frangieh ${v}$,",      f4(pd8["FrangiehIzar2021_RNA"]["mean"])),
-        ("K562-essential",    "K562-essential ${v}$,", f4(pd8["ReplogleWeissman2022_K562_essential"]["mean"])),
-        # --- the K=128 subset (rail-4 finding) ----------------------------------------------------
-        ("K128 subset RE",    "datasets it is ${v}$ ($[", f4(load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]["random_effect"])),
-        # AUTO 2026-10-27: the same pool, as Section 4.3 quotes it.
-        ("K128 subset RE, body", "comparison is ${v}$ ($p{=}", f4(load("data/results/replication/pooled_k128_subset.json")["pooled"]["promotion_margin"]["random_effect"])),
-        ("K128 subset p, body", "($p{=}{v}$), but that pooling is post hoc", f"{load('data/results/replication/pooled_k128_subset.json')['pooled']['promotion_margin']['random_p']:.4f}"),
-        # --- B1a gap and D3 -----------------------------------------------------------------------
-        ("B1a gap in share",  "of the ${v}$ gap",     f4(B1["gap_untyped_minus_typed"]["mean"])),
-    ]
-    RA = load("data/results/rationale_audit_lambda0/audit_report.json")
-    I1 = load("data/results/screening_c080c10_h1/robustness_5seed.json")["per_config"]
-    I2 = load("data/results/screening_c080c10_r2/robustness_5seed.json")["per_config"]
-    I3 = load("data/results/screening_c080c10_r3/robustness_5seed.json")["per_config"]
-    gx = RA["aggregate"]["ginx_by_sparsity"]["0.20"]
-
-    claims += [
-        # --- the three re-draws' baseline systema, which the paper quotes as a spread -----------
-        ("re-draw 1 baseline", "it scores ${v}$,",  f"{I1['expression_only']['mean']:.4f}"),
-        ("re-draw 3 baseline", "${v}$ and $0.0845$", f"{I3['expression_only']['mean']:.4f}"),
-        ("re-draw 2 baseline", "and ${v}$ \\textsc{systema}", f"{I2['expression_only']['mean']:.4f}"),
-        # --- the rationale audit's GInX comparison ---------------------------------------------
-        ("GInX rationale",     "is GInX \\citep{amara2023ginx}, ${v}$ against", f"{gx['rationale']:.3f}"),
-        ("GInX random",        "random's ${v}$ at",      f"{gx['random']:.3f}"),
-        # AUTO 2026-10-27: App.~G now says how many predictions the audit covers.
-        ("audit cases",        "Over ${v}$ audited predictions", str(RA["aggregate"]["n_cases"])),
-    ]
-    I1c = load("data/results/screening_c080c10_h1/robustness_5seed.json")["contrasts"]
-    R2c, R3c = R2, R3
-    FAB = load("data/results/feature_ablation_report.json")
-    nod = next(v for v in FAB if v["variant"] == "nodegree")
-
-    claims += [
-        # --- the harder fold's per-seed h1 list (NOT the intermediate one) ----------------------
-        ("harder h1 per-seed", "per-seed differences {v}).", dlist(HD["h1_vs_no_graph"])),
-        # --- PER-ARM seed spreads. The paper quotes the arm's own sd, not the contrast's. --------
-        ("intermediate arm sd", "deviation is ${v}$ there",
-         f"{load('data/results/screening_c080c10_h1/robustness_5seed.json')['per_config']['typed_static']['sd']:.4f}"),
-        ("frozen arm sd",       "against ${v}$ on the frozen",
-         f"{load('data/results/screening_lambda0/robustness_5seed.json')['per_config']['typed_static']['sd']:.4f}"),
-        # --- Bonferroni over the PRE-REGISTERED family of four. The re-draw roots ran fewer arms,
-        # --- so their own p_bonferroni uses a smaller family; the paper corrects at m=4, which is
-        # --- the stricter and pre-registered choice, so the check re-derives it that way. --------
-        ("redraw Bonf 1", "family of four (${v}$,", f"{min(1.0, 4 * I1c['h1_vs_no_graph']['p_value']):.3f}"),
-        ("redraw Bonf 2", ", ${v}$, $1.000$)",      f"{min(1.0, 4 * R2c['h1_vs_no_graph']['p_value']):.3f}"),
-        # --- the gated arm against no graph at n=7 -----------------------------------------------
-        ("gated vs no graph n=7", "leaving the gated model at ${v}$", f4(N7["h1_vs_no_graph"]["mean"])),
-        # --- B1a's recovered effect, in its own sentence -----------------------------------------
-        ("B1a D3 in prose", "it recovers ${v}$ \\textsc{systema}", f4(B1["contrasts"]["D3"]["mean"])),
-    ]
-    SPF = load("data/splits/manifest.json")
-    SPH = load("data/results/splits_c075c15/manifest.json")
-    PSIM = load("data/results/a2_power/power_simulation.json")
-    DECI = load("data/results/b2_deciles/deciles.json")["schemes"]["deciles"]["cells"]
-    C1H = C1["gate_health"]
-    L1pc = load("data/results/screening_lambda0/robustness_5seed.json")["per_config"]
-    n7means = sorted(v["mean"] for v in N7pc.values())
-    l5means = sorted(v["mean"] for v in L1pc.values())
-
-    def halfwidth(c):
-        return (c["ci_high"] - c["ci_low"]) / 2
-
-    claims += [
-        # --- split-construction parameters, from the split manifests -----------------------------
-        ("frozen split threshold", "threshold from ${v}$ to", f"{SPF['seq_cosine_threshold']:.2f}"),
-        ("harder split threshold", "to ${v}$ and raising",    f"{SPH['seq_cosine_threshold']:.2f}"),
-        # --- alpha, from the analysis artifact rather than assumed -------------------------------
-        ("nominal alpha",          "not the nominal ${v}$",   f"{PSIM['alpha']:.2f}"),
-        # --- between-dataset spread ---------------------------------------------------------------
-        ("between-dataset tau",    "comparison is ${v}$, five times", f"{PSIM['measured']['promotion_margin']['tau']:.4f}"),
-        # --- the decile dilution and the eight-dataset ordering -----------------------------------
-        ("decile dilution",        "diluted to a positive ${v}$", f4(DECI["d1/promotion_margin"]["mean"])),
-        ("gwps in the ordering",   "genome-wide ${v}$,",          f4(pd8["ReplogleWeissman2022_K562_gwps"]["mean"])),
-        # --- h2b's failure to clear ---------------------------------------------------------------
-        ("h2b Bonferroni n=7",     "correction (Bonferroni ${v}$)", f"{N7['h2b']['p_bonferroni']:.3f}"),
-        # --- the ablation baseline and its magnitude ----------------------------------------------
-        ("ablation baseline mean", "baseline of ${v}$",       f"{L1pc['expression_only']['mean']:.4f}"),
-        ("ablation magnitude",     "absolute terms; ${v}$ against", f"{abs(ng['mean']):.4f}"),
-        # --- the band the four trained arms occupy, read off the per-arm means --------------------
-        # The band is stated to CONTAIN the four arms, so its floor is truncated and its ceiling
-        # rounded up. Demanding ordinary rounding on the floor would reject a correct sentence:
-        # typed_static is 0.0726, and a band starting at 0.073 would not contain it.
-        ("arm band low",           "band from ${v}$ to",      f"{math.floor(l5means[0] * 1000) / 1000:.3f}"),
-        ("arm band high",          "to ${v}$. An independent", f"{l5means[-1]:.3f}"),
-        # --- the largest ladder rung and the C1 gate minimum ---------------------------------------
-        ("largest rung",           "no injected size up to ${v}$,", f"{FL['rungs']['d400']['delta']:.2f}"),
-        ("C1 gate minimum",        "minimum mean ${v}$ against", f"{C1H['min_gate_mean']:.4f}"),
-        # --- CI half-widths and interval widths: arithmetic on artifact values, not assertions -----
-        ("n=7 CI half-width",      "half-width from $0.0034$ to ${v}$", f"{halfwidth(pm):.4f}"),
-        ("n=5 CI half-width",      "half-width from ${v}$ to", f"{halfwidth(FAM['promotion_margin']):.4f}"),
-        ("control interval width", "interval of width ${v}$ around",
-         f"{FL['contrasts']['permuted_d400']['ci_high'] - FL['contrasts']['permuted_d400']['ci_low']:.3f}"),
-        ("re-draw baseline spread","\\textsc{systema}, a ${v}$ spread",
-         f"{max(I1['expression_only']['mean'], I2['expression_only']['mean'], I3['expression_only']['mean']) - min(I1['expression_only']['mean'], I2['expression_only']['mean'], I3['expression_only']['mean']):.4f}"),
-    ]
-    RPE = load("data/results/replication/ReplogleWeissman2022_rpe1/robustness_5seed.json")["contrasts"]["promotion_margin"]
-    claims += [
-        ("RPE1 CI low",      "CI $[{v},",                 f4(RPE["ci_low"])),
-        ("RPE1 CI high",     ",{v}]$; per-seed",          f4(RPE["ci_high"])),
-        # written as ONE math block with commas inside, not one $...$ per value
-        ("RPE1 per-seed",    "per-seed {v};",             "$" + ",".join(f"{d:+.3f}" for d in RPE["deltas"]) + "$"),
-        ("RPE1 p",           "$p{=}{v}$, Bonferroni",     f"{RPE['p_value']:.3f}"),
-        ("RPE1 Bonf/Holm",   "Holm both ${v}$ in that dataset's family", f"{RPE['p_bonferroni']:.3f}"),  # AUTO 2026-10-27
-        ("RPE1 family size", "dataset's family of {v})",       "two" if RPE["family_size"] == 2 else str(RPE["family_size"])),
-    ]
-    QC = load("data/results/replication/frangieh_on_target_qc.json")
-    claims += [
-        ("Frangieh QC own mean",   "fold change mean ${v}$,",        f"{QC['own_mean']:.3f}"),
-        ("Frangieh QC own %neg",   "negative for ${v}\\%$ of targeted genes",    f"{QC['own_frac_negative']*100:.0f}"),  # AUTO 2026-10-27
-        ("Frangieh QC random mean","against ${v}$ and",     f"{QC['random_mean']:.3f}"),
-        ("Frangieh QC random %neg","and ${v}\\%$ for random", f"{QC['random_frac_negative']*100:.0f}"),
-    ]
-    claims = [c for c in claims if c[2] is not None]
+    # "about four percent" is a ratio the paper derives in words.
+    if not 0.035 <= abs(ng["mean"]) / LP["expression_only"]["mean"] < 0.045:
+        fails.append("prose: 'about four percent' no longer matches the ablation over the baseline")
     # "positive in all five seeds" (Section 4.2) is a claim about every seed, not the mean.
-    _c = INT["h1_vs_no_graph"]
+    _c = h1(INT["contrasts"])
     _sg = 1.0 if _c["better"] == "condition_gated" else -1.0
-    _i1 = [_sg * d for d in _c["deltas"]]
-    if not (len(_i1) == 5 and min(_i1) > 0):
-        fails.append(f"prose intermediate h1: the paper says positive in all five seeds; per-seed {_i1}")
-
+    if not (len(_c["deltas"]) == 5 and min(_sg * d for d in _c["deltas"]) > 0):
+        fails.append(f"prose intermediate split: the paper says positive in all five seeds; per-seed {_c['deltas']}")
+    if h1(N7)["survives_family_wise"]:
+        fails.append("prose gated n=7: the paper calls it not significant, and it now survives")
+    # "not significant" beside RPE1's typed difference is a claim about the dataset's family
+    if pd8["h2a"]["ReplogleWeissman2022_rpe1"]["survives_family_wise"]:
+        fails.append("prose RPE1 typed: the paper calls it not significant, and it now survives")
     for what, tmpl, val in claims:
         ctx = tmpl.replace("{v}", val)
         if ctx not in flat:
             fails.append(f"prose {what}: the artifact gives {val}, and the paper does not state it in "
                          f"context (looked for {ctx!r})")
-    return fails, (f"full: {len(claims)} load-bearing prose claims re-derived from 7 artifacts, each "
+    return fails, (f"full: {len(claims)} load-bearing prose claims re-derived from their artifacts, each "
                    f"anchored to its surrounding words")
 
 
@@ -1351,8 +1163,8 @@ def _prose_camera(tex):
 
     Most come from camera_ready/facts.json, which persisted quantities the accepted paper had quoted
     from logs, comments or prose and got wrong (training length, live gate range, the paralog
-    guarantee, the functional-edge median); the rest from the Hartung-Knapp pools and App.~K's list of
-    corrections, which quotes both the live and the replaced value of each."""
+    guarantee); the rest from the Hartung-Knapp pools and the list of corrections, which quotes both the
+    live and the replaced value of each."""
     flat = " ".join(re.sub(r"(?m)^%.*", "", tex).split())
     F = load("data/results/camera_ready/facts.json")
     tr, vp = F["training"], F["val_paralog"]
@@ -1361,85 +1173,75 @@ def _prose_camera(tex):
     gates = [lane["gate_at_best"] for lane in tr["condition_gated"].values()]
     gpu = [lane["gpu_hours"] for a in tr for lane in tr[a].values()]
     eo, ug = col["expression_only"]["best_epoch"], col["untyped_gnn"]["best_epoch"]
-    ts, cg = col["typed_static"], col["condition_gated"]
-    typed_best = max(ts["best_epoch"] + cg["best_epoch"])
-    others = eo + ug
+    typed_best = max(col["typed_static"]["best_epoch"] + col["condition_gated"]["best_epoch"])
     word = {3: "three", 4: "four", 5: "five"}
-    span = lambda xs: f"${min(xs)}$ to ${max(xs)}$"
+    # the paper counts epochs from 1; the artifact stores them from 0
+    span = lambda xs: f"${min(xs) + 1}$ to ${max(xs) + 1}$"
+    maxep = max(x for a in col for x in col[a]["epochs_run"])
     k128 = load("data/results/camera_ready/pooled_k128_subset_hksj.json")["pooled"]["promotion_margin"]
     all8 = load("data/results/camera_ready/pooled_with_reference_hksj.json")["pooled"]["promotion_margin"]
     typ7 = load("data/results/camera_ready/pooled_hksj.json")["pooled"]["h2a"]
     ci = lambda p: f"$[{p['hksj_ci'][0]:+.4f},{p['hksj_ci'][1]:+.4f}]$"
     live = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
     dead = load("data/results/screening_untyped_n7/robustness_5seed.json")["contrasts"]
-    fresh = [r for r in load("data/results/a2_power_v2/power_simulation.json")["designs"]["nested"]["h2a"]
-             if r["redraws"] == 1 and r["seeds"] == 5 and abs(r["effect"] - 0.0043) < 1e-9][0]
-    stale = [r for r in load("data/results/a2_power/power_simulation.json")["designs"]["nested"]["h2a"]
-             if r["redraws"] == 1 and r["seeds"] == 5 and abs(r["effect"] - 0.0043) < 1e-9][0]
     f4 = lambda x: f"{x:+.4f}"
     claims = [
-        ("live gate range", f"to a live ${min(gates):.2f}$ to ${max(gates):.2f}$ in the checkpoints"),
-        ("lane cost range", f"(${min(gpu):.1f}$ to ${max(gpu):.0f}$ GPU-hours each in the headline family)"),
-        ("val paralog, body", f"which leaves ${vp['val_frac_ge_threshold'] * 100:.0f}\\%$ of validation"),
-        ("naive paralog, body", f"against ${vp['naive_every_20th_frac'] * 100:.0f}\\%$ for a naive split"),
-        ("val paralog, App G", f"finds ${vp['val_frac_ge_threshold'] * 100:.1f}\\%$ of validation targets "
-                               f"(${vp['val_n_ge_threshold']}$ of ${vp['n_val_targets']:,}$)".replace(",", "{,}")),
-        ("val paralog max", f"(maximum ${vp['val_max_cosine']:.3f}$)"),
-        # AUTO 2026-10-27: the body's epoch sentence moved to App.~B and G (anchored just below) when the
-        # plain-language rewrite needed the space; the body now points there in words.
-        ("typed vs others, App B", f"by epoch ${typed_best}$ and the untyped and no-graph models not until "
-                                   f"epochs {span(others)}"),
-        ("eo and ug best epochs", f"best checkpoints at epochs {span(eo)} and {span(ug)}"),
-        ("ts stop and best", f"stop after {span(ts['epochs_run'])} epochs with the checkpoint from epoch "
-                             f"$0$ in {word.get(ts['best_epoch'].count(0))} of five seeds"),
-        ("cg stop and best", f"after {span(cg['epochs_run'])} with checkpoints from epochs "
-                             f"{span(cg['best_epoch'])}"),
-        ("functional edge median", f"median score ${F['functional_edges']['median_score']:.3f}$"),
-        # AUTO 2026-10-27: the body's pooled sentence ("HKSJ p, body") moved to App.~D in the
-        # plain-language rewrite; the two anchors below check both p-values where they now live.
-        # AUTO 2026-10-27: Section 4.3 again quotes the K=128 pool with its Hartung-Knapp p.
-        ("HKSJ p K=128, body", f"adjustment for few datasets ($p{{=}}{k128['hksj_p']:.2f}$; Appendix"),
-        ("HKSJ K=128", f"five-dataset interval to {ci(k128)} ($p{{=}}{k128['hksj_p']:.2f}$)"),
-        ("HKSJ all eight", f"eight-dataset one to {ci(all8)} ($p{{=}}{all8['hksj_p']:.2f}$)"),
-        ("HKSJ typed seven", f"bound of \\S\\ref{{sec:repl}} to {ci(typ7)}"),
-        ("App K h1 n=7", f"is ${f4(live['h1_vs_no_graph']['mean'])}$ ($95\\%$ CI "
-                         f"$[{f4(live['h1_vs_no_graph']['ci_low'])},{f4(live['h1_vs_no_graph']['ci_high'])}]$) "
-                         f"rather than ${f4(dead['h1_vs_no_graph']['mean'])}$"),
-        ("App K h2b n=7", f"h2b is ${f4(live['h2b']['mean'])}$ rather than ${f4(dead['h2b']['mean'])}$"),
-        ("App K fresh partition", f"needs ${fresh['levels_for_80pct']}$ levels rather than "
-                                  f"${stale['levels_for_80pct']}$"),
+        ("live gate range", f"with a mean between ${min(gates):.2f}$ and ${max(gates):.2f}$ in the checkpoints"),
+        ("lane cost range", f"(${min(gpu):.1f}$ to ${max(gpu):.0f}$ GPU-hours each in the main family)"),
+        ("val paralog, body", f"This is imperfect: ${vp['val_frac_ge_threshold'] * 100:.0f}\\%$ of validation"),
+        ("naive paralog, body", f"against ${vp['naive_every_20th_frac'] * 100:.0f}\\%$ for a simple split that ignores"),
+        ("eo and ug best epochs", f"reach theirs at epochs {span(eo)} and {span(ug)}, and all of them run to the "
+                                  f"${maxep}$-epoch limit"),
+        ("epoch limit, Methods", f"run trains for up to ${maxep}$ epochs, stops early if its validation loss has not "
+                                 f"improved for ten epochs"),
+        ("typed and gated peak", f"typed and gated runs peak within their first {word.get(typed_best + 1)} epochs"),
+        ("HKSJ p both pools, body", f"adjustment for having few datasets ($p{{=}}{all8['hksj_p']:.2f}$ and "
+                                    f"${k128['hksj_p']:.2f}$; Appendix"),
+        ("HKSJ both untyped pools", f"raises these to $p{{=}}{all8['hksj_p']:.2f}$ and $p{{=}}{k128['hksj_p']:.2f}$"),
+        ("HKSJ typed seven", f"widens the typed interval to {ci(typ7)}"),
+        ("corrections: n=7 gated", f"is ${f4(live['h1_vs_no_graph']['mean'])}$ ($95\\%$ CI "
+                                   f"$[{f4(live['h1_vs_no_graph']['ci_low'])},{f4(live['h1_vs_no_graph']['ci_high'])}]$) "
+                                   f"rather than ${f4(dead['h1_vs_no_graph']['mean'])}$"),
+        ("corrections: n=7 gates over typed", f"over the typed model is ${f4(live['h2b']['mean'])}$ rather than "
+                                              f"${f4(dead['h2b']['mean'])}$"),
     ]
     fails = [f"prose:camera {what}: not stated in context (looked for {ctx!r})"
              for what, ctx in claims if ctx not in flat]
-    # The words these anchors cannot see: the eo/ug lanes must really run to the 20-epoch cap, the
-    # dead-gate root must really have had an interval excluding zero, and the old h1 must not.
-    if not all(r == 20 for a in ("expression_only", "untyped_gnn") for r in col[a]["epochs_run"]):
-        fails.append("prose:camera: App.~F says the no-graph and untyped lanes run to the 20-epoch cap")
-    if not (dead["h1_vs_no_graph"]["ci_high"] < 0 < live["h1_vs_no_graph"]["ci_high"]):
-        fails.append("prose:camera: App.~K says the dead-gate n=7 h1 interval excluded zero and the "
+    # "all of them run to the limit" and "stop early ... ten epochs": the no-graph and untyped lanes hit the
+    # cap, and every typed and gated lane stopped exactly ten epochs after its best one (patience 10).
+    if any(e != maxep for a in ("expression_only", "untyped_gnn") for e in col[a]["epochs_run"]):
+        fails.append("prose:camera: a no-graph or untyped lane stopped before the epoch limit")
+    for a in ("typed_static", "condition_gated"):
+        for b, e in zip(col[a]["best_epoch"], col[a]["epochs_run"]):
+            if not (e < maxep and e == b + 11):
+                fails.append(f"prose:camera: {a} stopped at {e} epochs with best epoch {b}; not patience ten")
+    # The words these anchors cannot see: the dead-gate root must really have had an interval excluding
+    # zero, and the live one must not.
+    if not (dead["h1_vs_no_graph"]["ci_high"] < 0 < live["h1_vs_no_graph"]["ci_high"]) or \
+            "with an interval excluding zero" not in flat:
+        fails.append("prose:camera: the corrections say the dead-gate n=7 interval excluded zero and the "
                      "live one does not")
-    return fails, f"full: {len(claims)} camera-ready claims anchored to their words, plus 2 word checks"
+    return fails, f"full: {len(claims)} camera-ready claims anchored to their words, plus 1 word check"
 
 
 @table("tab:family")
 def _family(tex):
-    """The headline five-seed family.
+    """The headline five-seed family (Table 2).
 
     IT IS THE screening_lambda0 ROOT, NOT data/results/screening/. Both are n=5 on the frozen fold
     and they agree on three arms out of four, which is exactly how this could be got wrong: the
     unrepaired root puts condition_gated at 0.0838 and h1 at -0.0019, the repaired one at 0.0848 and
     -0.0009, and the paper's own text says the gate repair moved the headline between those two
-    values. Checking against the wrong root would report a real number as an error."""
+    values. Checking against the wrong root would report a real number as an error. Since 2026-10-28 the
+    table has four columns (comparison, difference, CI, significant) and the per-model means sit in its
+    caption; the Pearson-delta column moved to App.~E, where prose:derived checks it."""
     fails, d = [], load(f"{_FAMILY_ROOT}/robustness_5seed.json")
-    sec = load(f"{_FAMILY_ROOT}/second_metric_5seed.json")
-    pear = {c["contrast"]: c for c in sec["metrics"]["pearson"]["contrasts"]}
     seen = 0
     for cs in cells_of(tex, "tab:family"):
-        # AUTO 2026-10-27: rows are named in words ("Typed $-$ no graph (h2a)"), not by code.
-        # "untyped" must be tried before "typed", which it contains.
+        # Rows are named in words ("Typed $-$ no graph"); "untyped" must be tried before "typed".
         m = re.match(r"(untyped|typed|gated|no graph)\s*-\s*(untyped|typed|gated|no graph)\b",
                      cs[0].replace("\\textbf{", "").replace("$-$", "-").strip(), re.I)
-        if not m or len(cs) < 6:
+        if not m or len(cs) < 4:
             continue
         a, b = _FAMILY_WORD[m.group(1).lower()], _FAMILY_WORD[m.group(2).lower()]
         key = _CONTRAST_OF.get((a, b))
@@ -1454,72 +1256,59 @@ def _family(tex):
         if sign < 0:
             lo, hi = hi, lo
         ci = re.findall(r"[-+]\d\.\d+", cs[2])
-        if len(ci) == 2:
+        if len(ci) != 2:
+            fails.append(f"tab:family {key} CI: no interval in {cs[2]!r}")
+        else:
             nd = len(ci[0].split(".")[1])
             if (ci[0], ci[1]) != (f"{lo:+.{nd}f}", f"{hi:+.{nd}f}"):
                 fails.append(f"tab:family {key} CI: paper [{ci[0]},{ci[1]}] artifact "
                              f"[{lo:+.{nd}f},{hi:+.{nd}f}]")
-        # The uncorrected paired p, at the cell's own precision; symmetric, so orientation is moot.
-        pv = re.search(r"(\d\.\d+)", cs[3])
-        if pv is None:
-            fails.append(f"tab:family {key} p: no number in {cs[3]!r}")
-        elif f"{c['p_value']:.{len(pv.group(1).split('.')[1])}f}" != pv.group(1):
-            fails.append(f"tab:family {key} p: paper {pv.group(1)} artifact {c['p_value']:.4f}")
-        # FWER column vocabulary, spelled out because it is not a yes/no field: "worse" and
-        # "better" CLAIM survival (naming which arm won), "no" and "parity" deny it. Reading
-        # anything-but-no as survival turns the headline null's own cell into a false failure.
-        word = cs[4].lower()
-        claims = ("worse" in word or "better" in word) and "no" not in word
+        # "Significant" vocabulary, spelled out because it is not a yes/no field: "yes, worse" and
+        # "yes, better" CLAIM survival, "no" denies it.
+        word = cs[3].lower().replace("\\textbf{", "")
+        claims = word.startswith("yes")
         if claims != bool(c["survives_family_wise"]):
-            fails.append(f"tab:family {key} FWER: paper {cs[4]!r} artifact "
+            fails.append(f"tab:family {key} significant: paper {cs[3]!r} artifact "
                          f"survives={c['survives_family_wise']}")
-        pc = pear.get(f"{a} - {b}") or pear.get(f"{b} - {a}")
-        if pc is not None:
-            psign = 1.0 if pc["A"] == a else -1.0
-            cmp_cell(fails, f"tab:family {key} pearson", cs[5], psign * pc["mean"],
-                     star=bool(pc.get("survives_both")))
+        if claims and (("worse" in word) != (sign * c["mean"] < 0)):
+            fails.append(f"tab:family {key}: the paper says {cs[3]!r} but the difference is {sign * c['mean']:+.4f}")
 
-    # The per-arm mean footer is a \multicolumn line, so it is not a row; parse it directly.
-    # AUTO 2026-10-27: the footer names the models in words. It must name all four: a footer the regex
-    # no longer finds used to be skipped silently, which reads exactly like a pass.
-    foot = re.search(r"Per-model.*?systema.*?\$n\{=\}5\$\):(.*?)\\\\", tex, re.S)
+    # The per-model means are in the caption. It must name all four: a footer the regex no longer finds
+    # used to be skipped silently, which reads exactly like a pass.
+    foot = re.search(r"Mean \\textsc\{systema\} per model\s*\(\$n\{=\}5\$\):(.{0,200})", tex, re.S)
     pairs = re.findall(r"(untyped|typed|gated|no graph)\s*\$(\d\.\d+)\$", foot.group(1)) if foot else []
     if sorted(w for w, _ in pairs) != sorted(_FAMILY_WORD):
-        fails.append(f"tab:family per-model footer: expected one mean for each of the four models, "
+        fails.append(f"tab:family per-model means: expected one mean for each of the four models, "
                      f"found {pairs}")
-    if foot:
-        for word, val in pairs:
-            arm = _FAMILY_WORD[word]
-            want = d["per_config"][arm]["mean"]
-            nd = len(val.split(".")[1])
-            if f"{float(val):.{nd}f}" != f"{want:.{nd}f}":
-                fails.append(f"tab:family per-arm {arm}: paper {val} artifact {want:.{nd}f}")
-    # A row the parser no longer recognises is a row nobody checked. This used to be a conditional
-    # expression whose precedence returned (fails, (fails, note)) instead of a failure, which crashed
-    # the whole run with a TypeError rather than naming the unchecked rows.
+    for word, val in pairs:
+        want = d["per_config"][_FAMILY_WORD[word]]["mean"]
+        nd = len(val.split(".")[1])
+        if f"{float(val):.{nd}f}" != f"{want:.{nd}f}":
+            fails.append(f"tab:family per-model {word}: paper {val} artifact {want:.{nd}f}")
     if seen != 4:
         fails.append(f"tab:family: matched {seen} of 4 contrast rows; the rest are unchecked")
         return fails, f"partial: matched {seen} of 4 contrast rows"
-    return fails, (f"full: 4 contrasts x (delta, CI, p, FWER, Pearson) + 4 per-arm means, "
-                   f"{seen} rows, vs {_FAMILY_ROOT}/")
+    return fails, (f"full: 4 contrasts x (difference, CI, significance and its direction) + 4 per-model "
+                   f"means, {seen} rows, vs {_FAMILY_ROOT}/")
 
 
 @table("tab:causes")
 def _causes(tex):
-    """A SUMMARY table: its cells are verdicts in prose. Since 2026-10-01 causes C and D point at
-    Figure 4 instead of repeating its numbers, so what is checked here is each QUALITATIVE claim
-    those cells make, re-derived from the artifacts the figure is drawn from: a cell that says
-    "harmful" or "no detectable effect" fails if the artifact stops saying so.
+    """A SUMMARY table (Table 4): its cells are verdicts in prose, so what is checked is each
+    QUALITATIVE claim causes C and D make, re-derived from the artifacts behind them: a cell that says
+    "worse" or "no detectable effect" fails if the artifact stops saying so.
 
     NOT CHECKED, and why: cause A's "$\\approx$0.001" centroid floor and cause E's "85% functional
     associations" are graph- and metric-summary quantities with no JSON of their own in this repo.
-    Cause B and E's verdicts are qualitative. Those live or die by Appendix~\\ref{app:causes}."""
+    Causes A, B and E's verdicts are qualitative; App.~E carries their numbers."""
     fails, blk = [], re.search(r"\\label\{tab:causes\}(.*?)\\end\{tabular\}", tex, re.S)
     body = " ".join((blk.group(1) if blk else "").split())
     n7 = load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
     pool = load("data/results/replication/pooled_with_reference.json")
     feat = {v["variant"]: v for v in load("data/results/feature_ablation_report.json")}
     h1 = load("data/results/screening_lambda0/robustness_5seed.json")["contrasts"]["h1_vs_no_graph"]
+    sm = {c["contrast"]: c for c in load("data/results/screening_lambda0/second_metric_5seed.json")
+          ["metrics"]["pearson"]["contrasts"]}["condition_gated - expression_only"]
 
     def signed(c, arm):
         return c["mean"] if c["better"] == arm else -c["mean"]
@@ -1529,17 +1318,21 @@ def _causes(tex):
     ratio = feat["nodegree"]["mean"] / feat["nograph"]["mean"]
     claims = [
         # (phrase in the table, does the artifact support it, what was found)
-        ("typed static encoder is \\emph{harmful}", h2a < 0 and n7["h2a"]["survives_family_wise"],
+        ("The gated model is still no better than no graph under Pearson-delta", not sm.get("survives_both"),
+         f"Pearson-delta gated - no graph {sm['mean']:+.4f}, survives {sm.get('survives_both')}"),
+        ("On our main split, with seven seeds, the typed model is \\emph{worse} than no graph",
+         h2a < 0 and n7["h2a"]["survives_family_wise"],
          f"n=7 h2a {h2a:+.4f}, survives {n7['h2a']['survives_family_wise']}"),
-        ("the gate's partial repair fails correction", 0 < h2b < -h2a and not n7["h2b"]["survives_family_wise"],
+        ("the gates repair only part of the damage, not significantly",
+         0 < h2b < -h2a and not n7["h2b"]["survives_family_wise"],
          f"n=7 h2b {h2b:+.4f} against h2a {h2a:+.4f}, survives {n7['h2b']['survives_family_wise']}"),
-        ("clears correction on three datasets, in disagreeing directions",
+        ("passes correction on three datasets, in opposite directions",
          len(surviving) == 3 and min(surviving) < 0 < max(surviving), f"untyped survivors {surviving}"),
-        ("graph-derived features lowers \\textsc{systema}, a drop that survives correction",  # AUTO 2026-10-27
+        ("graph-derived features to zero lowers \\textsc{systema}, a drop that survives correction",
          feat["nograph"]["mean"] < 0 and feat["nograph"]["survives"] == "True",
          f"nograph {feat['nograph']['mean']:+.4f}, survives {feat['nograph']['survives']}"),
-        ("nearly all of it the degree counts", 0.9 <= ratio < 1.0, f"degrees-only / all = {ratio:.3f}"),
-        ("the gated graph (h1) has no detectable effect",
+        ("nearly all of it from three counts", 0.9 <= ratio < 1.0, f"counts-only / all = {ratio:.3f}"),
+        ("the gated graph has no detectable effect",
          not h1["survives_family_wise"] and h1["ci_low"] < 0 < h1["ci_high"],
          f"h1 {signed(h1, 'condition_gated'):+.4f} [{h1['ci_low']:+.4f},{h1['ci_high']:+.4f}]"),
         ("``no graph'' is not graph-free", feat["nograph"]["survives"] == "True",
@@ -1550,28 +1343,8 @@ def _causes(tex):
             fails.append(f"tab:causes: the cell no longer says '{phrase}'; update this check with it")
         elif not ok:
             fails.append(f"tab:causes: '{phrase}' is not what the artifact says ({found})")
-    return fails, (f"partial: {len(claims)} qualitative claims in causes C and D re-derived from the "
-                   f"artifacts behind Figure 4; causes A, B and E have no JSON of their own (see docstring)")
-
-
-@table("tab:checklist")
-def _checklist(tex):
-    """The checklist's pointer column quotes a few numbers from elsewhere in the paper. A tabular is
-    outside prose:all, so its literals get the same accounting here: each must be in the checklist
-    section's own artifacts or declared."""
-    blk = re.search(r"\\label\{tab:checklist\}(.*?)\\end\{tabular\}", tex, re.S)
-    body = blk.group(1) if blk else ""
-    body = re.sub(r"[\d.]*\\times10\^\{?-?\d+\}?", " ", body)
-    body = re.sub(r"10\^\{?-?\d+\}?", " ", body)
-    vals, fails, n = _artifact_values(PROSE_REGIONS["sec:checklist"]), [], 0
-    for m in re.finditer(r"\$([^$]*)\$", body):
-        for lit in _PROSE_NUM.findall(m.group(1)):
-            if lit in list("0123456789"):
-                continue
-            n += 1
-            if lit not in vals and lit not in PROSE_DECLARED:
-                fails.append(f"tab:checklist literal {lit}: not in sec:checklist's artifacts and not declared")
-    return fails, f"full: {n} literals in the checklist table, each re-derived or declared"
+    return fails, (f"partial: {len(claims)} qualitative claims in causes B, C and D re-derived from their "
+                   f"artifacts; causes A and E have no JSON of their own (see docstring)")
 
 
 @table("floats")
@@ -1593,51 +1366,12 @@ def _floats(tex):
     return fails, f"full: {len(envs)} floats, each with a caption, a label and a reference in the text"
 
 
-@table("tab:mechanism")
-def _mechanism(tex):
-    fails, fam = [], load("data/results/screening_a1/a1_mechanism.json")["family"]
-    n = 0
-    for line in re.search(r"\\label\{tab:mechanism\}(.*?)\\end\{tabular\}",
-                          tex, re.S).group(1).split("\\\\"):
-        if "$D_" not in line:
-            continue
-        key = "D1" if "$D_1$" in line else "D2"
-        c = fam[key]
-        got = re.findall(r"[-+]\d\.\d{4}", line)
-        want = [f"{c['mean']:+.4f}", f"{c['ci_low']:+.4f}", f"{c['ci_high']:+.4f}"]
-        n += 1
-        if got != want:
-            fails.append(f"tab:mechanism {key}: paper {got} artifact {want}")
-    return fails, f"full: {n} rows x (mean, CI) vs data/results/screening_a1/a1_mechanism.json"
-
-
-def _v2_provenance(paper_name: str):
-    """The POST-Amendment-2 build for a dataset named as the paper names it.
-
-    Amendment 2 replaced the DE unit, and the rebuilt matrices are the `*.DE_stats_v2.*` artifacts.
-    The pre-amendment `<name>.provenance.json` files still sit beside them with the SUPERSEDED counts,
-    and reading those is how tab:repl came to report Replogle as "dropped" at 12 targets when the
-    corrected rule gives 2,122. Match on prefix because the paper writes FrangiehIzar2021 where the
-    build is FrangiehIzar2021_RNA."""
-    want = re.sub(r"[^A-Za-z0-9]", "", paper_name)
-    if not want:
-        return None, None, None
-    base = ROOT / "data/intermediate/replication"
-    for f in sorted(base.glob("*.DE_stats_v2.provenance.json")):
-        name = f.name.replace(".DE_stats_v2.provenance.json", "")
-        if re.sub(r"[^A-Za-z0-9]", "", name).startswith(want):
-            qc = f.with_name(f.name.replace("provenance", "qc"))
-            verdict = json.loads(qc.read_text())["verdict"] if qc.exists() else None
-            return name, json.loads(f.read_text()), verdict
-    return None, None, None
-
-
 def _program_k(dataset: str):
     """K actually used, measured from the built basis rather than from any declared value.
 
-    Amendment 3.1 requires every K != 128 to be labelled wherever it appears, and the paper labelled
-    only one of three. Measuring it from program_response.parquet's width means the label is checked
-    against what the lane really ran, not against a runner argument nobody recorded."""
+    Amendment 3.1 requires every K != 128 to be labelled wherever it appears. Measuring it from
+    program_response.parquet's width means the label is checked against what the lane really ran, not
+    against a runner argument nobody recorded."""
     import pandas as pd
     p = ROOT / f"data/intermediate/replication/{dataset}/program_response.parquet"
     if not p.exists():
@@ -1645,338 +1379,93 @@ def _program_k(dataset: str):
     return pd.read_parquet(p).shape[1] - 1
 
 
+# Table 3's row names, as the paper writes them, and the per-dataset keys of the pooled artifact.
+_REPL_ROWS = {"Zhu (main)": "reference_screen_n7",
+              "Replogle genome-wide": "ReplogleWeissman2022_K562_gwps",
+              "Replogle RPE1": "ReplogleWeissman2022_rpe1",
+              "Replogle essential": "ReplogleWeissman2022_K562_essential",
+              "Frangieh": "FrangiehIzar2021_RNA",
+              "Tian CRISPRi": "TianKampmann2021_CRISPRi",
+              "Norman": "NormanWeissman2019_filtered",
+              "Tian CRISPRa": "TianKampmann2021_CRISPRa"}
+
+
 @table("tab:repl")
 def _repl(tex):
-    """Four of six columns re-derived per dataset, against the POST-Amendment-2 artifacts: targets and
-    condition count from the DE_stats_v2 provenance, the on-target QC verdict from its qc.json, and K
-    measured from the built program basis.
+    """Table 3, one row per dataset, every column but the cell type re-derived: the typed and untyped
+    differences from no graph and their bold (survival within the dataset's pre-registered family) from
+    replication/pooled_with_reference.json; the target count from the POST-Amendment-2 DE_stats_v2
+    provenance; "switched on" against the direction the on-target check inferred; and the K label,
+    measured from the built program basis, which Amendment 3.1 requires wherever a K below 128 appears.
 
-    NOT CHECKED, and why: "Verdict" is a pre-registered judgement rather than a measurement, and the
-    dataset name is the key rather than a value."""
-    fails, seen, unknown = [], 0, []
+    NOT CHECKED: the cell type, a property of the published dataset rather than of any artifact here,
+    and "knocked out" against "knocked down", which the on-target check cannot tell apart (both lower
+    the target's own expression). The reference row's target count is the Methods' own count."""
+    fails, seen = [], set()
+    pd_ = load("data/results/replication/pooled_with_reference.json")["per_dataset"]
+    cap = re.search(r"\\caption\{What the graph did on each dataset(.*?)\\label\{tab:repl\}", tex, re.S)
+    capt = " ".join(cap.group(1).split()) if cap else ""
+    base = ROOT / "data/intermediate/replication"
     for cs in cells_of(tex, "tab:repl"):
-        name = cs[0].replace("\\_", "_").strip()
-        if not name or not name[0].isupper() or name.startswith("Dataset"):
-            continue
-        ds, prov, qc = _v2_provenance(name)
-        if prov is None:
-            unknown.append(name)
-            continue
-        seen += 1
-        tgt = re.search(r"(\d[\d,]*)", cs[1].replace("{,}", ","))
-        if tgt and int(tgt.group(1).replace(",", "")) != prov["n_targets"]:
-            fails.append(f"tab:repl {name} targets: paper {tgt.group(1)} artifact {prov['n_targets']}")
-        nc = re.search(r"(\d+)", cs[2])
-        if nc and int(nc.group(1)) != len(prov["conditions"]):
-            fails.append(f"tab:repl {name} conditions: paper {nc.group(1)} artifact "
-                         f"{len(prov['conditions'])}")
-        k_art = _program_k(ds)
-        k_pap = re.search(r"(\d+)", cs[3])
-        if k_pap and k_art is not None and int(k_pap.group(1)) != k_art:
-            fails.append(f"tab:repl {name} K: paper {k_pap.group(1)} basis width says {k_art} "
-                         f"(Amendment 3.1: every K!=128 must be labelled wherever it appears)")
-        elif k_pap and k_art is None:
-            fails.append(f"tab:repl {name} K: paper claims {k_pap.group(1)} but no basis was built")
-        elif not k_pap and k_art is not None and (ROOT / f"data/results/replication/{ds}").is_dir():
-            fails.append(f"tab:repl {name} K: paper shows none but the lane ran at K={k_art}")
-        # A basis with NO trained lane is not a K deviation to label. Papalexi has one at K=8 from what
-        # Amendment 3.1 itself calls a "chain smoke only, never headlined"; the K column reports what a
-        # LANE ran at, so a dash is correct there. The results directory is what distinguishes the two.
-        if qc:
-            said_pass = "pass" in cs[4].lower()
-            if said_pass != qc.startswith("PASS"):
-                fails.append(f"tab:repl {name} QC: paper {cs[4]!r} artifact {qc!r}")
-    note = (f"full on 4 of 6 columns: {seen} datasets x (targets, conditions, K measured from the "
-            f"built basis, on-target QC) vs the POST-Amendment-2 DE_stats_v2 artifacts; Verdict is a "
-            f"pre-registered judgement, not a measurement")
-    if unknown:
-        note += f"; NO DE_stats_v2 BUILD for {unknown}, so those rows are unchecked"
-    return fails, note
-
-
-_FOLD_ROOT = {"frozen": "data/results/screening_lambda0",
-              "intermediate": "data/results/screening_c080c10_h1",
-              "harder": "data/results/screening_c075c15_n5"}
-
-
-@table("tab:folds")
-def _folds(tex):
-    fails, n = [], 0
-    for cs in cells_of(tex, "tab:folds"):
-        which = next((k for k in _FOLD_ROOT if cs[0].startswith(k)), None)
-        if which is None or len(cs) < 5:
-            continue
-        n += 1
-        d = load(f"{_FOLD_ROOT[which]}/robustness_5seed.json")["contrasts"]
-        h1 = d["h1_vs_no_graph"]
-        sign = 1.0 if h1["better"] == "condition_gated" else -1.0
-        cmp_cell(fails, f"tab:folds {which} h1", cs[1], sign * h1["mean"])
-        lo, hi = sign * h1["ci_low"], sign * h1["ci_high"]
-        if sign < 0:
-            lo, hi = hi, lo
-        ci = re.findall(r"[-+]\d\.\d+", cs[2])
-        if len(ci) == 2:
-            nd = len(ci[0].split(".")[1])
-            if (ci[0], ci[1]) != (f"{lo:+.{nd}f}", f"{hi:+.{nd}f}"):
-                fails.append(f"tab:folds {which} h1 CI: paper [{ci[0]},{ci[1]}] artifact "
-                             f"[{lo:+.{nd}f},{hi:+.{nd}f}]")
-        pb = re.search(r"(\d\.\d+)", cs[3])
-        if pb and f"{h1['p_bonferroni']:.{len(pb.group(1).split('.')[1])}f}" != pb.group(1):
-            fails.append(f"tab:folds {which} p_bonf: paper {pb.group(1)} artifact "
-                         f"{h1['p_bonferroni']:.4f}")
-        h2 = d["h2a"]
-        s2 = 1.0 if (h2["better"], h2["worse"]) == ("typed_static", "expression_only") else -1.0
-        cmp_cell(fails, f"tab:folds {which} h2a", cs[4], s2 * h2["mean"])
-    return fails, (f"full: {n} folds x (h1 delta, CI, Bonferroni, h2a delta) vs three screening "
-                   f"roots")
-
-
-@table("tab:floor")
-def _floor(tex):
-    """The power simulation. Every row is one design point at the effect the paper tests (0.0043)."""
-    fails, d = [], load("data/results/a2_power_v2/power_simulation.json")["designs"]
-    E = 0.0043
-
-    def pick(group, arm, **want):
-        for r in d[group][arm]:
-            if abs(r.get("effect", -1) - E) < 1e-9 and all(r.get(k) == v for k, v in want.items()):
-                return r
-        return None
-
-    plan = {
-        "seeds, this fold": (pick("seeds", "h2a", sd_source="frozen"), "sd", "seeds_for_80pct",
-                             "power_at_7"),
-        "seeds, any re-draw": (pick("seeds", "h2a", sd_source="pooled"), "sd", "seeds_for_80pct",
-                               "power_at_7"),
-        "a fresh partition": (pick("nested", "h2a", redraws=1, seeds=5), "sd_level_mean",
-                              "levels_for_80pct", None),
-        "datasets, typed": (pick("datasets", "h2a"), None, "datasets_for_80pct", "power_at_7"),
-        "datasets, untyped": (pick("datasets", "promotion_margin"), None, "datasets_for_80pct",
-                              "power_at_7"),
-    }
-    n = 0
-    for cs in cells_of(tex, "tab:floor"):
-        row = next((k for k in plan if cs[0].startswith(k)), None)
-        if row is None or len(cs) < 4:
-            continue
-        art, sd_key, unit_key, pow_key = plan[row]
-        if art is None:
-            fails.append(f"tab:floor {row!r}: no design point at effect={E} in the artifact")
-            continue
-        n += 1
-        if sd_key:
-            sd = re.search(r"(\d\.\d+)", cs[2])
-            if sd and f"{art[sd_key]:.{len(sd.group(1).split('.')[1])}f}" != sd.group(1):
-                fails.append(f"tab:floor {row} sd: paper {sd.group(1)} artifact {art[sd_key]:.4f}")
-        u = re.search(r"(\d+)", cs[3])
-        if u and int(u.group(1)) != art[unit_key]:
-            fails.append(f"tab:floor {row} units: paper {u.group(1)} artifact {art[unit_key]}")
-        if pow_key and len(cs) > 4:
-            p = re.search(r"(\d\.\d+)", cs[4])
-            if p and f"{art[pow_key]:.{len(p.group(1).split('.')[1])}f}" != p.group(1):
-                fails.append(f"tab:floor {row} power: paper {p.group(1)} artifact "
-                             f"{art[pow_key]:.3f}")
-    return fails, (f"full: {n} design rows x (sd, units for 80%, power as run) vs "
-                   f"data/results/a2_power_v2/power_simulation.json")
-
-
-_RUNG = {"0.02": "d020", "0.05": "d050", "0.10": "d100", "0.20": "d200", "0.40": "d400"}
-
-
-def _rung_of(cs):
-    """Which ladder rung a floor-table row is, from its own leading cells.
-
-    The delta sits in a column of its own in Table~\\ref{tab:floor2} and inside the row label
-    ($\\delta{=}0.02$) in Table~\\ref{tab:floorabs}, so both leading cells are searched. The
-    negative lookahead matters: without it, an absolute score of $0.0879$ reads as the rung
-    ``0.08``, which silently drops five of seven rows while still reporting a pass."""
-    low = cs[0].lower()
-    if "no injection" in low:
-        return "zero"
-    if "scrambled" in low:
-        return "permuted_d400"
-    m = re.search(r"(\d\.\d\d)(?!\d)", " ".join(cs[:2]))
-    return _RUNG.get(m.group(1)) if m else None
-
-
-@table("tab:floor2")
-def _floor2(tex):
-    fails, d = [], load("data/results/a2_ladder/floor.json")
-    n = 0
-    for cs in cells_of(tex, "tab:floor2"):
-        rung = _rung_of(cs)
-        if rung is None or len(cs) < 6:
-            continue
-        n += 1
-        c = d["zero_point"] if rung == "zero" else d["contrasts"][rung]
-        cmp_cell(fails, f"tab:floor2 {rung} delta", cs[2], c["mean"])
-        ci = re.findall(r"[-+]\d\.\d+", cs[3])
-        if len(ci) == 2:
-            nd = len(ci[0].split(".")[1])
-            want = (f"{c['ci_low']:+.{nd}f}", f"{c['ci_high']:+.{nd}f}")
-            if (ci[0], ci[1]) != want:
-                fails.append(f"tab:floor2 {rung} CI: paper [{ci[0]},{ci[1]}] artifact {want}")
-        if rung != "zero":
-            pb = re.search(r"(\d\.\d+)", cs[4])
-            if pb and f"{c['p_bonferroni']:.{len(pb.group(1).split('.')[1])}f}" != pb.group(1):
-                fails.append(f"tab:floor2 {rung} p_bonf: paper {pb.group(1)} artifact "
-                             f"{c['p_bonferroni']:.4f}")
-            inc = d["post_hoc_increment_over_zero"].get(rung)
-            if inc:
-                cmp_cell(fails, f"tab:floor2 {rung} increment", cs[5], inc["mean"])
-    return fails, (f"full: {n} rungs x (delta, CI, Bonferroni, post-hoc increment) vs "
-                   f"data/results/a2_ladder/floor.json")
-
-
-@table("tab:floorabs")
-def _floorabs(tex):
-    """Absolute per-arm means per rung, and the change against no injection.
-
-    The no-injection row is NOT in floor.json - the ladder reads its zero point off the landed
-    reference lanes (Amendment 6.4), so this recomputes it from those parquet files the same way
-    ladder_report does. Without it the two delta columns cannot be checked at all, since both are
-    differences against that row."""
-    import pandas as pd
-    fails, d = [], load("data/results/a2_ladder/floor.json")
-    ref = ROOT / "data/results/screening_n7_live"
-    base = {}
-    for arm in ("expression_only", "untyped_gnn"):
-        vals = []
-        for s in d["seeds"]:
-            p = ref / arm / f"{s}.parquet"
-            if not p.exists():
-                continue
-            row = pd.read_parquet(p).iloc[0].to_dict()
-            if row.get("status") == "completed" and row.get("systema") == row.get("systema"):
-                vals.append(float(row["systema"]))
-        base[arm] = sum(vals) / len(vals) if vals else None
-    if base["expression_only"] is None or base["untyped_gnn"] is None:
-        raise Missing(f"{ref}/<arm>/<seed>.parquet for the no-injection row")
-
-    n = 0
-    for cs in cells_of(tex, "tab:floorabs"):
-        rung = _rung_of(cs if len(cs) > 1 else cs + [""])
-        if rung is None or len(cs) < 3:
-            continue
-        if rung == "zero":
-            for col, arm in ((cs[1], "expression_only"), (cs[2], "untyped_gnn")):
-                v = re.search(r"(\d\.\d+)", col)
-                if v and f"{base[arm]:.{len(v.group(1).split('.')[1])}f}" != v.group(1):
-                    fails.append(f"tab:floorabs no-injection {arm}: paper {v.group(1)} "
-                                 f"reference lanes {base[arm]:.4f}")
-            n += 1
-            continue
-        r = d["rungs"][rung]
-        means = {"expression_only": sum(r["worse"].values()) / len(r["worse"]),
-                 "untyped_gnn": sum(r["better"].values()) / len(r["better"])}
-        n += 1
-        for col, arm in ((cs[1], "expression_only"), (cs[2], "untyped_gnn")):
-            v = re.search(r"(\d\.\d+)", col)
-            if v and f"{means[arm]:.{len(v.group(1).split('.')[1])}f}" != v.group(1):
-                fails.append(f"tab:floorabs {rung} {arm}: paper {v.group(1)} artifact "
-                             f"{means[arm]:.4f}")
-        if len(cs) >= 5:
-            for col, arm in ((cs[3], "expression_only"), (cs[4], "untyped_gnn")):
-                cmp_cell(fails, f"tab:floorabs {rung} change in {arm}", col,
-                         means[arm] - base[arm])
-    return fails, (f"full: {n} rows x (2 absolute means, 2 changes vs no injection) vs "
-                   f"floor.json plus the landed reference lanes")
-
-
-_METRIC_COL = ["pearson_delta", "pearson_delta_top20", "mse_top20", "edistance_scperturb",
-               "energy_distance"]
-_METRIC_ROW = [("h2a", 1.0), ("h2b", 1.0), ("promotion_margin", 1.0), ("h1_vs_no_graph", 1.0)]
-
-
-@table("tab:floorgated")
-def _floorgated(tex):
-    """C1's ladder (Amendment 9) beside Amendment 6's, both re-derived from their own artifacts.
-
-    This table is the one that corrected three "the typed arm's own floor is unmeasured" statements,
-    so it carries more weight than its size suggests and is checked against BOTH ladders rather than
-    transcribed from either."""
-    fails = []
-    u = load("data/results/a2_ladder/floor.json")["contrasts"]
-    g = load("data/results/c1_ladder/floor_condition_gated.json")["contrasts"]
-    n = 0
-    for cs in cells_of(tex, "tab:floorgated"):
-        rung = _rung_of(cs)
-        if rung is None or rung == "zero" or len(cs) < 5:
-            continue
-        n += 1
-        cmp_cell(fails, f"tab:floorgated {rung} untyped delta", cs[1], u[rung]["mean"])
-        cmp_cell(fails, f"tab:floorgated {rung} gated delta", cs[3], g[rung]["mean"])
-        for cell, art, who in ((cs[2], u[rung], "untyped"), (cs[4], g[rung], "gated")):
-            m = re.search(r"(\d\.\d+)", cell)
-            if m and f"{art['p_bonferroni']:.{len(m.group(1).split('.')[1])}f}" != m.group(1):
-                fails.append(f"tab:floorgated {rung} {who} Bonferroni: paper {m.group(1)} artifact "
-                             f"{art['p_bonferroni']:.4f}")
-    return fails, (f"full: {n} rungs x (untyped delta, untyped Bonferroni, gated delta, gated "
-                   f"Bonferroni) vs a2_ladder/floor.json and c1_ladder/floor_condition_gated.json")
-
-
-@table("tab:metrics")
-def _metrics(tex):
-    fails, d = [], load("data/results/a3_external_live/rescored.json")
-    n = 0
-    for cs in cells_of(tex, "tab:metrics"):
-        key = next((k for k, _ in _METRIC_ROW if cs[0].strip().startswith(k.split("_")[0])
-                    and (k != "h1_vs_no_graph" or cs[0].strip().startswith("h1"))), None)
-        if cs[0].strip().startswith("untyped"):
-            key = "promotion_margin"
+        name = cs[0].replace("$^{*}$", "").strip()
+        key = _REPL_ROWS.get(name)
         if key is None or len(cs) < 6:
             continue
-        n += 1
-        for col, metric in zip(cs[1:6], _METRIC_COL):
-            c = d["contrasts"][metric][key]
-            sur = d["across_metric"][f"{metric}/{key}"]["survives_family_wise"]
-            cmp_cell(fails, f"tab:metrics {key}/{metric}", col, c["mean"], star=bool(sur))
-    return fails, (f"full: {n} contrasts x 5 endpoints x (value, star) = {n * 5} cells vs "
-                   f"data/results/a3_external_live/rescored.json")
-
-
-@table("tab:ksweep")
-def _ksweep(tex):
-    fails, ks = [], load("data/results/a3_external_live/k_sweep.json")
-    n = 0
-    for cs in cells_of(tex, "tab:ksweep"):
-        kr = cs[0].replace("$", "").strip()
-        if not (kr == "all" or kr.isdigit()) or len(cs) != 5:
+        seen.add(name)
+        # The pooled file stores each mean rounded to five places, and rounding that copy again printed
+        # Frangieh's +0.025553 as +0.0255 until 2026-10-28. Read the dataset's own robustness file.
+        src = ("data/results/screening_n7_live/robustness_5seed.json" if key == "reference_screen_n7"
+               else f"data/results/replication/{key}/robustness_5seed.json")
+        own = load(src)["contrasts"]
+        for col, contrast, arm in ((cs[4], "h2a", "typed_static"), (cs[5], "promotion_margin", "untyped_gnn")):
+            v = pd_[contrast][key]
+            c = own[contrast]
+            mean = c["mean"] if c["better"] == arm else -c["mean"]
+            if abs(mean - v["mean"]) > 1e-5:
+                fails.append(f"tab:repl {name} {contrast}: the pooled copy {v['mean']} disagrees with {src}")
+            cmp_cell(fails, f"tab:repl {name} {contrast}", col, mean)
+            bold = "\\mathbf" in col
+            if bold != bool(v["survives_family_wise"]):
+                fails.append(f"tab:repl {name} {contrast}: bold={bold} artifact "
+                             f"survives={v['survives_family_wise']}")
+        n = int(re.sub(r"[^\d]", "", cs[3]) or -1)
+        if key == "reference_screen_n7":
+            if f"covering ${cs[3].strip('$')}$ targets" not in " ".join(tex.split()):
+                fails.append(f"tab:repl {name} targets: {cs[3]} is not the count the Methods state")
             continue
-        row = ks.get(str(10282 if kr == "all" else int(kr)))
-        if row is None:
-            continue
-        n += 1
-        for cell, key in zip(cs[1:], ["h2a", "h2b", "promotion_margin", "h1_vs_no_graph"]):
-            cmp_cell(fails, f"tab:ksweep k={kr} {key}", cell, row[key]["mean"],
-                     star=bool(row[key].get("survives_family_wise")))
-    return fails, f"full: {n} k values x 4 contrasts x (value, star) vs data/results/a3_external_live/k_sweep.json"
-
-
-@table("tab:bins")
-def _bins(tex):
-    fails = []
-    head = load("data/results/b2_deciles_live/deciles.json")["schemes"]["head"]
-    n = 0
-    for cs in cells_of(tex, "tab:bins"):
-        if len(cs) != 5:
-            continue
-        # The label is written "1--20" or "1 to 20" depending on the paper's dash convention, and
-        # BOTH must parse. A prose pass that regularised en dashes to "to" on 2026-08-26 broke this
-        # silently: every row stopped matching, the check reported "full: 0 intervals", and the gate
-        # still passed because zero rows yield zero failures.
-        lab = (cs[0].replace("$", "").replace("{,}", "")
-               .replace("--", "-").replace(" to ", "-").strip())
-        if not re.match(r"\d+-\d+$", lab):
-            continue
-        n += 1
-        for cell, key in ((cs[1], "promotion_margin"), (cs[3], "h2a"), (cs[4], "h1_vs_no_graph")):
-            c = head["cells"].get(f"{lab}/{key}")
-            if c:
-                cmp_cell(fails, f"tab:bins {lab} {key}", cell, c["mean"],
-                         star=bool(c.get("survives_family_wise")))
-    return fails, (f"full: {n} intervals x 3 contrasts x (value, star) vs "
-                   f"data/results/b2_deciles_live/deciles.json")
+        prov = json.loads((base / f"{key}.DE_stats_v2.provenance.json").read_text())
+        if n != prov["n_targets"]:
+            fails.append(f"tab:repl {name} targets: paper {n} artifact {prov['n_targets']}")
+        qc = json.loads((base / f"{key}.DE_stats_v2.qc.json").read_text())
+        if ("switched on" in cs[2]) != (qc["inferred_direction"] == "activation"):
+            fails.append(f"tab:repl {name}: the paper says {cs[2]!r}; the on-target check infers "
+                         f"{qc['inferred_direction']}")
+        k = _program_k(key)
+        if k is None:
+            fails.append(f"tab:repl {name}: no program basis was built, so K cannot be checked")
+        elif (k < 128) != ("^{*}" in cs[0]):
+            fails.append(f"tab:repl {name}: K={k} but the row is {'' if '^{*}' in cs[0] else 'not '}marked")
+        # [^.;$] stops at the next "$K{=}": with ".*" a caption giving one dataset's K to another could
+        # still match by running on into the second label.
+        elif k < 128 and not re.search(r"\$K\{=\}" + str(k) + r"\$ for [^.;$]*" + re.escape(name), capt):
+            fails.append(f"tab:repl {name}: K={k}, and the caption does not give that K for it")
+    # The caption gives each dataset's family size; read them rather than trust the sentence.
+    fam = {"reference_screen_n7": load("data/results/screening_n7_live/robustness_5seed.json")["contrasts"]
+           ["h2a"]["family_size"]}
+    for key in _REPL_ROWS.values():
+        f = ROOT / f"data/results/replication/{key}/robustness_5seed.json"
+        if f.exists():
+            fam[key] = json.loads(f.read_text())["contrasts"]["h2a"]["family_size"]
+    four = sorted(k for k, v in fam.items() if v == 4)
+    if four != ["FrangiehIzar2021_RNA", "reference_screen_n7"] or sorted(set(fam.values())) != [2, 4] or \
+            len(fam) != len(_REPL_ROWS) or \
+            "four comparisons on Zhu and Frangieh, two on the other six" not in capt:
+        fails.append(f"tab:repl caption: family sizes {fam}")
+    if len(seen) != len(_REPL_ROWS):
+        fails.append(f"tab:repl: matched {len(seen)} of {len(_REPL_ROWS)} rows ({sorted(seen)})")
+        return fails, f"partial: matched {len(seen)} of {len(_REPL_ROWS)} rows"
+    return fails, (f"full: {len(seen)} datasets x (typed and untyped difference and bold, targets, direction, "
+                   f"K label) vs pooled_with_reference.json and the DE_stats_v2 builds")
 
 
 # =================================================================================================
@@ -2019,15 +1508,6 @@ def artifact_checks() -> tuple[list[str], list[tuple[str, str]]]:
     except Missing as e:
         coverage.append(("prose: B1a D3", f"SKIPPED: artifact absent — {e}"))
         fails.append(f"prose B1a D3: SKIPPED, artifact absent ({e})")
-    try:
-        pm = load("data/results/replication/pooled_with_reference.json")["pooled"]["promotion_margin"]
-        i2 = f"{pm['I2'] * 100:.1f}"
-        if f"I^2{{=}}{i2}" not in tex:
-            fails.append(f"eight-dataset I^2 should read {i2}% and does not appear")
-        coverage.append(("prose: pooled I^2", "full: vs replication/pooled_with_reference.json"))
-    except Missing as e:
-        coverage.append(("prose: pooled I^2", f"SKIPPED: artifact absent — {e}"))
-        fails.append(f"prose pooled I^2: SKIPPED, artifact absent ({e})")
     return fails, coverage
 
 

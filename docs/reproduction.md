@@ -94,24 +94,23 @@ around it. Paths are under `data/results/`.
 
 | In the paper | Result file | Section |
 |---|---|---|
-| Figure 1, the penalty sweep | `q4_lambda_sweep_22ep.json`; the text also cites `q4_lambda_sweep_12ep.json` and the three-epoch `screening_lambda0/lambda_sweep_empirical.json` | 4.1 |
+| Figure 1, the penalty sweep | `q4_lambda_sweep_22ep.json` | 4.1 |
 | Table 2, the five-seed family with live gates | `screening_lambda0/robustness_5seed.json` | 4.2 |
 | the same family at the default penalty | `screening/robustness_5seed.json` | 4.2 |
 | the second metric | `screening_lambda0/second_metric_5seed.json` | 4.3 |
 | every n=7 number | `screening_n7_live/robustness_5seed.json` | 4.4 |
-| folds, re-draws, variance decomposition, power | `screening_c075c15_n5/`, `screening_c080c10_{h1,r2,r3}/`, `screening_c075c15_r{2,3}/`, `screening_c070/`, `splits_*/manifest.json`, `l4_v2/`, `a2_power_v2/` | 4.5 |
-| the eight-dataset replication and its pooling | `replication/<dataset>/robustness_5seed.json`, `replication/pooled*.json`, `camera_ready/pooled_*_hksj.json`, `replication/frangieh_on_target_qc.json` | 4.6 |
+| the stricter splits and their re-draws | `screening_c075c15_n5/`, `screening_c080c10_{h1,r2,r3}/`, `splits_*/manifest.json` | 4.5 |
+| Table 3 and the replication pooling | `replication/<dataset>/robustness_5seed.json`, `replication/pooled*.json`, `camera_ready/pooled_*_hksj.json`, and each build's `data/intermediate/replication/*.DE_stats_v2.{provenance,qc}.json` | 4.6 |
 | the architecture search | `arch_search/`, `a2_power/arch_search_bound.json` | 4.7 |
 | the rationale audit | `rationale_audit_lambda0/audit_report.json`, `a2_power/rationale_bound.json` | 4.8 |
 | the graph-free baseline | `feature_ablation_report.json` | 4.9 |
 | why typing hurts | `screening_a1/a1_mechanism.json`, `screening_b1/b1_message_form.json` | 4.10 |
-| the injected-signal floors | `a2_ladder/floor.json`, `a2_ladder/b3_power.json`, `c1_ladder/floor_condition_gated.json` | 4.11 |
-| other metrics and rank intervals | `a3_external_live/rescored.json`, `a3_external_live/k_sweep.json`, `b2_deciles_live/deciles.json` | 4.12 |
+| the planted-signal test | `a2_ladder/floor.json`, `c1_ladder/floor_condition_gated.json` | 4.11 |
+| other groups' scores and the gene groups | `a3_external_live/rescored.json`, `b2_deciles_live/deciles.json` | 4.12 |
 | training lengths, live gates, paralog residual | `camera_ready/facts.json` | 4.13 |
 
 The corrections appendix quotes superseded values beside corrected ones. Those come from the same
-commands run over the superseded roots (`screening_untyped_n7/`, `a3_external/`, `b2_deciles/`, `l4/`,
-`a2_power/`), noted below where it matters.
+commands run over the superseded root `screening_untyped_n7/`.
 
 ## 4. Commands
 
@@ -138,10 +137,11 @@ SCREENING_ROOT=<root> REGISTRY_PATH=<root>/experiment_registry.yaml SPLITS_ROOT=
 PYTHONPATH=src python -m tcell_pipeline.screening.multiseed --seeds 0,1,2,3,4
 ```
 
-Figures 2 to 4 (the folds and injected-signal ladders, the per-dataset replication, and the evidence
-for causes C and D) are drawn from the files of 4.2, 4.4, 4.5, 4.6, 4.9 and 4.11 by
-`python paper/icbinb/make_result_figures.py`, which writes `paper/figures/folds_floor.pdf`,
-`paper/figures/replication_forest.pdf` and `paper/figures/causes.pdf`.
+`python paper/icbinb/make_result_figures.py` draws three summary figures (the splits and planted-signal
+ladders, the per-dataset replication, and causes C and D) from the files of 4.2, 4.4, 4.5, 4.6, 4.9 and
+4.11, writing `paper/figures/folds_floor.pdf`, `paper/figures/replication_forest.pdf` and
+`paper/figures/causes.pdf`. Earlier versions of the paper printed them; the current one reports the same
+results in its tables and appendices, so the script is optional.
 
 It checks from the run registry that every lane scored the same fold. For a root assembled from lanes
 run elsewhere, pass `--no-registry` and it checks each lane's recorded `n_train` and `n_val` instead.
@@ -156,19 +156,20 @@ initialization. Near 1e-7 the graph is switched off and a graph contrast is unde
 PYTHONPATH=src python -m tcell_pipeline.probe_graph_gradients --n-max 8 --batch-size 2 --steps 1
 ```
 
-Figure 1 is one seed of `condition_gated` on the first 512 training and 128 validation rows, 22 epochs,
-at nine penalty weights, batch 4; panel (b) plots the same runs epoch by epoch. Each weight takes about 0.4 GPU-hours; `--lambdas` splits the weights
+The sweep is one seed of `condition_gated` on the first 512 training and 128 validation rows, 22 epochs,
+at nine penalty weights, batch 4; Figure 1 plots three of its runs (no penalty, the weakest and the
+default penalty) epoch by epoch. Each weight takes about 0.4 GPU-hours; `--lambdas` splits the weights
 across cards, and the parts merge by concatenating their `runs` lists.
 
 ```bash
 SUBGRAPH_CACHE_SIZE=1000 PYTHONPATH=src python -m tcell_pipeline.screening.lambda_sweep --device cuda \
   --out data/results/q4_lambda_sweep_22ep.json
-# the shorter sweeps the text also cites
+# two shorter sweeps (12 and 3 epochs) that earlier versions of the paper cited
 SUBGRAPH_CACHE_SIZE=1000 PYTHONPATH=src python -m tcell_pipeline.screening.lambda_sweep --device cuda \
   --epochs 12 --out data/results/q4_lambda_sweep_12ep.json
 SUBGRAPH_CACHE_SIZE=1000 PYTHONPATH=src python -m tcell_pipeline.screening.lambda_sweep --device cuda \
   --epochs 3 --out data/results/screening_lambda0/lambda_sweep_empirical.json
-python paper/icbinb/make_lambda_sweep.py   # paper/figures/lambda_sweep.pdf; needs camera_ready/facts.json (4.13)
+python paper/icbinb/make_lambda_sweep.py   # paper/figures/lambda_sweep.pdf
 ```
 
 What reproduces, measured on 2026-10-01 against the published sweep: the penalized runs match the
@@ -262,8 +263,10 @@ The screening roots on them, each filled with the lane above at `--lambda-graph 
 | `screening_c075c15_r2`, `_r3` | `splits_c075c15_r2`, `_r3` | `expression_only`, `typed_static`, 0 to 4 | `run_c075c15_redraws.sh`, `run_l4_finish.sh` |
 | `screening_c070` | `splits_c070` | `expression_only`, `typed_static`, 0 to 4 | `run_c070.sh`, `run_l4_finish.sh`, `run_l4_card2.sh` |
 
-Aggregate each root with `multiseed` as above. `run_l4_finalise.sh` aggregates the difficulty roots and
-runs the decomposition; the corrected decomposition and power table are:
+Aggregate each root with `multiseed` as above. The current paper reads only `screening_c075c15_n5`,
+`screening_c080c10_h1` and its two re-draws, `screening_c080c10_r2` and `_r3`. `run_l4_finalise.sh`
+aggregates the difficulty roots and runs the variance decomposition that earlier versions reported; the
+corrected decomposition and power table are:
 
 ```bash
 PYTHONPATH=src python -m tcell_pipeline.screening.variance_decomposition --contrast h2a --out data/results/l4_v2/vardecomp_h2a.json

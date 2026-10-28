@@ -1,10 +1,12 @@
-"""Figures 2 to 4 (paper/figures/folds_floor.pdf, replication_forest.pdf, causes.pdf) from their artifacts.
+"""Three summary figures (paper/figures/folds_floor.pdf, replication_forest.pdf, causes.pdf) from their artifacts.
 
-Figure 2 puts h1 and h2a on the three folds beside both graph arms' injected-signal ladder; Figure 3
-is the per-dataset replication of the typed and untyped contrasts with their pooled estimates; Figure 4
-is the evidence for causes C and D.
+Earlier versions of the paper printed them as Figures 2 to 4. Since the plain-language revision of
+2026-10-28 the paper reports the same results in its tables and appendices, where verify_numbers.py
+checks them, so these figures are optional. The first puts h1 and h2a on the three folds beside both
+graph arms' injected-signal ladder; the second is the per-dataset replication of the typed and untyped
+contrasts with their pooled estimates; the third is the evidence for causes C and D.
 Every plotted value is read from the artifact the paper's tables and prose quote, and the dataset
-order and the K labels come from the same DE_stats_v2 provenance and built bases that Table 7's check
+order and the K labels come from the same DE_stats_v2 provenance and built bases that Table 3's check
 reads, so the figures cannot drift from the text.
 
     .venv/bin/python paper/icbinb/make_result_figures.py
@@ -70,7 +72,7 @@ def program_k(ds: str):
 
 
 def forest() -> None:
-    """Figure 3. Pooled diamonds: random effects over the seven replication screens, and over all
+    """The replication figure. Pooled diamonds: random effects over the seven replication screens, and over all
     eight datasets including the reference screen, for both arms, so neither pool is chosen per arm."""
     with_ref = load("replication/pooled_with_reference.json")
     seven = load("replication/pooled.json")["pooled"]
@@ -123,7 +125,7 @@ def oriented(c: dict, arm: str):
 
 
 def folds_floor() -> None:
-    """Figure 2. (a) h1 and h2a on the three folds, n=5 each; (b) the injected-signal ladder."""
+    """The splits figure. (a) h1 and h2a on the three folds, n=5 each; (b) the injected-signal ladder."""
     folds = (("frozen\n(0.85/0.05)", "screening_lambda0"),
              ("intermediate\n(0.80/0.10)", "screening_c080c10_h1"),
              ("harder\n(0.75/0.15)", "screening_c075c15_n5"))
@@ -185,7 +187,7 @@ def tci(values: list) -> tuple:
 
 
 def causes() -> None:
-    """Figure 4. (a) the n=7 family on the frozen fold, cause C; (b) cause D: what the graph-derived
+    """The causes figure. (a) the n=7 family on the frozen fold, cause C; (b) cause D: what the graph-derived
     features inside the "no graph" arm are worth (intact minus zeroed), beside message passing (h1 at
     n=5, the same five seeds and baseline lanes) and the paired test of the two, which is not a
     pre-registered contrast and is drawn hollow and grey."""
